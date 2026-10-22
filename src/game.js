@@ -11,15 +11,27 @@ import {
 
 const STICK_R = 60;
 const DEAD = 0.2;
-const BASE_INTERVAL = 0.17;
+// Touch aiming is far less precise than a mouse, so Freddie gets help: shots bend towards a nearby enemy,
+// and he fires on his own at anything that gets close while the right thumb is off the screen.
+const ASSIST_CONE = 0.5; // radians either side of the aim direction
+const ASSIST_PULL = 0.85; // 1 = snap fully onto the target
+const ASSIST_RANGE = 420;
+const AUTO_RANGE = 230;
+const BASE_INTERVAL = 0.15;
 const BASE_HP = 5;
-const BASE_SPEED = 190;
+const BASE_SPEED = 215;
 const SAVE_KEY = 'mobilegame.save';
 const BEST_KEY = 'mobilegame.best';
+const DEBUG_KEY = 'mobilegame.debugMode';
+// Debug mode is a testing aid for the player character only. It must never feed back into balance:
+// enemies, spawns, bosses and every number in levels.js are tuned for normal mode alone.
+const DEBUG_MULT = { fire: 2, damage: 2, health: 2 };
+const NORMAL_MULT = { fire: 1, damage: 1, health: 1 };
 const LAST = LEVELS.length - 1;
 
 const S = {
-  mode: 'title', // title | intro | play | clear | upgrade | dead | win
+  mode: 'title', // title | controls | intro | play | clear | upgrade | dead | win
+  pendingStart: 'new', // which menu button led to the controls screen
   t: 0,
   level: 0,
   levelT: 0,
@@ -32,6 +44,7 @@ const S = {
   best: 0,
   newBest: false,
   save: null,
+  debugMode: false,
   ups: {},
   st: null,
   shots: 0,
@@ -60,7 +73,7 @@ const S = {
   view: null,
 };
 
-export const getState = () => S; // exposed under ?debug for the smoke test
+export const getState = () => S; // exposed under ?test for the smoke test
 
 // ---- helpers ----
 
@@ -92,12 +105,13 @@ const zeroUps = () => Object.fromEntries(UPGRADES.map((u) => [u.id, 0]));
 
 function stats() {
   const u = S.ups;
+  const m = S.debugMode ? DEBUG_MULT : NORMAL_MULT;
   return {
-    interval: BASE_INTERVAL * 0.78 ** u.rate,
+    interval: (BASE_INTERVAL * 0.78 ** u.rate) / m.fire,
     shots: 1 + u.twin,
     pierce: u.pierce,
-    dmg: 1 + u.dmg,
-    maxHp: BASE_HP + u.hp,
+    dmg: (1 + u.dmg) * m.damage,
+    maxHp: (BASE_HP + u.hp) * m.health,
     speed: BASE_SPEED * (1 + 0.12 * u.speed),
     light: 1 + 0.25 * u.torch,
   };
@@ -142,6 +156,7 @@ export function init(view) {
   S.view = view;
   S.best = Number(read(BEST_KEY)) || 0;
   S.save = read(SAVE_KEY);
+  S.debugMode = read(DEBUG_KEY) === true;
   S.ups = zeroUps();
   S.st = stats();
   S.level = 0;
@@ -193,7 +208,7 @@ function beginLevel(idx, view) {
   S.boss = null;
   S.bossSpawned = false;
   S.bossDead = false;
-  S.spawnTimer = 1.2;
+  S.spawnTimer = 2.5;
   S.toastIdx = 0;
   S.toast = null;
   S.banner = null;
@@ -202,11 +217,34 @@ function beginLevel(idx, view) {
   layoutObstacles(view);
   initRain(view);
   audio.setLevel(idx);
-  S.save = { level: idx, ups: { ...S.ups }, score: S.score };
-  write(SAVE_KEY, S.save);
+  if (!S.debugMode) {
+    S.save = { level: idx, ups: { ...S.ups }, score: S.score };
+    write(SAVE_KEY, S.save);
+  }
+}
+
+// Back to the home screen with a clean backdrop (level 1, nothing in play).
+function toTitle(view) {
+  S.mode = 'title';
+  S.level = 0;
+  S.score = 0;
+  S.levelT = 0;
+  S.boss = null;
+  S.bossSpawned = false;
+  S.banner = null;
+  S.toast = null;
+  S.enemies.length = S.bullets.length = S.ebul.length = S.parts.length = S.pickups.length = 0;
+  S.ups = zeroUps();
+  S.st = stats();
+  S.player = newPlayer(view);
+  S.save = read(SAVE_KEY);
+  layoutObstacles(view);
+  initRain(view);
+  audio.setLevel(0);
 }
 
 function recordBest() {
+  if (S.debugMode) return; // debug runs never touch the real best score
   if (S.score > S.best) {
     S.best = S.score;
     S.newBest = true;
@@ -253,24 +291,35 @@ function win() {
   S.winT = 0;
   S.newBest = false;
   recordBest();
-  S.save = null;
-  write(SAVE_KEY, null);
+  if (!S.debugMode) {
+    S.save = null;
+    write(SAVE_KEY, null);
+  }
 }
 
 // ---- spawning ----
 
-function spawnEnemy(type, view, x, y) {
-  const k = ENEMIES[type];
-  const hpScale = 1 + S.level * 0.18;
-  if (x === undefined) {
+// A point just off screen, at least 320px from Freddie so nothing appears on top of him.
+function spawnPoint(view, m) {
+  const p = S.player;
+  let x = 0;
+  let y = 0;
+  for (let i = 0; i < 8; i++) {
     const side = Math.floor(Math.random() * 4);
-    const m = k.r + 30;
     x = side === 0 ? -m : side === 1 ? view.w + m : rand(0, view.w);
     y = side === 2 ? -m : side === 3 ? view.h + m : rand(0, view.h);
+    if (Math.hypot(x - p.x, y - p.y) > 320) break;
   }
+  return { x, y };
+}
+
+function spawnEnemy(type, view, x, y) {
+  const k = ENEMIES[type];
+  const hpScale = 1 + S.level * 0.12;
+  if (x === undefined) ({ x, y } = spawnPoint(view, k.r + 30));
   const hp = Math.ceil(k.hp * hpScale);
   S.enemies.push({
-    type, x, y, kx: 0, ky: 0, r: k.r, hp, maxHp: hp, speed: k.speed * (1 + S.level * 0.05) * rand(0.9, 1.1),
+    type, x, y, kx: 0, ky: 0, r: k.r, hp, maxHp: hp, speed: k.speed * (1 + S.level * 0.035) * rand(0.9, 1.1),
     score: k.score, colour: k.colour, accent: k.accent, ai: k.ai, phase: rand(0, 6.28), ang: 0, flash: 0,
     dead: false, boss: false, inside: false, shootT: rand(1, 2.2),
   });
@@ -286,10 +335,7 @@ function spawnFromMix(prog, view) {
     if (roll <= 0) { type = m[0]; break; }
   }
   const pack = ENEMIES[type].pack || 1;
-  const side = Math.floor(Math.random() * 4);
-  const m = 40;
-  const px = side === 0 ? -m : side === 1 ? view.w + m : rand(0, view.w);
-  const py = side === 2 ? -m : side === 3 ? view.h + m : rand(0, view.h);
+  const { x: px, y: py } = spawnPoint(view, 40);
   for (let i = 0; i < pack; i++) spawnEnemy(type, view, px + rand(-18, 18), py + rand(-18, 18));
 }
 
@@ -375,7 +421,7 @@ function buttons(view) {
   const list = [];
   const w = Math.min(view.w - 48, 300);
   const x = (view.w - w) / 2;
-  const add = (id, label, y, primary = true, h = 52) => list.push({ id, label, x, y, w, h, primary });
+  const add = (id, label, y, primary = true, h = 52, accent = null) => list.push({ id, label, x, y, w, h, primary, accent });
   if (S.mode === 'title') {
     let y = view.h * 0.46;
     if (S.save) {
@@ -383,11 +429,18 @@ function buttons(view) {
       y += 64;
     }
     add('new', 'NEW GAME', y, !S.save);
+    add('debug', `DEBUG MODE: ${S.debugMode ? 'ON' : 'OFF'}`, y + 68, false, 40, S.debugMode ? '#fbbf24' : null);
+  } else if (S.mode === 'controls') {
+    const y = view.h - view.safe.bottom - 126;
+    add('start', 'START GAME', y);
+    add('back', 'BACK', y + 60, false, 44);
   } else if (S.mode === 'dead' && S.deadT > 0.9) {
     add('retry', 'RETRY LEVEL', view.h * 0.6);
     add('new', 'NEW GAME', view.h * 0.6 + 64, false);
+    add('menu', 'MAIN MENU', view.h * 0.6 + 128, false, 44);
   } else if (S.mode === 'win' && S.winT > 1) {
     add('new', 'PLAY AGAIN', view.h * 0.7);
+    add('menu', 'MAIN MENU', view.h * 0.7 + 64, false, 44);
   } else if (S.mode === 'upgrade') {
     const cw = Math.min(view.w - 40, 340);
     const cx = (view.w - cw) / 2;
@@ -400,7 +453,17 @@ function handlePress(view, p) {
   for (const b of buttons(view)) {
     if (p.x < b.x || p.x > b.x + b.w || p.y < b.y || p.y > b.y + b.h) continue;
     audio.blip();
-    if (b.id === 'new') newGame(view);
+    if (b.id === 'debug') {
+      S.debugMode = !S.debugMode;
+      write(DEBUG_KEY, S.debugMode);
+      S.st = stats();
+    } else if (b.id === 'menu') toTitle(view);
+    else if ((b.id === 'new' || b.id === 'continue') && S.mode === 'title') {
+      S.pendingStart = b.id; // the run begins only when START GAME is pressed
+      S.mode = 'controls';
+    } else if (b.id === 'back') S.mode = 'title';
+    else if (b.id === 'start') (S.pendingStart === 'continue' ? continueGame : newGame)(view);
+    else if (b.id === 'new') newGame(view);
     else if (b.id === 'continue') continueGame(view);
     else if (b.id === 'retry') {
       S.score = S.levelStartScore;
@@ -437,6 +500,7 @@ export function update(dt, input, view) {
 
   switch (S.mode) {
     case 'title':
+    case 'controls':
     case 'upgrade':
       for (const p of input.pressed) handlePress(view, p);
       break;
@@ -483,7 +547,7 @@ function updatePlay(dt, input, view) {
       S.spawnTimer -= dt;
       if (S.spawnTimer <= 0 && S.enemies.length < L.cap) {
         spawnFromMix(prog, view);
-        S.spawnTimer = lerp(L.spawn[0], L.spawn[1], prog) / (1 + S.level * 0.12);
+        S.spawnTimer = lerp(L.spawn[0], L.spawn[1], prog) / (1 + S.level * 0.08);
       }
     }
   }
@@ -502,8 +566,12 @@ function updatePlay(dt, input, view) {
   p.fireT = Math.max(0, p.fireT - dt);
 
   let firing = false;
+  const near = aimV.mag > 0 ? null : nearestEnemy(p, AUTO_RANGE);
   if (aimV.mag > 0) {
-    p.aim = Math.atan2(aimV.y, aimV.x);
+    p.aim = assistAim(Math.atan2(aimV.y, aimV.x), p);
+    firing = true;
+  } else if (near) {
+    p.aim = Math.atan2(near.y - p.y, near.x - p.x);
     firing = true;
   } else if (mv.mag > 0) {
     p.aim = Math.atan2(mv.uy, mv.ux);
@@ -613,7 +681,7 @@ function updatePlay(dt, input, view) {
       S.bossDead = true;
       S.shake = 0.6;
       audio.boom();
-    } else if (p.hp < st.maxHp && Math.random() < 0.06) {
+    } else if (p.hp < st.maxHp && Math.random() < 0.12) {
       S.pickups.push({ x: e.x, y: e.y, life: 10 });
     }
   }
@@ -653,10 +721,49 @@ function updatePlay(dt, input, view) {
   if (S.bossDead) clearLevel();
 }
 
+function nearestEnemy(p, range) {
+  let best = null;
+  let bestD = range;
+  for (const e of S.enemies) {
+    if (e.dead) continue;
+    const d = Math.hypot(e.x - p.x, e.y - p.y) - e.r;
+    if (d < bestD) { bestD = d; best = e; }
+  }
+  return best;
+}
+
+// Pulls the aim angle towards the enemy closest to the line the thumb is pointing along.
+function assistAim(angle, p) {
+  let best = null;
+  let bestScore = Infinity;
+  let bestDiff = 0;
+  for (const e of S.enemies) {
+    if (e.dead) continue;
+    const d = Math.hypot(e.x - p.x, e.y - p.y);
+    if (d > ASSIST_RANGE) continue;
+    let diff = Math.atan2(e.y - p.y, e.x - p.x) - angle;
+    diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+    // a wider cone for close targets, where the same angular error is a bigger miss
+    if (Math.abs(diff) > ASSIST_CONE * (1 + 120 / d) * 0.7) continue;
+    const score = Math.abs(diff) + d / 2000;
+    if (score < bestScore) { bestScore = score; best = e; bestDiff = diff; }
+  }
+  return best ? angle + bestDiff * ASSIST_PULL : angle;
+}
+
 function damage(n) {
   const p = S.player;
   p.hp -= n;
-  p.hurtT = 1.1;
+  p.hurtT = 1.6;
+  for (const e of S.enemies) {
+    const dx = e.x - p.x;
+    const dy = e.y - p.y;
+    const d = Math.hypot(dx, dy) || 1;
+    if (d < 150 && !e.boss) {
+      e.kx += (dx / d) * 380;
+      e.ky += (dy / d) * 380;
+    }
+  }
   S.shake = 0.4;
   S.hurtFlash = 1;
   audio.hurt();
@@ -684,8 +791,8 @@ function updateEnemy(e, p, dt, view, a) {
       vy = (ny * dir + nx * strafe) * e.speed;
       e.shootT -= dt;
       if (e.shootT <= 0 && e.inside) {
-        e.shootT = rand(2, 2.8);
-        fireNote(e.x, e.y, e.ang, 170);
+        e.shootT = rand(2.4, 3.2);
+        fireNote(e.x, e.y, e.ang, 150);
       }
     } else {
       const wob = Math.sin(S.t * 3 + e.phase) * 0.6;
@@ -809,7 +916,7 @@ function dawnAmount() {
 
 function drawDarkness(ctx, view, p, beat, dawn) {
   const frac = S.mode === 'play' || S.mode === 'dead' ? clamp(p.hp / S.st.maxHp, 0, 1) : 1;
-  const R = (110 + 110 * frac + beat.pulse * 12) * S.st.light;
+  const R = (130 + 110 * frac + beat.pulse * 12) * S.st.light;
   const strobe = S.level === 0 && S.levelT > 20 && beat.count % 8 === 0 ? beat.pulse : 0;
   const dark = 0.93 - dawn * 0.55 - strobe * 0.4;
   const g = ctx.createRadialGradient(p.x, p.y, R * 0.2, p.x, p.y, R);
@@ -866,9 +973,10 @@ function drawHud(ctx, view) {
   const L = LEVELS[S.level];
   const p = S.player;
   const top = view.safe.top + 26;
-  const gap = S.st.maxHp > 6 ? 23 : 26;
+  const gap = Math.min(26, 170 / Math.max(1, S.st.maxHp - 1));
+  const hs = Math.min(11, gap * 0.45);
   for (let i = 0; i < S.st.maxHp; i++) {
-    heart(ctx, 22 + i * gap, top, 11);
+    heart(ctx, 22 + i * gap, top, hs);
     if (i < p.hp) {
       ctx.fillStyle = '#ff2e93';
       ctx.fill();
@@ -878,6 +986,7 @@ function drawHud(ctx, view) {
       ctx.stroke();
     }
   }
+  if (S.debugMode) text(ctx, 'DEBUG MODE', view.w / 2, view.safe.top + 8, 10, '#fbbf24', 'center', 700);
   const prog = S.bossSpawned ? 1 : clamp(S.levelT / L.duration, 0, 1);
   const mins = Math.round(lerp(L.clock[0], L.clock[1], prog));
   text(ctx, `${pad2(Math.floor(mins / 60) % 24)}:${pad2(mins % 60)}`, view.w / 2 + 36, top, 18, 'rgba(255,255,255,0.7)', 'center', 600);
@@ -918,12 +1027,13 @@ function drawHud(ctx, view) {
 
 function drawButton(ctx, b) {
   rrect(ctx, b.x, b.y, b.w, b.h, 12);
-  ctx.fillStyle = b.primary ? '#ff2e93' : 'rgba(255,255,255,0.08)';
+  ctx.fillStyle = b.primary ? '#ff2e93' : b.accent ? 'rgba(251,191,36,0.14)' : 'rgba(255,255,255,0.08)';
   ctx.fill();
-  ctx.strokeStyle = b.primary ? '#ff2e93' : 'rgba(255,255,255,0.3)';
+  ctx.strokeStyle = b.primary ? '#ff2e93' : b.accent || 'rgba(255,255,255,0.3)';
   ctx.lineWidth = 2;
   ctx.stroke();
-  text(ctx, b.label, b.x + b.w / 2, b.y + b.h / 2, 17, '#ffffff', 'center', 700);
+  const small = b.h < 48;
+  text(ctx, b.label, b.x + b.w / 2, b.y + b.h / 2, small ? 14 : 17, b.accent || '#ffffff', 'center', 700);
 }
 
 function drawCard(ctx, b) {
@@ -946,9 +1056,82 @@ function drawTitle(ctx, view) {
   text(ctx, "FREDDIE'S", cx, cy, 52, '#ff2e93', 'center', 800);
   text(ctx, 'LAST SET', cx, cy + 54, 52, '#22d3ee', 'center', 800);
   text(ctx, 'Edinburgh. 2am. Everyone is dead.', cx, cy + 106, 15, '#c9c2e0', 'center', 500);
-  for (const b of buttons(view)) drawButton(ctx, b);
+  const list = buttons(view);
+  for (const b of list) drawButton(ctx, b);
+  if (S.debugMode) {
+    const d = list.find((b) => b.id === 'debug');
+    text(ctx, '2x fire rate, 2x damage, 2x health', cx, d.y + d.h + 18, 12, '#fbbf24', 'center', 600);
+    text(ctx, 'Progress and scores are not saved', cx, d.y + d.h + 36, 12, 'rgba(251,191,36,0.7)', 'center', 500);
+  }
   if (S.best > 0) text(ctx, `BEST ${S.best}`, cx, view.h * 0.46 - 30, 14, '#c9c2e0', 'center', 600);
   text(ctx, 'Left thumb: move   Right thumb: aim and fire', cx, view.h - view.safe.bottom - 210, 13, 'rgba(255,255,255,0.45)', 'center', 500);
+}
+
+// An animated thumb pad: a ring with a knob that shows what the thumb does.
+function drawPad(ctx, x, y, R, colour, kind) {
+  ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(x, y, R, 0, 6.283);
+  ctx.stroke();
+  const ang = kind === 'move' ? S.t * 1.4 : Math.sin(S.t * 1.1) * 1.1 - 0.4;
+  const kx = x + Math.cos(ang) * R * 0.55;
+  const ky = y + Math.sin(ang) * R * 0.55;
+  ctx.fillStyle = colour;
+  ctx.beginPath();
+  ctx.arc(kx, ky, R * 0.4, 0, 6.283);
+  ctx.fill();
+  if (kind === 'aim') {
+    ctx.strokeStyle = '#22d3ee';
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    for (let i = 0; i < 3; i++) {
+      const d = R + 16 + ((S.t * 70 + i * 14) % 42);
+      ctx.globalAlpha = 1 - (d - R - 16) / 42;
+      ctx.beginPath();
+      ctx.arc(x, y, d, ang - 0.28, ang + 0.28);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+}
+
+function drawControls(ctx, view) {
+  const cx = view.w / 2;
+  const compact = view.h < 760;
+  ctx.fillStyle = 'rgba(4,2,8,0.86)';
+  ctx.fillRect(0, 0, view.w, view.h);
+  text(ctx, 'CONTROLS', cx, view.safe.top + view.h * 0.075, 30, '#ff2e93', 'center', 800);
+
+  const R = compact ? 34 : 42;
+  const py = view.safe.top + view.h * (compact ? 0.2 : 0.235);
+  const colW = view.w / 2 - 24;
+  [
+    { x: view.w * 0.25, kind: 'move', colour: 'rgba(255,255,255,0.28)', head: 'LEFT THUMB', name: 'MOVE', tip: 'Drag anywhere on the left half of the screen.' },
+    { x: view.w * 0.75, kind: 'aim', colour: 'rgba(34,211,238,0.4)', head: 'RIGHT THUMB', name: 'AIM + FIRE', tip: 'Drag on the right half. Freddie fires where you point.' },
+  ].forEach((c) => {
+    drawPad(ctx, c.x, py, R, c.colour, c.kind);
+    const ty = py + R + 36;
+    text(ctx, c.head, c.x, ty, 12, '#9fb3c8', 'center', 600);
+    text(ctx, c.name, c.x, ty + 22, 20, '#ffffff', 'center', 800);
+    if (!compact) paragraph(ctx, c.tip, c.x, ty + 50, colW, 12.5, '#c9c2e0', 'center', 500, 17);
+  });
+
+  const tips = [
+    'Shots bend towards enemies near your aim. With no right thumb down, Freddie fires at anything that gets close.',
+    'The dead are red eyes in the dark. Stay in the light.',
+    'Hearts heal you. Survive until dawn, then beat the boss.',
+  ];
+  let y = py + R + (compact ? 90 : 160);
+  for (const tip of tips) {
+    ctx.fillStyle = '#ff2e93';
+    ctx.beginPath();
+    ctx.arc(26, y + 1, 3, 0, 6.283);
+    ctx.fill();
+    y += paragraph(ctx, tip, 40, y, view.w - 64, 13.5, '#e5e0f5', 'left', 500, 18) + 10;
+  }
+  if (!compact) text(ctx, 'Keyboard: WASD to move, drag on the right side to aim.', cx, y + 6, 12, 'rgba(255,255,255,0.4)', 'center', 500);
+  for (const b of buttons(view)) drawButton(ctx, b);
 }
 
 function drawIntro(ctx, view) {
@@ -987,7 +1170,8 @@ function drawDead(ctx, view) {
   text(ctx, LEVELS[S.level].name, cx, view.h * 0.2 + 36, 14, '#9fb3c8', 'center', 600);
   paragraph(ctx, S.deadLine, cx, view.h * 0.2 + 70, view.w - 64, 16, '#e5e0f5', 'center', 500);
   text(ctx, `Score ${S.score}`, cx, view.h * 0.46, 20, '#ffffff', 'center', 700);
-  text(ctx, S.newBest ? 'NEW BEST' : `Best ${S.best}`, cx, view.h * 0.46 + 28, 14, S.newBest ? '#22d3ee' : '#c9c2e0', 'center', 600);
+  if (S.debugMode) text(ctx, 'DEBUG RUN: not recorded', cx, view.h * 0.46 + 28, 14, '#fbbf24', 'center', 600);
+  else text(ctx, S.newBest ? 'NEW BEST' : `Best ${S.best}`, cx, view.h * 0.46 + 28, 14, S.newBest ? '#22d3ee' : '#c9c2e0', 'center', 600);
   for (const b of buttons(view)) drawButton(ctx, b);
 }
 
@@ -999,7 +1183,8 @@ function drawWin(ctx, view) {
   paragraph(ctx, WIN_LINES[1], cx, view.h * 0.2 + 56, view.w - 64, 18, '#ffffff', 'center', 600);
   paragraph(ctx, WIN_LINES[2], cx, view.h * 0.2 + 100, view.w - 64, 15, '#e5e0f5', 'center', 500);
   text(ctx, `Final score ${S.score}`, cx, view.h * 0.5, 22, '#ffffff', 'center', 700);
-  text(ctx, S.newBest ? 'NEW BEST' : `Best ${S.best}`, cx, view.h * 0.5 + 30, 14, S.newBest ? '#22d3ee' : '#c9c2e0', 'center', 600);
+  if (S.debugMode) text(ctx, 'DEBUG RUN: not recorded', cx, view.h * 0.5 + 30, 14, '#fbbf24', 'center', 600);
+  else text(ctx, S.newBest ? 'NEW BEST' : `Best ${S.best}`, cx, view.h * 0.5 + 30, 14, S.newBest ? '#22d3ee' : '#c9c2e0', 'center', 600);
   for (const b of buttons(view)) drawButton(ctx, b);
 }
 
@@ -1064,6 +1249,9 @@ export function render(ctx, view) {
       ctx.fillRect(0, 0, view.w, view.h);
       drawTitle(ctx, view);
       break;
+    case 'controls':
+      drawControls(ctx, view);
+      break;
     case 'intro':
       drawIntro(ctx, view);
       break;
@@ -1083,8 +1271,9 @@ export function render(ctx, view) {
   }
 }
 
-// Test hook, reachable only through window.__game (?debug). Lets the smoke test jump around the campaign.
-export function debug(cmd, arg) {
+// Test hook, reachable only through window.__game (?test). Lets the smoke test jump around the campaign.
+// Not the player-facing debug mode: that is S.debugMode, toggled on the home screen.
+export function testHook(cmd, arg) {
   const v = S.view;
   if (cmd === 'play') {
     S.ups = zeroUps();
@@ -1097,5 +1286,9 @@ export function debug(cmd, arg) {
     S.levelT = LEVELS[S.level].duration;
   } else if (cmd === 'killboss') {
     if (S.boss) S.boss.hp = 0;
+  } else if (cmd === 'title') {
+    toTitle(v);
+  } else if (cmd === 'buttons') {
+    return buttons(v);
   }
 }

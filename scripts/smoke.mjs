@@ -1,5 +1,5 @@
 // Headless check at a phone-sized viewport using synthetic multi-touch events.
-// Covers: menus, both sticks, all five levels and bosses via the ?debug hook, level clear,
+// Covers: menus, both sticks, all five levels and bosses via the ?test hook, level clear,
 // upgrade pick, death and retry, win, and save/continue. Screenshots go to the directory in
 // argv[2] (default: cwd) as smoke-*.png.
 import { spawn } from 'node:child_process';
@@ -44,18 +44,24 @@ try {
     await ptr('pointerup', 9, x, y);
     await page.waitForTimeout(120);
   };
-  const dbg = (cmd, arg) => page.evaluate(([c, a]) => window.__game.debug(c, a), [cmd, arg]);
+  const dbg = (cmd, arg) => page.evaluate(([c, a]) => window.__game.testHook(c, a), [cmd, arg]);
   const state = () => page.evaluate(() => {
     const s = window.__game.getState();
     return {
       mode: s.mode, level: s.level, shots: s.shots, x: s.player.x, score: s.score, boss: !!s.boss,
       enemies: s.enemies.length, offers: s.offers.length, upSum: Object.values(s.ups).reduce((a, b) => a + b, 0),
-      hasSave: !!s.save, saveLevel: s.save?.level,
+      hasSave: !!s.save, saveLevel: s.save?.level, debugMode: s.debugMode,
+      interval: s.st.interval, dmg: s.st.dmg, maxHp: s.st.maxHp, hp: s.player.hp,
     };
   });
+  const pressButton = async (id) => {
+    const b = (await dbg('buttons')).find((x) => x.id === id);
+    if (!b) throw new Error(`no ${id} button`);
+    await tap(b.x + b.w / 2, b.y + b.h / 2);
+  };
   const shot = (name) => page.screenshot({ path: join(outDir, `smoke-${name}.png`) });
 
-  await page.goto(`http://localhost:${port}/?debug`);
+  await page.goto(`http://localhost:${port}/?test`);
   await page.waitForTimeout(400);
 
   const size = await page.evaluate(() => {
@@ -68,7 +74,16 @@ try {
 
   // NEW GAME button sits at 46% of the height
   await tap(195, 844 * 0.46 + 26);
-  check((await state()).mode === 'intro', 'NEW GAME shows the level intro');
+  check((await state()).mode === 'controls', 'NEW GAME shows the controls screen first');
+  await page.waitForTimeout(500);
+  await shot('controls');
+  await pressButton('back');
+  check((await state()).mode === 'title', 'BACK returns to the menu');
+  await tap(195, 844 * 0.46 + 26);
+  await page.waitForTimeout(1500);
+  check((await state()).mode === 'controls', 'the run does not start until START GAME is pressed');
+  await pressButton('start');
+  check((await state()).mode === 'intro', 'START GAME shows the level intro');
   await page.waitForTimeout(900);
   await shot('intro');
   await tap(195, 600);
@@ -90,9 +105,9 @@ try {
   // every level: play, boss, clear, then upgrade (or win after the last)
   for (let i = 0; i < 5; i++) {
     await dbg('play', i);
-    await page.waitForTimeout(2500);
+    await page.waitForTimeout(4500);
     const play = await state();
-    check(play.mode === 'play' && play.level === i && play.enemies > 0, `level ${i + 1} plays and spawns enemies`);
+    check(play.mode === 'play' && play.level === i && (play.enemies > 0 || play.score > 0), `level ${i + 1} plays and spawns enemies`);
     await shot(`level${i + 1}`);
     await dbg('boss');
     await page.waitForTimeout(2500);
@@ -117,6 +132,13 @@ try {
     }
   }
 
+  // with no thumbs down, Freddie still defends himself against enemies that get close
+  await dbg('play', 0);
+  const idle0 = (await state()).shots;
+  await page.waitForTimeout(16000);
+  const idle1 = (await state()).shots;
+  check(idle1 > idle0, `auto-fires at close enemies with no touch (${idle1 - idle0} shots)`);
+
   // death and retry
   await dbg('play', 1);
   await page.evaluate(() => { window.__game.getState().player.hp = 0; });
@@ -135,8 +157,54 @@ try {
   check(reloaded.mode === 'title' && reloaded.hasSave && reloaded.saveLevel === 1, 'save survives a reload');
   await shot('title-continue');
   await tap(195, 844 * 0.46 + 26);
+  check((await state()).mode === 'controls', 'CONTINUE shows the controls screen too');
+  await pressButton('start');
   const cont = await state();
   check(cont.mode === 'intro' && cont.level === 1, 'CONTINUE resumes at the saved level');
+
+  // debug mode: 2x fire rate, 2x damage, 2x health, and it never touches the real save or best score
+  const tapButton = async (id) => {
+    const list = await dbg('buttons');
+    const b = list.find((x) => x.id === id);
+    if (!b) throw new Error(`no ${id} button`);
+    await tap(b.x + b.w / 2, b.y + b.h / 2);
+  };
+  const stored = (key) => page.evaluate((k) => localStorage.getItem(k), key);
+  const normal = await state();
+  check(!normal.debugMode && normal.interval === 0.15 && normal.dmg === 1 && normal.maxHp === 5, `normal mode stats (${normal.interval}s, ${normal.dmg} dmg, ${normal.maxHp} hp)`);
+  const saveBefore = await stored('mobilegame.save');
+  const bestBefore = await stored('mobilegame.best');
+
+  await dbg('title');
+  await shot('title-normal');
+  await tapButton('debug');
+  check((await state()).debugMode === true, 'debug button turns debug mode on');
+  await shot('title-debug');
+  await page.reload();
+  await page.waitForTimeout(500);
+  check((await state()).debugMode === true, 'debug mode stays on after a reload');
+  await tapButton('new');
+  await tapButton('start');
+  const dbgRun = await state();
+  check(dbgRun.interval === 0.075 && dbgRun.dmg === 2 && dbgRun.maxHp === 10 && dbgRun.hp === 10, `debug stats are exactly 2x (${dbgRun.interval}s, ${dbgRun.dmg} dmg, ${dbgRun.maxHp} hp)`);
+  await page.waitForTimeout(3200);
+  await shot('play-debug');
+  await dbg('play', 2);
+  await page.evaluate(() => { const g = window.__game.getState(); g.player.hp = 0; });
+  await page.waitForTimeout(400);
+  await page.evaluate(() => { window.__game.getState().score = 99999; });
+  await page.waitForTimeout(1200);
+  await shot('dead-debug');
+  check((await stored('mobilegame.save')) === saveBefore, 'debug run leaves the real save untouched');
+  check((await stored('mobilegame.best')) === bestBefore, 'debug run leaves the best score untouched');
+  await tapButton('menu');
+  check((await state()).mode === 'title', 'MAIN MENU returns to the home screen');
+  await tapButton('debug');
+  check((await state()).debugMode === false, 'debug button turns debug mode off');
+  await tapButton('new');
+  await tapButton('start');
+  const back = await state();
+  check(back.interval === 0.15 && back.dmg === 1 && back.maxHp === 5, 'normal stats are back with debug off');
 
   check(errors.length === 0, `no console errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
 } finally {
