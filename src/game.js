@@ -72,7 +72,7 @@ const S = {
   view: null,
 };
 
-export const getState = () => S; // exposed under ?debug for the smoke test
+export const getState = () => S; // exposed under ?test for the smoke test
 
 // ---- helpers ----
 

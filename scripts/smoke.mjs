@@ -1,5 +1,5 @@
 // Headless check at a phone-sized viewport using synthetic multi-touch events.
-// Covers: menus, both sticks, all five levels and bosses via the ?debug hook, level clear,
+// Covers: menus, both sticks, all five levels and bosses via the ?test hook, level clear,
 // upgrade pick, death and retry, win, and save/continue. Screenshots go to the directory in
 // argv[2] (default: cwd) as smoke-*.png.
 import { spawn } from 'node:child_process';

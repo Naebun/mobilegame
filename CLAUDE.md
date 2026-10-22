@@ -14,7 +14,7 @@ Mobile-first web game. Vanilla JS (ES modules) on a 2D canvas. No bundler, no ru
 - Test on a phone-sized viewport (390x844) before calling something done: `npm run smoke`.
 - British English in comments and docs.
 - Audio: only call `audio.unlock()` from input handlers (browsers block it otherwise). Visuals that follow the music read `audio.beat()`.
-- `?debug` in the URL exposes the game module as `window.__game` (used by the smoke test).
+- `?test` in the URL exposes the game module as `window.__game` (used by the smoke test).
 - Content changes (new enemy, boss, level, upgrade, joke) belong in `src/levels.js`; only add code to `game.js`/`draw.js` for new behaviour. A new enemy type also needs an `ACCESSORY` entry in `draw.js`.
 - Menu buttons come from `buttons(view)` in `game.js`, shared by hit testing and drawing. Do not hard-code button rectangles elsewhere.
 - `window.__game.testHook('play', levelIndex | 'boss' | 'killboss' | 'title' | 'buttons')` (needs `?test` in the URL) jumps around the campaign. It sets hp to 999, so never judge lighting from those screenshots.
