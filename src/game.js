@@ -11,9 +11,15 @@ import {
 
 const STICK_R = 60;
 const DEAD = 0.2;
-const BASE_INTERVAL = 0.17;
+// Touch aiming is far less precise than a mouse, so Freddie gets help: shots bend towards a nearby enemy,
+// and he fires on his own at anything that gets close while the right thumb is off the screen.
+const ASSIST_CONE = 0.5; // radians either side of the aim direction
+const ASSIST_PULL = 0.85; // 1 = snap fully onto the target
+const ASSIST_RANGE = 420;
+const AUTO_RANGE = 230;
+const BASE_INTERVAL = 0.15;
 const BASE_HP = 5;
-const BASE_SPEED = 190;
+const BASE_SPEED = 215;
 const SAVE_KEY = 'mobilegame.save';
 const BEST_KEY = 'mobilegame.best';
 const LAST = LEVELS.length - 1;
@@ -193,7 +199,7 @@ function beginLevel(idx, view) {
   S.boss = null;
   S.bossSpawned = false;
   S.bossDead = false;
-  S.spawnTimer = 1.2;
+  S.spawnTimer = 2.5;
   S.toastIdx = 0;
   S.toast = null;
   S.banner = null;
@@ -259,18 +265,27 @@ function win() {
 
 // ---- spawning ----
 
-function spawnEnemy(type, view, x, y) {
-  const k = ENEMIES[type];
-  const hpScale = 1 + S.level * 0.18;
-  if (x === undefined) {
+// A point just off screen, at least 320px from Freddie so nothing appears on top of him.
+function spawnPoint(view, m) {
+  const p = S.player;
+  let x = 0;
+  let y = 0;
+  for (let i = 0; i < 8; i++) {
     const side = Math.floor(Math.random() * 4);
-    const m = k.r + 30;
     x = side === 0 ? -m : side === 1 ? view.w + m : rand(0, view.w);
     y = side === 2 ? -m : side === 3 ? view.h + m : rand(0, view.h);
+    if (Math.hypot(x - p.x, y - p.y) > 320) break;
   }
+  return { x, y };
+}
+
+function spawnEnemy(type, view, x, y) {
+  const k = ENEMIES[type];
+  const hpScale = 1 + S.level * 0.12;
+  if (x === undefined) ({ x, y } = spawnPoint(view, k.r + 30));
   const hp = Math.ceil(k.hp * hpScale);
   S.enemies.push({
-    type, x, y, kx: 0, ky: 0, r: k.r, hp, maxHp: hp, speed: k.speed * (1 + S.level * 0.05) * rand(0.9, 1.1),
+    type, x, y, kx: 0, ky: 0, r: k.r, hp, maxHp: hp, speed: k.speed * (1 + S.level * 0.035) * rand(0.9, 1.1),
     score: k.score, colour: k.colour, accent: k.accent, ai: k.ai, phase: rand(0, 6.28), ang: 0, flash: 0,
     dead: false, boss: false, inside: false, shootT: rand(1, 2.2),
   });
@@ -286,10 +301,7 @@ function spawnFromMix(prog, view) {
     if (roll <= 0) { type = m[0]; break; }
   }
   const pack = ENEMIES[type].pack || 1;
-  const side = Math.floor(Math.random() * 4);
-  const m = 40;
-  const px = side === 0 ? -m : side === 1 ? view.w + m : rand(0, view.w);
-  const py = side === 2 ? -m : side === 3 ? view.h + m : rand(0, view.h);
+  const { x: px, y: py } = spawnPoint(view, 40);
   for (let i = 0; i < pack; i++) spawnEnemy(type, view, px + rand(-18, 18), py + rand(-18, 18));
 }
 
@@ -483,7 +495,7 @@ function updatePlay(dt, input, view) {
       S.spawnTimer -= dt;
       if (S.spawnTimer <= 0 && S.enemies.length < L.cap) {
         spawnFromMix(prog, view);
-        S.spawnTimer = lerp(L.spawn[0], L.spawn[1], prog) / (1 + S.level * 0.12);
+        S.spawnTimer = lerp(L.spawn[0], L.spawn[1], prog) / (1 + S.level * 0.08);
       }
     }
   }
@@ -502,8 +514,12 @@ function updatePlay(dt, input, view) {
   p.fireT = Math.max(0, p.fireT - dt);
 
   let firing = false;
+  const near = aimV.mag > 0 ? null : nearestEnemy(p, AUTO_RANGE);
   if (aimV.mag > 0) {
-    p.aim = Math.atan2(aimV.y, aimV.x);
+    p.aim = assistAim(Math.atan2(aimV.y, aimV.x), p);
+    firing = true;
+  } else if (near) {
+    p.aim = Math.atan2(near.y - p.y, near.x - p.x);
     firing = true;
   } else if (mv.mag > 0) {
     p.aim = Math.atan2(mv.uy, mv.ux);
@@ -613,7 +629,7 @@ function updatePlay(dt, input, view) {
       S.bossDead = true;
       S.shake = 0.6;
       audio.boom();
-    } else if (p.hp < st.maxHp && Math.random() < 0.06) {
+    } else if (p.hp < st.maxHp && Math.random() < 0.12) {
       S.pickups.push({ x: e.x, y: e.y, life: 10 });
     }
   }
@@ -653,10 +669,49 @@ function updatePlay(dt, input, view) {
   if (S.bossDead) clearLevel();
 }
 
+function nearestEnemy(p, range) {
+  let best = null;
+  let bestD = range;
+  for (const e of S.enemies) {
+    if (e.dead) continue;
+    const d = Math.hypot(e.x - p.x, e.y - p.y) - e.r;
+    if (d < bestD) { bestD = d; best = e; }
+  }
+  return best;
+}
+
+// Pulls the aim angle towards the enemy closest to the line the thumb is pointing along.
+function assistAim(angle, p) {
+  let best = null;
+  let bestScore = Infinity;
+  let bestDiff = 0;
+  for (const e of S.enemies) {
+    if (e.dead) continue;
+    const d = Math.hypot(e.x - p.x, e.y - p.y);
+    if (d > ASSIST_RANGE) continue;
+    let diff = Math.atan2(e.y - p.y, e.x - p.x) - angle;
+    diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+    // a wider cone for close targets, where the same angular error is a bigger miss
+    if (Math.abs(diff) > ASSIST_CONE * (1 + 120 / d) * 0.7) continue;
+    const score = Math.abs(diff) + d / 2000;
+    if (score < bestScore) { bestScore = score; best = e; bestDiff = diff; }
+  }
+  return best ? angle + bestDiff * ASSIST_PULL : angle;
+}
+
 function damage(n) {
   const p = S.player;
   p.hp -= n;
-  p.hurtT = 1.1;
+  p.hurtT = 1.6;
+  for (const e of S.enemies) {
+    const dx = e.x - p.x;
+    const dy = e.y - p.y;
+    const d = Math.hypot(dx, dy) || 1;
+    if (d < 150 && !e.boss) {
+      e.kx += (dx / d) * 380;
+      e.ky += (dy / d) * 380;
+    }
+  }
   S.shake = 0.4;
   S.hurtFlash = 1;
   audio.hurt();
@@ -684,8 +739,8 @@ function updateEnemy(e, p, dt, view, a) {
       vy = (ny * dir + nx * strafe) * e.speed;
       e.shootT -= dt;
       if (e.shootT <= 0 && e.inside) {
-        e.shootT = rand(2, 2.8);
-        fireNote(e.x, e.y, e.ang, 170);
+        e.shootT = rand(2.4, 3.2);
+        fireNote(e.x, e.y, e.ang, 150);
       }
     } else {
       const wob = Math.sin(S.t * 3 + e.phase) * 0.6;
@@ -809,7 +864,7 @@ function dawnAmount() {
 
 function drawDarkness(ctx, view, p, beat, dawn) {
   const frac = S.mode === 'play' || S.mode === 'dead' ? clamp(p.hp / S.st.maxHp, 0, 1) : 1;
-  const R = (110 + 110 * frac + beat.pulse * 12) * S.st.light;
+  const R = (130 + 110 * frac + beat.pulse * 12) * S.st.light;
   const strobe = S.level === 0 && S.levelT > 20 && beat.count % 8 === 0 ? beat.pulse : 0;
   const dark = 0.93 - dawn * 0.55 - strobe * 0.4;
   const g = ctx.createRadialGradient(p.x, p.y, R * 0.2, p.x, p.y, R);

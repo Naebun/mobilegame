@@ -90,9 +90,9 @@ try {
   // every level: play, boss, clear, then upgrade (or win after the last)
   for (let i = 0; i < 5; i++) {
     await dbg('play', i);
-    await page.waitForTimeout(2500);
+    await page.waitForTimeout(4500);
     const play = await state();
-    check(play.mode === 'play' && play.level === i && play.enemies > 0, `level ${i + 1} plays and spawns enemies`);
+    check(play.mode === 'play' && play.level === i && (play.enemies > 0 || play.score > 0), `level ${i + 1} plays and spawns enemies`);
     await shot(`level${i + 1}`);
     await dbg('boss');
     await page.waitForTimeout(2500);
@@ -116,6 +116,13 @@ try {
       await shot('win');
     }
   }
+
+  // with no thumbs down, Freddie still defends himself against enemies that get close
+  await dbg('play', 0);
+  const idle0 = (await state()).shots;
+  await page.waitForTimeout(9000);
+  const idle1 = (await state()).shots;
+  check(idle1 > idle0, `auto-fires at close enemies with no touch (${idle1 - idle0} shots)`);
 
   // death and retry
   await dbg('play', 1);
