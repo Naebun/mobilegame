@@ -1,0 +1,52 @@
+<!doctype html>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<body style="margin:0;background:#000;overflow:hidden"><canvas id="c" style="width:100vw;height:100vh;display:block"></canvas>
+<script type="module">
+// Look at the Cowgate: window.cam(x, z, yaw, pitch?, fov?, tile?) moves the camera; window.overview() frames the whole map.
+// Coordinates are tile units when tile is true (default), else world units. window.open(ids) opens doors.
+import * as THREE from '../../vendor/three.module.min.js';
+import { buildWorld } from '../../src/world.js';
+const T = 2;
+const r = new THREE.WebGLRenderer({ canvas: document.getElementById('c'), antialias: true });
+r.setPixelRatio(1);
+r.setSize(innerWidth, innerHeight, false);
+const world = buildWorld();
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(world.fog.colour);
+scene.fog = new THREE.Fog(world.fog.colour, world.fog.near, world.fog.far);
+scene.add(world.group);
+scene.add(new THREE.HemisphereLight(world.ambient.sky, world.ambient.ground, world.ambient.intensity));
+const cam = new THREE.PerspectiveCamera(90, innerWidth / innerHeight, 0.05, 300);
+const torch = new THREE.PointLight(0xffd8a8, 6, 12, 1.6); // stand-in for the integrator's camera light
+cam.add(torch);
+scene.add(cam);
+cam.rotation.order = 'YXZ';
+let time = 3.3;
+let topMode = false;
+function draw() {
+  world.update(0, time);
+  r.render(scene, cam);
+}
+window.world = world;
+window.cam = (x, z, yaw = 0, pitch = 0, fov = 90, tile = true) => {
+  topMode = false;
+  cam.fov = fov; cam.aspect = innerWidth / innerHeight; cam.updateProjectionMatrix();
+  cam.position.set(tile ? (x + 0.5) * T : x, 1.65, tile ? (z + 0.5) * T : z);
+  cam.rotation.set(pitch, yaw, 0);
+  torch.visible = true;
+  draw();
+};
+window.overview = (cx = 18, cz = 24, h = 62, fov = 60) => {
+  topMode = true;
+  scene.fog = null;
+  cam.fov = fov; cam.aspect = innerWidth / innerHeight; cam.updateProjectionMatrix();
+  cam.position.set(cx * T, h, cz * T);
+  cam.rotation.set(-Math.PI / 2, 0, 0);
+  // hide the ceiling for the overview: it is the plaster mesh (second last textured mesh) -> use renderOrder trick
+  world.group.traverse((o) => { if (o.isMesh && o.material.map && o.userData.ceil) o.visible = false; });
+  draw();
+};
+window.openDoors = (ids) => { ids.forEach((id) => world.setDoorOpen(id, true)); world.update(1, time); draw(); };
+window.setTime = (t) => { time = t; draw(); };
+draw();
+</script>

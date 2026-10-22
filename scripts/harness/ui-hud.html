@@ -1,0 +1,81 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HUD harness</title>
+<body style="margin:0;background:#000;overflow:hidden"><canvas id="c" style="width:100vw;height:100vh;display:block"></canvas>
+<script type="module">
+import { layout, drawPlayHud } from '../../src/hud.js';
+import { drawBackdrop } from './ui-backdrop.js';
+
+const canvas = document.getElementById('c');
+const dpr = window.devicePixelRatio || 1;
+const W = innerWidth;
+const H = innerHeight;
+canvas.width = W * dpr;
+canvas.height = H * dpr;
+const ctx = canvas.getContext('2d');
+ctx.scale(dpr, dpr);
+
+// safe areas: pass ?safe=1 to simulate a notched phone, or let show() decide
+const view = { w: W, h: H, dpr, safe: { top: 0, bottom: 0 } };
+
+const WEAPONS = [
+  { id: 'pistol', name: 'Bass Pistol', owned: true, active: false },
+  { id: 'shotgun', name: 'Subwoofer Shotgun', owned: true, active: true },
+  { id: 'smg', name: 'Tweeter SMG', owned: false, active: false },
+  { id: 'launcher', name: 'Reverb Launcher', owned: false, active: false },
+];
+
+function base() {
+  return {
+    t: 1.3,
+    health: 100, maxHealth: 100, hurt: 0, damageDirs: [],
+    weapon: { id: 'shotgun', name: 'Subwoofer Shotgun', clip: 6, clipSize: 6, reload: null },
+    weapons: WEAPONS.map((w) => ({ ...w })),
+    hitMarker: 0, headshot: false, toast: null, banner: null,
+    objective: 'Clear the cloakroom', enemiesLeft: 2, areaName: 'THE COWGATE: CLOAKROOM',
+    boss: null, score: 1250, timeSec: 83, debugMode: false,
+    move: { active: false, nx: 0, ny: 0 }, look: { active: false, nx: 0, ny: 0 }, firing: false,
+  };
+}
+
+const VARIANTS = {
+  full: () => base(),
+  low: () => ({ ...base(), health: 22, hurt: 0.85, damageDirs: [{ bearing: 2.4, t: 0.8 }] }),
+  reload: () => { const h = base(); h.weapon = { ...h.weapon, clip: 0, reload: 0.55 }; return h; },
+  empty: () => { const h = base(); h.weapon = { ...h.weapon, clip: 0 }; return h; },
+  boss: () => ({ ...base(), boss: { name: 'THE BOUNCER', hp: 34, maxHp: 50 }, objective: 'Defeat the bouncer', areaName: 'THE COWGATE: BACKSTAGE', enemiesLeft: 3, toast: { text: 'Not in those trainers.', t: 2 } }),
+  arcs: () => ({ ...base(), hurt: 0.4, damageDirs: [{ bearing: 0, t: 1 }, { bearing: Math.PI / 2, t: 0.8 }, { bearing: Math.PI, t: 0.6 }, { bearing: -Math.PI / 2, t: 0.4 }, { bearing: 0.8, t: 0.9 }] }),
+  fire: () => ({ ...base(), firing: true, move: { active: true, nx: 0.5, ny: -0.8 }, look: { active: true, nx: 0.45, ny: -0.3 }, hitMarker: 0.8, weapon: { id: 'shotgun', name: 'Subwoofer Shotgun', clip: 2, clipSize: 6, reload: null } }),
+  head: () => ({ ...base(), firing: true, hitMarker: 0.9, headshot: true, look: { active: true, nx: -0.2, ny: 0.4 } }),
+  debug: () => ({ ...base(), debugMode: true, health: 200, maxHealth: 200, enemiesLeft: 0, objective: 'Head into the club', areaName: 'THE COWGATE: STAIRWELL' }),
+  banner: () => ({ ...base(), banner: { title: 'AREA CLEAR', sub: 'The cloakroom is quiet. Nobody tell the coats.', t: 1.6, max: 2.4 }, enemiesLeft: 0 }),
+  long: () => ({
+    ...base(),
+    areaName: 'THE COWGATE: THE VERY LONG AND SPRAWLING VIP LOUNGE EXTENSION',
+    objective: 'Clear the VIP lounge extension and then somehow find the key card',
+    weapon: { id: 'launcher', name: 'Reverb Launcher Mk II Deluxe', clip: 128, clipSize: 128, reload: null },
+    score: 123456789, timeSec: 7384, toast: { text: 'A very long toast message that really should be shrunk to fit the phone', t: 2 },
+  }),
+  nulls: () => ({ health: 50, maxHealth: 100, weapon: null, weapons: null, boss: null, toast: null, banner: null, damageDirs: null, objective: '', areaName: '' }),
+};
+
+// show('low'), show('low:bright'), show('low:dark:safe') ; the safe flag simulates a notched phone
+window.show = (spec = 'full') => {
+  const [name, tone = 'dark', safe] = spec.replace(/^hud-/, '').split(':');
+  view.safe = safe === 'safe' ? { top: 47, bottom: 34 } : { top: 0, bottom: 0 };
+  ctx.clearRect(0, 0, W, H);
+  drawBackdrop(ctx, W, H, tone);
+  drawPlayHud(ctx, view, (VARIANTS[name] || VARIANTS.full)());
+  if (location.search.includes('layout')) {
+    const L = layout(view);
+    ctx.lineWidth = 1;
+    for (const k of ['moveHit', 'lookHit', 'reloadHit', 'swapHit']) {
+      ctx.strokeStyle = 'rgba(0,255,0,0.7)';
+      ctx.strokeRect(L[k].x, L[k].y, L[k].w, L[k].h);
+    }
+  }
+  return { layout: layout(view) };
+};
+window.show('full');
+</script>

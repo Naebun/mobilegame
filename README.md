@@ -1,57 +1,82 @@
 # Freddie's Last Set
 
-A portrait-mode horror shooter for the phone browser, set in Edinburgh. Freddie is a DJ, the night is full of the modern undead (stag dos, hen dos, tour groups, buskers), and his speaker cannon is the only thing between him and dawn. Plain HTML, CSS and JavaScript on a `<canvas>`. No build step, no framework, no backend.
+A first-person 3D horror shooter for the phone browser, set in a basement club in Edinburgh. Freddie is a DJ,
+the club is full of hostile robots, and his speaker weapons are the only way out. Three.js on WebGL, plain ES
+modules, no build step for development, no backend.
 
-**Campaign:** five levels (the Cowgate, the Royal Mile, the Grassmarket, Princes Street Gardens, Arthur's Seat). Survive until dawn, then a boss arrives. Beat it, pick one of three upgrades, move on. Progress is saved on the device, so CONTINUE works after closing the tab.
+## The game
 
-**Debug mode:** a toggle on the home screen for testing. Freddie fires twice as fast, deals twice the damage and has twice the health. Debug runs never touch your saved progress or best score, and a DEBUG MODE badge shows during play. It exists only to help test. The game is balanced for normal mode.
+Level 1 is the Cowgate: a real brick-and-stone basement club, played as one linear route through six areas
+(stairwell, cloakroom, dance floor, bar, VIP corridor, backstage). Every robot is placed in the level in advance and
+wakes when it notices Freddie; a robot that dies stays dead. Clear every robot in an area and the door out unlocks.
+Beat the Bouncer at the end and walk out to finish the level.
 
-**Flow:** home screen, then a controls screen, then the level intro. The run starts only when the player presses START GAME on the controls screen. Retrying a level or restarting from the end screens skips it.
+- **Enemies:** "Dr Pepper" robots only fight in melee. "Wray and Nephew" robots throw bottles. The Bouncer is a big
+  melee brute.
+- **Weapons:** found on the floor, each different. Bass Pistol (accurate, starting weapon), Subwoofer Shotgun
+  (pellets and knockback), Tweeter SMG (fast, spread grows), Reverb Launcher (explosive).
+- **Ammo:** unlimited, but each clip is limited. Reloading is automatic when the clip empties, or press RELOAD.
+- **Headshots** do double damage. There is no aim assist.
 
-**Controls:** left thumb moves, right thumb aims and fires (WASD works on desktop, with the mouse on the right half of the screen to aim).
+## Controls
+
+Two grey boxes on screen. **Left box:** drag to move. **Right box:** drag to aim; while a thumb is down in it,
+the weapon fires on its own. **RELOAD** sits under the right box and **SWAP** (next weapon) under the left box.
+On a desktop: WASD to move, arrow keys to look, space to fire, R to reload, Q to swap.
+
+## Flow
+
+Home screen, then a controls screen, then the level intro. The run starts only when START GAME is pressed on the
+controls screen.
+
+**Debug mode** (toggle on the home screen) is a testing aid: Freddie fires twice as fast, deals twice the damage and
+has twice the health. Scores are not recorded in debug mode, and a DEBUG MODE badge shows during play. The game is
+balanced for normal mode only.
 
 ## Layout
 
 | Path | Purpose |
 | --- | --- |
-| `index.html` | Page shell, mobile meta tags |
-| `src/engine.js` | Canvas sizing (DPR-aware), fixed 60 Hz update loop, multi-touch input, safe-area insets, pause on tab hide |
-| `src/game.js` | Rules and flow: modes (title, intro, play, clear, upgrade, dead, win), spawning, bosses, collisions, HUD, menus, saving |
-| `src/levels.js` | All content as data: enemies, bosses, the five levels, upgrades, jokes. Tune the game here |
-| `src/draw.js` | Flat-vector drawing: floors, obstacles, enemies, bosses, Freddie, title skyline |
-| `src/audio.js` | Web Audio synthesis: beat-synced music loop and all sound effects, no audio files |
-| `src/main.js` | Wires the two together, registers the service worker |
-| `sw.js`, `manifest.webmanifest` | Offline fallback and "Add to Home Screen" support |
-| `scripts/serve.mjs` | Dev server (no dependencies) |
-| `scripts/smoke.mjs` | Headless phone-viewport check with screenshot |
+| `index.html`, `src/style.css` | Page shell: a WebGL canvas under a transparent 2D canvas for the HUD |
+| `src/engine.js` | Loop, canvas sizing, multi-touch input, safe-area insets |
+| `src/game3d.js` | State machine, player, weapons and clips, robot AI, projectiles, areas and doors, renderer |
+| `src/data.js` | Weapons, enemies, level text and jokes. Tune the game here |
+| `src/world.js` | The level: procedural brick, stone and timber, collision, line of sight, path finding |
+| `src/models.js` | Robots, weapon models, pickups and projectiles |
+| `src/hud.js`, `src/screens.js` | The 2D layer: control boxes, HUD, title, controls, intro, death and completion screens |
+| `src/audio.js` | Web Audio synthesis: music loop and every sound effect, no audio files |
+| `src/consts.js`, `src/draw.js` | Shared constants and 2D helpers |
+| `vendor/three.module.min.js` | three.js r160 (MIT) |
+| `docs/fps-design.md` | The module contract the first-person build was made against |
 
 ## Run locally
 
 ```
-npm start            # http://localhost:8080, also prints a LAN address
+npm start            # http://localhost:8080, also prints a LAN address for testing on a phone
 ```
-
-Open the LAN address on a phone on the same Wi-Fi to test on the device.
 
 ## Play on your phone from anywhere
 
-The workflow in `.github/workflows/pages.yml` publishes the site to GitHub Pages on every push to `main`.
-One-off setup: repository Settings, Pages, Source: **GitHub Actions**. The URL is `https://<owner>.github.io/mobilegame/`.
-Then use Share, Add to Home Screen for a full-screen launch.
-
-Pages on a private repository needs a paid GitHub plan. If that applies, make the repo public or host the folder elsewhere (Netlify, Cloudflare Pages).
+`.github/workflows/pages.yml` publishes the site to GitHub Pages on every push to `main`. The URL is
+`https://naebun.github.io/mobilegame/`. Share, Add to Home Screen gives a full-screen launch.
 
 ## Play it inside Claude
 
 ```
-npm run build:artifact       # bundles everything into dist/artifact.html (gitignored)
+npm run build:artifact       # bundles everything, three.js included, into dist/artifact.html (gitignored)
 ```
 
-Publish that file as a Claude Artifact and it opens in the Claude app. It is a single self-contained file, so the service worker is skipped there. Saved progress lives in that artifact's own browser storage.
+Publish that file as a Claude Artifact. It is one self-contained file, so the service worker is skipped there.
 
-## Smoke test
+## Tests and tools
 
 ```
-npm install                  # first time only; set CHROMIUM_PATH to reuse an installed Chromium
-npm run smoke -- ./shots     # plays every level and boss through the ?test hook, screenshots land in ./shots (gitignored)
+npm run smoke -- ./shots     # headless Chromium with software WebGL and synthetic multi-touch; screenshots to ./shots
+npm run sim                  # headless bot plays the real game logic: is the level winnable, how much damage
+node scripts/harness/world-check.mjs     # level geometry, collision, rays, flow field (thousands of assertions)
+node scripts/harness/models-check.mjs    # every robot pose, every model
+node scripts/harness/ui-check.mjs        # HUD and screens at extreme inputs and view sizes
+node scripts/shot.mjs <page> <out.png>   # screenshot any page with WebGL, for visual checks
 ```
+
+Software WebGL runs at a few frames per second, so the smoke test waits for conditions instead of fixed times.

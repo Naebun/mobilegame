@@ -1,24 +1,38 @@
 # Freddie's Last Set
 
-Portrait top-down horror shooter set in Edinburgh. Lead character: Freddie, a DJ. Dark comedy tone, Scottish voice but light on dialect. Enemies are the modern undead (stag/hen parties, tourists, buskers). Five levels at real locations, each survived to dawn then a boss, with an upgrade pick between levels. Flat vector art, all audio synthesised (no asset files), no multiplayer or backend. Twin virtual sticks: left moves, right aims and auto-fires.
-
-Mobile-first web game. Vanilla JS (ES modules) on a 2D canvas. No bundler, no runtime dependencies. Keep it that way unless there is a real need.
+First-person 3D horror shooter, phone browser, set in an Edinburgh basement club. Dark comedy tone, light Scottish
+voice. Portrait. Three.js (vendored in `vendor/`), plain ES modules, no bundler for development, no backend.
+Level 1 only for now. Read `README.md` for the layout and `docs/fps-design.md` for the module contract.
 
 ## Conventions
-- Game code goes in `src/`; engine concerns (loop, input, canvas) stay in `engine.js`, game logic in `game.js` or new modules it imports.
-- Update with the fixed `dt` passed in; never use wall-clock time in `update`. Render only reads state.
-- Draw in CSS pixels (`view.w`, `view.h`). The engine applies the DPR transform.
-- Input is pointer events only (works for touch and mouse). Touch targets at least 44px.
-- Respect safe areas (notches); use `env(safe-area-inset-*)` for any DOM UI.
-- New files under `src/` or `assets/` must be added to `ASSETS` in `sw.js` and, for new top-level paths, to the "Stage site" step in `.github/workflows/pages.yml`.
-- Test on a phone-sized viewport (390x844) before calling something done: `npm run smoke`.
-- British English in comments and docs.
-- Audio: only call `audio.unlock()` from input handlers (browsers block it otherwise). Visuals that follow the music read `audio.beat()`.
-- `?test` in the URL exposes the game module as `window.__game` (used by the smoke test).
-- Content changes (new enemy, boss, level, upgrade, joke) belong in `src/levels.js`; only add code to `game.js`/`draw.js` for new behaviour. A new enemy type also needs an `ACCESSORY` entry in `draw.js`.
-- Menu buttons come from `buttons(view)` in `game.js`, shared by hit testing and drawing. Do not hard-code button rectangles elsewhere.
-- `window.__game.testHook('play', levelIndex | 'boss' | 'killboss' | 'title' | 'buttons')` (needs `?test` in the URL) jumps around the campaign. It sets hp to 999, so never judge lighting from those screenshots.
-- Progress is stored under `mobilegame.save` and `mobilegame.best` in localStorage. Wrap every access in try/catch.
-- Current focus is level 1 only. Levels 2 to 5 are deliberately parked: do not change them until asked. The record of what is deferred, and why, is in `ROADMAP.md`.
-- Debug mode (home-screen toggle, `S.debugMode` in `game.js`) gives Freddie 2x fire rate, 2x damage, 2x health through `DEBUG_MULT` in `stats()`. Never balance against it: all tuning is for normal mode. Debug runs must not write the save or best score. It is separate from the `?test` hook, which is for automated tests.
-- Modes: title, controls, intro, play, clear, upgrade, dead, win. NEW GAME and CONTINUE on the title go to `controls` first (`S.pendingStart` remembers which); only START GAME begins the run. If you change the controls, update `drawControls` in `game.js` so the screen stays true.
+- Match the surrounding code: 2-space indent, single quotes, semicolons, short comments that say why. British English.
+- `world.js` and `models.js` are procedural only: geometry, flat colours and generated `THREE.DataTexture`s. No image
+  files, no canvas textures, no DOM access, so they run under plain Node (used by the headless tests).
+- Look of the 3D world: gritty and real. Exposed brick, stone, timber, plaster, iron, warm tungsten light. Not
+  sci-fi: no neon trim strips, no glowing panels. Neon is limited to a couple of classic bar signs. The 2D UI keeps
+  its neon pink and cyan.
+- Mobile performance: share geometries and materials, merge static geometry (about 30 draw calls for the level),
+  at most 4 point lights in the world plus one on the camera, no shadows, pixel ratio capped at 1.5.
+- Content and tuning live in `src/data.js`. Enemies: "Dr Pepper" robots are melee only, "Wray and Nephew" robots can
+  shoot. These are real brand names used in text only (no logos, no packaging in the models); keep it that way.
+- Controls: two grey boxes (move left, aim right). A thumb in the right box auto-fires. There is no aim assist.
+  Ammo is unlimited, clips are not; reload is automatic when empty or via RELOAD. Button taps are read from press
+  events, not live touches, so they work at any frame rate. `hud.layout(view)` is the single source of truth for the
+  box and button rectangles.
+- Menu buttons come from `screens.buttons(mode, view, state)`, used for both drawing and hit testing.
+- NEW GAME goes to the controls screen first; only START GAME begins the run.
+
+## Balance rule
+Debug mode (home-screen toggle, `DEBUG_MULT` in `game3d.js`) gives Freddie 2x fire rate, 2x damage and 2x health.
+**Never balance against it.** All tuning is for normal mode. Debug runs must not write the best score.
+
+## Testing
+- `npm run smoke -- <dir>` is the end-to-end test (needs the `?test` hook, `window.__game`, which the page exposes only
+  with `?test` in the URL). It waits for conditions: software WebGL is slow.
+- `npm run sim` plays the level with bots in plain Node. It is a proxy for a person, not a replacement: use it to check
+  the level is winnable and to compare changes, then ask for a human playtest.
+- Look at screenshots (`scripts/shot.mjs`, `scripts/harness/level-tour.mjs`) for anything visual. Do not judge the 3D
+  look from logs.
+
+## Current state
+See `ROADMAP.md`.

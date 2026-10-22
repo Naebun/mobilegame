@@ -1,0 +1,11 @@
+<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><body style="margin:0;background:#000"><canvas id="c" style="width:100vw;height:100vh;display:block"></canvas>
+<script type="module">
+import * as THREE from '../../vendor/three.module.min.js';
+const r = new THREE.WebGLRenderer({ canvas: document.getElementById('c'), antialias: true });
+r.setSize(innerWidth, innerHeight, false);
+const s = new THREE.Scene(); s.background = new THREE.Color(0x05030a);
+const cam = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.05, 50); cam.position.set(0, 1.6, 4);
+s.add(new THREE.AmbientLight(0xffffff, 1));
+const b = new THREE.Mesh(new THREE.BoxGeometry(1, 2, 1), new THREE.MeshLambertMaterial({ color: 0x7a1020 })); b.position.set(0, 1, -2); s.add(b);
+r.render(s, cam);
+</script>

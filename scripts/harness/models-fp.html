@@ -1,0 +1,49 @@
+<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><body style="margin:0;background:#000"><canvas id="c" style="width:100vw;height:100vh;display:block"></canvas>
+<script type="module">
+import { THREE, M, setup } from './models-harness.js';
+const S = setup({ fov: 70, fogNear: 4, fogFar: 22 });
+const { renderer, scene, camera } = S;
+// Backdrop: a far wall with neon so the viewmodels are judged against something game-like.
+const wall = new THREE.Mesh(new THREE.PlaneGeometry(30, 8), new THREE.MeshLambertMaterial({ color: 0x2a2236 }));
+wall.position.set(0, 3, -9);
+scene.add(wall);
+const strip = new THREE.Mesh(new THREE.BoxGeometry(30, 0.08, 0.05), new THREE.MeshBasicMaterial({ color: 0xff2e93 }));
+strip.position.set(0, 2.2, -8.9);
+scene.add(strip);
+S.lights[0].position.set(-2, 2.5, -4);
+S.lights[1].position.set(2, 2.5, -5);
+S.lights[2].position.set(0, 2.8, -2);
+// show({ off:[x,y,z], rot:[x,y,z], ids, flash }) renders each weapon in its own quarter of the screen
+window.show = (cfg = {}) => {
+  const off = cfg.off || [0.28, -0.26, -0.5];
+  const ids = cfg.ids || M.WEAPON_IDS;
+  const cols = cfg.cols || 2;
+  const rows = Math.ceil(ids.length / cols);
+  const W = innerWidth;
+  const H = innerHeight;
+  renderer.setScissorTest(true);
+  renderer.setClearColor(0x05030a);
+  renderer.clear();
+  camera.near = 0.05;
+  camera.aspect = W / cols / (H / rows);
+  camera.updateProjectionMatrix();
+  ids.forEach((id, i) => {
+    const w = M.makeWeaponModel(id);
+    w.position.set(...off);
+    if (cfg.rot) w.rotation.set(...cfg.rot);
+    camera.add(w);
+    if (cfg.flash) {
+      const f = M.makeMuzzleFlash();
+      f.position.copy(w.getObjectByName('muzzle').position);
+      w.add(f);
+    }
+    const x = (i % cols) * (W / cols);
+    const y = (rows - 1 - Math.floor(i / cols)) * (H / rows);
+    renderer.setViewport(x, y, W / cols, H / rows);
+    renderer.setScissor(x, y, W / cols, H / rows);
+    renderer.render(scene, camera);
+    camera.remove(w);
+  });
+};
+window.show();
+</script>
