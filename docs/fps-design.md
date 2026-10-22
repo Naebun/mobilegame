@@ -22,11 +22,13 @@ RELOAD button sits under the right box and a small SWAP (next weapon) button und
 
 - Plain ES modules, no bundler for development. three.js r160 is vendored at `vendor/three.module.min.js`. Import it
   as `import * as THREE from '../vendor/three.module.min.js';` from files in `src/`.
-- Everything is procedural: geometry and flat colours only. **No images, no canvas textures, no DOM access** in
+- Everything is procedural: geometry, flat colours and **procedurally generated `THREE.DataTexture`s** (a typed array
+  filled in code: brick, stone, boards). **No image files, no canvas textures, no DOM access** in
   `world.js` or `models.js`, so they also run under plain Node (used for headless tests). `hud.js` and `screens.js`
   only touch the 2D canvas context they are given.
-- Look: low-poly, flat-shaded, neon on dark, matching the existing 2D game (see `src/draw.js` for the palette and
-  the 2D helpers). Use `MeshLambertMaterial` for lit surfaces and `MeshBasicMaterial` for glowing parts (neon strips,
+- Look (UPDATED, the user asked for this): a gritty, real, old Edinburgh basement club. Exposed red and brown brick,
+  stone, timber, plaster, iron, warm tungsten light. NOT futuristic sci-fi: no neon-lined corridors, no glowing trim
+  strips, no clean panels. The 2D UI keeps its neon pink and cyan accents (`src/draw.js`), the 3D world does not. Use `MeshLambertMaterial` for lit surfaces and `MeshBasicMaterial` for glowing parts (neon strips,
   eyes, screens). British English in comments and any visible text. No em dashes in visible text.
 - Mobile performance matters. Share geometries and materials between instances (module-level caches). Keep dynamic
   lights few (see world.js). No shadows. No post-processing.
@@ -100,8 +102,9 @@ Rendering requirements: walls, floor and ceiling are merged into a handful of me
 `BufferGeometry` with only the faces that can be seen; **at most about 40 draw calls for all static level
 geometry**). Dynamic lights: **at most 4 PointLights in the whole world group** (the integrator adds one more on the
 camera). Neon strips, light fittings, screens and signs use `MeshBasicMaterial`, so they glow without costing lights.
-Walls need visible character: a dado/skirting band, neon trim, per-tile colour variation by hash, speaker stacks,
-bar, pillars, hanging lamps, banners. The level must read as a real room at a glance, not a grey box.
+Walls are REAL BRICK (a generated brick DataTexture with mortar, per-brick colour variation, grime), with stone,
+whitewashed or painted sections, brick pillars and arches, timber beams and iron pipes. Neon is limited to two or three
+classic bar signs. Props are physical: wooden bar, speaker cabinets, DJ booth, crates, coat rail. The level must read as a real room at a glance, not a grey box.
 
 Level content (the Cowgate, a basement nightclub in Edinburgh, sticky floor and flashing lights). One linear route
 through six areas, start to finish, each separated from the next by a door. Corridors about 3 tiles wide, rooms

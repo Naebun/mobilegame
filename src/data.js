@@ -27,15 +27,15 @@ export const WEAPON_ORDER = ['pistol', 'shotgun', 'smg', 'launcher'];
 // Dr Pepper robots only ever fight in melee. Wray and Nephew robots can shoot. The Bouncer is a big Dr Pepper variant.
 export const ENEMY_DEFS = {
   drpepper: {
-    name: 'DR PEPPER BOT', hp: 60, speed: 3.4, ranged: false, reach: 1.8, windup: 0.55, swing: 0.25, cooldown: 1.1,
+    name: 'DR PEPPER BOT', hp: 60, speed: 3.4, ranged: false, reach: 1.8, windup: 0.55, swing: 0.4, cooldown: 1.1,
     damage: 12, score: 100, wakeRange: 16,
   },
   wray: {
     name: 'WRAY AND NEPHEW BOT', hp: 45, speed: 2.6, ranged: true, damage: 10, score: 150, wakeRange: 18,
-    shotInterval: [1.9, 2.8], aim: 0.55, shoot: 0.3, projSpeed: 11, keepMin: 7, keepMax: 13, range: 24,
+    shotInterval: [1.9, 2.8], aim: 0.55, shoot: 0.35, projSpeed: 11, keepMin: 7, keepMax: 13, range: 24,
   },
   bouncer: {
-    name: 'THE BOUNCER', hp: 450, speed: 3.3, ranged: false, reach: 2.7, windup: 0.8, swing: 0.3, cooldown: 1.5,
+    name: 'THE BOUNCER', hp: 450, speed: 3.3, ranged: false, reach: 2.7, windup: 0.8, swing: 0.4, cooldown: 1.5,
     damage: 28, score: 1000, wakeRange: 22, quote: 'Not in those trainers.',
   },
 };

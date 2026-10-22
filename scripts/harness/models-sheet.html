@@ -1,0 +1,24 @@
+<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><body style="margin:0;background:#000"><canvas id="c" style="width:100vw;height:100vh;display:block"></canvas>
+<script type="module">
+import { THREE, M, setup, frame } from './models-harness.js';
+const S = setup();
+// layout({ cells: [{ kind, state, t, k, yaw }], cols, cellW, cellH, yaw, camY })
+window.layout = (cfg) => {
+  S.content.clear();
+  const { cells, cols = 3, cellW = 2.6, cellH = 3.6, yaw = 0, camY = 0.4 } = cfg;
+  const rows = Math.ceil(cells.length / cols);
+  cells.forEach((c, i) => {
+    const r = M.makeRobot(c.kind);
+    r.setPose(c.state || 'idle', c.t ?? 1, c.k ?? 0);
+    r.group.rotation.y = Math.PI + (c.yaw ?? yaw);
+    r.group.position.set((i % cols - (cols - 1) / 2) * cellW, 0, -Math.floor(i / cols) * 0);
+    // rows stack upward so a portrait camera can see them all from the front
+    r.group.position.y = (rows - 1 - Math.floor(i / cols)) * cellH;
+    if (c.flash) r.flash(true);
+    S.content.add(r.group);
+  });
+  frame(S.camera, cols * cellW, rows * cellH, 1.02, camY);
+  S.render();
+};
+window.layout({ cells: ['drpepper', 'wray', 'bouncer'].map((kind) => ({ kind })), cols: 3, cellW: 3.0, cellH: 3.6, yaw: 0.35 });
+</script>

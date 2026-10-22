@@ -15,6 +15,7 @@ import * as screens from './screens.js';
 import { WEAPONS, WEAPON_ORDER, ENEMY_DEFS, PLAYER, LEVEL, AREA_HINTS, DEATH_LINES } from './data.js';
 
 const TAU = Math.PI * 2;
+const HURT_DUR = 0.38; // matches the hurt animation length in models.js
 const BEST_KEY = 'mobilegame.fps.best';
 const DEBUG_KEY = 'mobilegame.debugMode';
 // Debug mode is a testing aid for Freddie only. It must never feed back into balance: enemies, weapons' base stats,
@@ -140,7 +141,7 @@ function initRender(view) {
   const sun = new THREE.DirectionalLight(0xffffff, 0.9);
   sun.position.set(0.5, 1, 0.6);
   wscene.add(sun);
-  const wcam = new THREE.PerspectiveCamera(60, view.w / view.h, 0.02, 10);
+  const wcam = new THREE.PerspectiveCamera(70, view.w / view.h, 0.02, 10);
   const wroot = new THREE.Group();
   wscene.add(wroot);
   const models = {};
@@ -272,7 +273,7 @@ function damageEnemy(e, amount, head, fromX, fromZ, knock) {
   if (e.dead) return;
   e.hp -= amount;
   e.flashT = 0.08;
-  e.hurtT = 0.18;
+  e.hurtT = HURT_DUR;
   if (e.state === 'idle') {
     wake(e, 0);
     wakeArea(e.areaId, e);
@@ -394,7 +395,7 @@ function updateEnemy(e, dt) {
         moving = true;
       }
       e.robot.setPose(moving ? 'walk' : 'idle', e.animT, 0);
-      if (e.hurtT > 0) e.robot.setPose('hurt', e.animT, 1 - e.hurtT / 0.18);
+      if (e.hurtT > 0) e.robot.setPose('hurt', HURT_DUR - e.hurtT, 1 - e.hurtT / HURT_DUR);
       if (los && d < def.range && e.cool <= 0 && e.stateT > 0.4) {
         e.state = 'aim';
         e.stateT = 0;
@@ -438,7 +439,7 @@ function updateEnemy(e, dt) {
         moving = true;
       }
       e.robot.setPose(moving ? 'walk' : 'idle', e.animT, 0);
-      if (e.hurtT > 0) e.robot.setPose('hurt', e.animT, 1 - e.hurtT / 0.18);
+      if (e.hurtT > 0) e.robot.setPose('hurt', HURT_DUR - e.hurtT, 1 - e.hurtT / HURT_DUR);
       if (d < def.reach && e.cool <= 0 && e.stateT > 0.2) {
         e.state = 'windup';
         e.stateT = 0;
@@ -453,7 +454,7 @@ function updateEnemy(e, dt) {
       }
     } else if (e.state === 'swing') {
       e.robot.setPose('swing', e.stateT, clamp(e.stateT / def.swing, 0, 1));
-      if (!e.acted && e.stateT >= def.swing * 0.4) {
+      if (!e.acted && e.stateT >= def.swing * 0.45) {
         e.acted = true;
         // the player can dodge during the wind-up by stepping out of reach
         if (d < def.reach + 0.7) hurtPlayer(def.damage, e.x, e.z, true);
@@ -501,15 +502,26 @@ function fireBottle(e) {
   const dx = p.x - e.x;
   const dz = p.z - e.z;
   const d = Math.hypot(dx, dz) || 1;
-  const sx = e.x + (dx / d) * 0.7;
-  const sz = e.z + (dz / d) * 0.7;
+  let sx = e.x + (dx / d) * 0.7;
+  let sz = e.z + (dz / d) * 0.7;
+  let sy = 1.3;
+  if (R && e.robot.muzzle) {
+    const v = new THREE.Vector3();
+    e.robot.group.position.set(e.x, 0, e.z);
+    e.robot.group.rotation.y = e.yaw;
+    e.robot.group.updateMatrixWorld(true);
+    e.robot.muzzle.getWorldPosition(v);
+    sx = v.x;
+    sy = v.y;
+    sz = v.z;
+  }
   const mesh = makeProjectile('bottle');
-  mesh.position.set(sx, 1.3, sz);
+  mesh.position.set(sx, sy, sz);
   if (R) R.scene.add(mesh);
   const sp = e.def.projSpeed;
-  const dy = (EYE - 0.2 - 1.3) / d;
+  const dy = (EYE - 0.2 - sy) / d;
   S.projectiles.push({
-    owner: 'enemy', mesh, x: sx, y: 1.3, z: sz, vx: (dx / d) * sp, vy: dy * sp, vz: (dz / d) * sp,
+    owner: 'enemy', mesh, x: sx, y: sy, z: sz, vx: (dx / d) * sp, vy: dy * sp, vz: (dz / d) * sp,
     life: 4, damage: e.def.damage, spin: rand(0, TAU),
   });
   audio.spit();
@@ -1160,8 +1172,9 @@ function animateViewmodel(dt) {
   const reloading = p.reloadT > 0 ? 1 - p.reloadT / w.reload : 0;
   const dip = Math.sin(reloading * Math.PI);
   const sw = p.switchT / 0.25;
-  wroot.position.set(0.26 + bobX, -0.27 + bobY - dip * 0.22 - sw * 0.4, -0.5 + p.kick * 0.09);
-  wroot.rotation.set(p.kick * 0.22 + dip * 0.7, dip * -0.25, dip * 0.2);
+  const baseX = p.weapon === 'launcher' ? 0.05 : 0.07;
+  wroot.position.set(baseX + bobX, -0.2 + bobY - dip * 0.22 - sw * 0.4, -0.58 + p.kick * 0.09);
+  wroot.rotation.set(0.03 + p.kick * 0.22 + dip * 0.7, 0.07 + dip * -0.25, dip * 0.2);
   R.muzzleT = Math.max(0, R.muzzleT - dt);
   for (const id of WEAPON_ORDER) {
     flashes[id].visible = id === p.weapon && R.muzzleT > 0;
