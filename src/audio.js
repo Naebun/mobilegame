@@ -1,9 +1,9 @@
 // All sound is synthesised with Web Audio: no files to host or license.
 // unlock() must be called from a user gesture. Everything else is a no-op until the context runs.
 
-const BPM = 118;
-const SPB = 60 / BPM;
-const SIXTEENTH = SPB / 4;
+let SPB = 60 / 118;
+let SIXTEENTH = SPB / 4;
+let root = 0; // semitones the bass and drone are shifted by, set per level
 const BASS = { 0: 0, 3: 0, 6: 3, 8: 0, 10: 5, 14: -2 }; // step -> semitones above E2
 
 let ac = null;
@@ -93,7 +93,7 @@ function scheduleStep(t, s) {
   if (s % 4 === 2) noise(t, 0.05, 0.12, musicBus, { freq: 7000 });
   else if (intensity > 0.5 && s % 2 === 1) noise(t, 0.03, 0.06, musicBus, { freq: 8000 });
   if (s in BASS) {
-    const f = 82.4 * 2 ** (BASS[s] / 12);
+    const f = 82.4 * 2 ** ((BASS[s] + root) / 12);
     const o = ac.createOscillator();
     o.type = 'sawtooth';
     o.frequency.value = f;
@@ -111,8 +111,9 @@ function scheduleStep(t, s) {
   if (s === 0 && bar % 2 === 0) {
     // E and F together: a minor second, the unsettling bit
     const peak = 0.04 + intensity * 0.05;
-    osc('triangle', 164.8, t, 2.6, peak, musicBus, { attack: 1.4 });
-    osc('triangle', 174.6, t, 2.6, peak, musicBus, { attack: 1.4 });
+    const k = 2 ** (root / 12);
+    osc('triangle', 164.8 * k, t, 2.6, peak, musicBus, { attack: 1.4 });
+    osc('triangle', 174.6 * k, t, 2.6, peak, musicBus, { attack: 1.4 });
   }
 }
 
@@ -136,6 +137,13 @@ export function beat() {
   }
   const t = performance.now() / 1000; // before audio starts, keep the visuals alive
   return { pulse: Math.exp(-(t % SPB) * 7), count: Math.floor(t / SPB) };
+}
+
+// Each level is a little faster and in a different key.
+export function setLevel(i) {
+  SPB = 60 / (118 + i * 4);
+  SIXTEENTH = SPB / 4;
+  root = [0, -2, 3, 5, 7][i] ?? 0;
 }
 
 export function setMood(i, isMuffled) {
@@ -189,4 +197,29 @@ export function gameOver() {
   const t = ac.currentTime;
   osc('sawtooth', 220, t, 1.8, 0.4, sfxBus, { to: 30, attack: 0.01 });
   noise(t, 0.6, 0.3, sfxBus, { type: 'lowpass', freq: 800, to: 60 });
+}
+
+export function boom() {
+  if (!running()) return;
+  const t = ac.currentTime;
+  osc('sine', 110, t, 0.9, 0.6, sfxBus, { to: 28 });
+  noise(t, 0.5, 0.35, sfxBus, { type: 'lowpass', freq: 600, to: 60 });
+}
+
+export function whoosh() {
+  if (!running()) return;
+  const t = ac.currentTime;
+  noise(t, 0.4, 0.3, sfxBus, { type: 'bandpass', freq: 400, to: 2500 });
+}
+
+export function blip() {
+  if (!running()) return;
+  const t = ac.currentTime;
+  osc('square', 520, t, 0.07, 0.15, sfxBus, { to: 780 });
+}
+
+export function dawn() {
+  if (!running()) return;
+  const t = ac.currentTime;
+  [523.3, 659.3, 784, 1046.5].forEach((f, i) => osc('sine', f, t + i * 0.14, 1.2, 0.2, sfxBus, { attack: 0.03 }));
 }
