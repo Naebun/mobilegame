@@ -449,8 +449,8 @@ function drawSwap(ctx, b) {
 
 function drawAmmo(ctx, view, L, w, t) {
   // Between the two buttons: the gap between the boxes themselves is too narrow on a 360 px phone.
-  const gx0 = L.swapBtn.x + L.swapBtn.w + 4;
-  const gx1 = L.reloadBtn.x - 4;
+  const gx0 = L.swapBtn.x + L.swapBtn.w + 3;
+  const gx1 = L.reloadBtn.x - 3;
   const gw = Math.max(40, gx1 - gx0);
   const cx = (gx0 + gx1) / 2;
   const y = L.swapBtn.y;
@@ -477,8 +477,8 @@ function drawAmmo(ctx, view, L, w, t) {
       ctx.fill();
     }
   }
-  const name = fit(ctx, str(w && w.name).toUpperCase(), gw, 10.5, 800, 7.5);
-  outlined(ctx, name.str, cx, y + 34, name.size, 'rgba(34,211,238,0.95)', 'center', 800);
+  const name = fit(ctx, str(w && w.name), gw, 11, 700, 7.5);
+  outlined(ctx, name.str, cx, y + 34, name.size, 'rgba(34,211,238,0.95)', 'center', 700);
 }
 
 function drawHealth(ctx, view, h, top, t) {
