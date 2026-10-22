@@ -20,27 +20,27 @@ export const BOSSES = {
     colour: '#c2410c', abilities: { summon: { every: 5, count: 4, type: 'tourist' } },
   },
   bestman: {
-    name: 'THE BEST MAN', quote: 'Speech! SPEECH!', r: 36, hp: 80, speed: 50, score: 700,
+    name: 'THE BEST MAN', quote: 'Speech! SPEECH!', r: 36, hp: 90, speed: 50, score: 700,
     colour: '#1e3a8a',
     abilities: { charge: { every: 3.4, windup: 0.7, dur: 0.5, speed: 470 }, summon: { every: 8, count: 3, type: 'hen' } },
   },
   mascot: {
-    name: 'THE MASCOT', quote: 'Hug?', r: 44, hp: 105, speed: 40, score: 900,
+    name: 'THE MASCOT', quote: 'Hug?', r: 44, hp: 110, speed: 40, score: 900,
     colour: '#a16207',
-    abilities: { charge: { every: 5, windup: 0.9, dur: 0.6, speed: 400 }, ring: { every: 6, n: 12 } },
+    abilities: { charge: { every: 5, windup: 0.9, dur: 0.6, speed: 400 }, ring: { every: 6.5, n: 12 } },
   },
   headliner: {
-    name: 'THE HEADLINER', quote: "You've been a wonderful audience.", r: 42, hp: 160, speed: 48, score: 1500,
+    name: 'THE HEADLINER', quote: "You've been a wonderful audience.", r: 42, hp: 135, speed: 48, score: 1500,
     colour: '#6d28d9',
     abilities: {
       charge: { every: 4.5, windup: 0.7, dur: 0.55, speed: 450 },
-      ring: { every: 6.5, n: 14 },
-      summon: { every: 9, count: 4, type: 'hen' },
+      ring: { every: 7, n: 12 },
+      summon: { every: 10, count: 4, type: 'hen' },
     },
   },
 };
 
-// mix: [enemy type, weight, fraction of the night before it can appear]
+// mix: [enemy type, weight, fraction of the night before it can appear, optional max alive at once]
 // obstacles: [x fraction, y fraction, radius, kind] inside the playable area
 export const LEVELS = [
   {
@@ -57,9 +57,9 @@ export const LEVELS = [
     id: 'royalmile', name: 'THE ROYAL MILE',
     sub: 'Rain, cobbles and a walking tour that never ended.',
     line: 'Nobody paid for this tour. They are taking it anyway.',
-    clock: [105, 165], duration: 55, spawn: [2.4, 1.2], cap: 11, rain: true,
+    clock: [105, 165], duration: 55, spawn: [2.1, 1.0], cap: 13, rain: true,
     floor: { pattern: 'cobbles', base: '#0c0b12', stones: ['#272a3a', '#2e3245', '#222536'], wall: '#1d1f2c' },
-    mix: [['tourist', 8, 0], ['stag', 6, 0], ['busker', 4, 0.3]],
+    mix: [['tourist', 8, 0], ['stag', 6, 0], ['busker', 3, 0.4, 2]],
     obstacles: [[0.25, 0.25, 14, 'lamp'], [0.78, 0.5, 14, 'lamp'], [0.3, 0.72, 20, 'bin'], [0.72, 0.18, 20, 'bin']],
     boss: 'guide',
   },
@@ -67,9 +67,9 @@ export const LEVELS = [
     id: 'grassmarket', name: 'THE GRASSMARKET',
     sub: 'Stag dos, hen dos and a pub crawl that lost the plot.',
     line: 'Nobody has ever made it to the second pub.',
-    clock: [180, 240], duration: 60, spawn: [2.2, 1.1], cap: 13, rain: true,
+    clock: [180, 240], duration: 60, spawn: [1.9, 0.9], cap: 16, rain: true,
     floor: { pattern: 'cobbles', base: '#120d0a', stones: ['#3a2e28', '#43342d', '#33282a'], wall: '#2b2019' },
-    mix: [['stag', 8, 0], ['hen', 8, 0], ['tourist', 4, 0.2], ['busker', 3, 0.4]],
+    mix: [['stag', 8, 0], ['hen', 8, 0], ['tourist', 4, 0.2], ['busker', 3, 0.4, 2]],
     obstacles: [[0.22, 0.4, 14, 'lamp'], [0.8, 0.28, 20, 'bin'], [0.5, 0.52, 18, 'bin'], [0.75, 0.75, 14, 'lamp']],
     boss: 'bestman',
   },
@@ -77,20 +77,20 @@ export const LEVELS = [
     id: 'gardens', name: "PRINCES STREET GARDENS",
     sub: 'Pretty. Quiet. Surrounded.',
     line: 'The buskers have been dead for years. Nobody noticed.',
-    clock: [255, 300], duration: 65, spawn: [2.0, 1.0], cap: 15,
+    clock: [255, 300], duration: 65, spawn: [1.7, 0.85], cap: 18,
     floor: { pattern: 'grass', base: '#0b140f', tuft: '#1f3a28', path: '#2a2c33', wall: '#16241b' },
-    mix: [['tourist', 6, 0], ['busker', 6, 0], ['hen', 6, 0], ['stag', 4, 0], ['bouncer', 3, 0.4]],
-    obstacles: [[0.5, 0.45, 26, 'monument'], [0.15, 0.22, 24, 'tree'], [0.85, 0.7, 24, 'tree'], [0.82, 0.2, 14, 'lamp'], [0.18, 0.75, 14, 'lamp']],
+    mix: [['tourist', 6, 0], ['busker', 4, 0.2, 3], ['hen', 6, 0], ['stag', 5, 0], ['bouncer', 3, 0.4, 2]],
+    obstacles: [[0.5, 0.45, 26, 'monument'], [0.19, 0.22, 24, 'tree'], [0.81, 0.7, 24, 'tree'], [0.82, 0.2, 14, 'lamp'], [0.18, 0.75, 14, 'lamp']],
     boss: 'mascot',
   },
   {
     id: 'arthursseat', name: "ARTHUR'S SEAT",
     sub: 'Up we go. Dawn is coming. So is everyone.',
     line: 'Fifteen minutes to the summit. It was never fifteen minutes.',
-    clock: [315, 380], duration: 70, spawn: [1.8, 0.9], cap: 17,
+    clock: [315, 380], duration: 70, spawn: [1.6, 0.8], cap: 19,
     floor: { pattern: 'grass', base: '#0f1612', tuft: '#34503a', rock: true, wall: '#1d2a22' },
-    mix: [['stag', 6, 0], ['hen', 6, 0], ['tourist', 5, 0], ['busker', 5, 0.1], ['bouncer', 5, 0.3]],
-    obstacles: [[0.25, 0.3, 28, 'crag'], [0.75, 0.42, 30, 'crag'], [0.45, 0.72, 24, 'crag'], [0.85, 0.15, 22, 'crag']],
+    mix: [['stag', 6, 0], ['hen', 6, 0], ['tourist', 5, 0], ['busker', 4, 0.2, 3], ['bouncer', 5, 0.3, 3]],
+    obstacles: [[0.25, 0.3, 28, 'crag'], [0.75, 0.42, 30, 'crag'], [0.45, 0.66, 24, 'crag'], [0.81, 0.15, 22, 'crag']],
     boss: 'headliner',
   },
 ];
@@ -98,12 +98,12 @@ export const LEVELS = [
 // kind: 'rate' | 'twin' | ... ; max: how many times it can be taken
 export const UPGRADES = [
   { id: 'rate',   name: 'FASTER HANDS',  desc: 'Fire 22% faster. Fifteen years of practice, paying off.', max: 3 },
-  { id: 'twin',   name: 'TWIN DECKS',    desc: 'One extra blast per shot. Twice the bass, twice the fun.', max: 2 },
+  { id: 'twin',   name: 'TWIN DECKS',    desc: 'One extra blast per shot. Twice the bass, twice the fun.', max: 1 },
   { id: 'pierce', name: 'BASS BOOST',    desc: 'Blasts go through one more enemy. Like a Tuesday.', max: 2 },
-  { id: 'dmg',    name: 'DISTORTION',    desc: '+1 damage per blast. Turn it up until something breaks.', max: 2 },
+  { id: 'dmg',    name: 'DISTORTION',    desc: '+50% damage per blast. Turn it up until something breaks.', max: 2 },
   { id: 'hp',     name: 'CHIPPY SUPPER', desc: '+1 max heart. Deep-fried, naturally.', max: 2 },
-  { id: 'speed',  name: 'DANCING SHOES', desc: 'Move 12% faster. Mostly for running away.', max: 2 },
-  { id: 'torch',  name: 'PHONE TORCH',   desc: '25% more light. Finally, a use for it.', max: 2 },
+  { id: 'speed',  name: 'DANCING SHOES', desc: 'Move 15% faster. Mostly for running away.', max: 2 },
+  { id: 'torch',  name: 'PHONE TORCH',   desc: '30% more light. Finally, a use for it.', max: 2 },
 ];
 
 export const TOASTS = [

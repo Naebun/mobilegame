@@ -110,10 +110,10 @@ function stats() {
     interval: (BASE_INTERVAL * 0.78 ** u.rate) / m.fire,
     shots: 1 + u.twin,
     pierce: u.pierce,
-    dmg: (1 + u.dmg) * m.damage,
+    dmg: (1 + 0.5 * u.dmg) * m.damage,
     maxHp: (BASE_HP + u.hp) * m.health,
-    speed: BASE_SPEED * (1 + 0.12 * u.speed),
-    light: 1 + 0.25 * u.torch,
+    speed: BASE_SPEED * (1 + 0.15 * u.speed),
+    light: 1 + 0.3 * u.torch,
   };
 }
 
@@ -276,13 +276,27 @@ function clearLevel() {
   audio.dawn();
 }
 
-function openUpgrades() {
+// Three offers, always including at least one that makes Freddie hit harder, so bad luck on the draw
+// can never leave a player with nothing but defensive options.
+const OFFENCE = ['rate', 'twin', 'dmg', 'pierce'];
+
+function pickOffers() {
   const pool = UPGRADES.filter((u) => S.ups[u.id] < u.max);
   for (let i = pool.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [pool[i], pool[j]] = [pool[j], pool[i]];
   }
-  S.offers = pool.slice(0, 3);
+  const offence = pool.find((u) => OFFENCE.includes(u.id));
+  const offers = offence ? [offence, ...pool.filter((u) => u !== offence).slice(0, 2)] : pool.slice(0, 3);
+  for (let i = offers.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [offers[i], offers[j]] = [offers[j], offers[i]];
+  }
+  return offers;
+}
+
+function openUpgrades() {
+  S.offers = pickOffers();
   S.mode = 'upgrade';
 }
 
@@ -315,19 +329,20 @@ function spawnPoint(view, m) {
 
 function spawnEnemy(type, view, x, y) {
   const k = ENEMIES[type];
-  const hpScale = 1 + S.level * 0.12;
+  const hpScale = 1 + S.level * 0.18;
   if (x === undefined) ({ x, y } = spawnPoint(view, k.r + 30));
   const hp = Math.ceil(k.hp * hpScale);
   S.enemies.push({
-    type, x, y, kx: 0, ky: 0, r: k.r, hp, maxHp: hp, speed: k.speed * (1 + S.level * 0.035) * rand(0.9, 1.1),
+    type, x, y, kx: 0, ky: 0, r: k.r, hp, maxHp: hp, speed: k.speed * (1 + S.level * 0.05) * rand(0.9, 1.1),
     score: k.score, colour: k.colour, accent: k.accent, ai: k.ai, phase: rand(0, 6.28), ang: 0, flash: 0,
-    dead: false, boss: false, inside: false, shootT: rand(1, 2.2),
+    dead: false, boss: false, inside: false, shootT: rand(2, 3.2),
   });
 }
 
 function spawnFromMix(prog, view) {
   const L = LEVELS[S.level];
-  const mix = L.mix.filter((m) => prog >= m[2]);
+  // m[3], when set, caps how many of that type can be alive at once (ranged enemies pile up otherwise)
+  const mix = L.mix.filter((m) => prog >= m[2] && (m[3] === undefined || S.enemies.filter((e) => e.type === m[0]).length < m[3]));
   let roll = Math.random() * mix.reduce((s, m) => s + m[1], 0);
   let type = mix[0][0];
   for (const m of mix) {
@@ -547,7 +562,7 @@ function updatePlay(dt, input, view) {
       S.spawnTimer -= dt;
       if (S.spawnTimer <= 0 && S.enemies.length < L.cap) {
         spawnFromMix(prog, view);
-        S.spawnTimer = lerp(L.spawn[0], L.spawn[1], prog) / (1 + S.level * 0.08);
+        S.spawnTimer = lerp(L.spawn[0], L.spawn[1], prog) / (1 + S.level * 0.12);
       }
     }
   }
@@ -791,8 +806,8 @@ function updateEnemy(e, p, dt, view, a) {
       vy = (ny * dir + nx * strafe) * e.speed;
       e.shootT -= dt;
       if (e.shootT <= 0 && e.inside) {
-        e.shootT = rand(2.4, 3.2);
-        fireNote(e.x, e.y, e.ang, 150);
+        e.shootT = rand(3, 4.2);
+        fireNote(e.x, e.y, e.ang, 140, 3.2);
       }
     } else {
       const wob = Math.sin(S.t * 3 + e.phase) * 0.6;
@@ -862,7 +877,7 @@ function updateBoss(e, p, dt, view, a, d) {
   } else if (ab.ring && e.cd.ring <= 0) {
     e.cd.ring = ab.ring.every;
     const off = rand(0, 6.28);
-    for (let i = 0; i < ab.ring.n; i++) fireNote(e.x, e.y, off + (i / ab.ring.n) * 6.283, 130, 4);
+    for (let i = 0; i < ab.ring.n; i++) fireNote(e.x, e.y, off + (i / ab.ring.n) * 6.283, 120, 4);
     audio.boom();
   }
 }
@@ -1220,7 +1235,7 @@ export function render(ctx, view) {
   ctx.globalAlpha = 1;
   for (const e of S.enemies) (e.boss ? drawBoss : drawEnemy)(ctx, e, S.t);
   for (const e of S.enemies) {
-    if (e.ai === 'ranged' && e.shootT < 0.35 && e.inside) {
+    if (e.ai === 'ranged' && e.shootT < 0.6 && e.inside) {
       ctx.strokeStyle = '#fb923c';
       ctx.lineWidth = 2;
       ctx.beginPath();
@@ -1282,6 +1297,19 @@ export function testHook(cmd, arg) {
     beginLevel(arg, v);
     S.mode = 'play';
     S.player.hp = 999;
+  } else if (cmd === 'playWith') {
+    // start a level with a given set of upgrades and full health, in normal mode (used by scripts/sim.mjs)
+    S.ups = { ...zeroUps(), ...arg.ups };
+    S.st = stats();
+    S.score = 0;
+    S.t = 0; // runs must not depend on what ran before them
+    S.kills = 0;
+    S.shots = 0;
+    beginLevel(arg.level, v);
+    S.mode = 'play';
+  } else if (cmd === 'offers') {
+    S.ups = { ...zeroUps(), ...arg };
+    return pickOffers().map((u) => u.id);
   } else if (cmd === 'boss') {
     S.levelT = LEVELS[S.level].duration;
   } else if (cmd === 'killboss') {
