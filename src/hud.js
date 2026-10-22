@@ -205,7 +205,7 @@ export function weaponIcon(ctx, id, cx, cy, w, colour) {
 // ---- panels ----
 
 // Mid-grey translucent panel with a dark outer line and a light inner one, so it reads on bright and dark scenes.
-function panel(ctx, x, y, w, h, r, fill, light, lightA = 0.5) {
+export function panel(ctx, x, y, w, h, r, fill, light, lightA = 0.5) {
   rrect(ctx, x, y, w, h, r);
   ctx.fillStyle = fill;
   ctx.fill();
@@ -219,7 +219,7 @@ function panel(ctx, x, y, w, h, r, fill, light, lightA = 0.5) {
   ctx.globalAlpha = 1;
 }
 
-function corners(ctx, x, y, w, h, inset, len) {
+export function corners(ctx, x, y, w, h, inset, len) {
   const x0 = x + inset;
   const y0 = y + inset;
   const x1 = x + w - inset;
@@ -232,7 +232,7 @@ function corners(ctx, x, y, w, h, inset, len) {
   ctx.stroke();
 }
 
-function circle(ctx, x, y, r) {
+export function circle(ctx, x, y, r) {
   ctx.beginPath();
   ctx.arc(x, y, r, 0, TAU);
 }
@@ -701,7 +701,7 @@ function drawBanner(ctx, view, b) {
   }
   ctx.globalAlpha = k;
   // soft band behind the words keeps them legible over a bright wall
-  ctx.fillStyle = 'rgba(4,2,8,0.4)';
+  ctx.fillStyle = 'rgba(4,2,8,0.3)';
   ctx.fillRect(0, cy - 30, view.w, 60 + (subH ? subH - 6 : 0));
   const pop = 1 + 0.22 * Math.max(0, 1 - age / 0.2);
   ctx.save();

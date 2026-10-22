@@ -1,0 +1,44 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Screens harness</title>
+<body style="margin:0;background:#000;overflow:hidden"><canvas id="c" style="width:100vw;height:100vh;display:block"></canvas>
+<script type="module">
+import { buttons, drawTitle, drawControls, drawIntro, drawDead, drawComplete } from '../../src/screens.js';
+import { drawBackdrop } from './ui-backdrop.js';
+
+const canvas = document.getElementById('c');
+const dpr = window.devicePixelRatio || 1;
+const W = innerWidth;
+const H = innerHeight;
+canvas.width = W * dpr;
+canvas.height = H * dpr;
+const ctx = canvas.getContext('2d');
+ctx.scale(dpr, dpr);
+const view = { w: W, h: H, dpr, safe: { top: 0, bottom: 0 } };
+
+const LEVEL = { number: 1, name: 'THE COWGATE', sub: 'Basement club. Sticky floor. Dead punters.', line: 'Last orders was an hour ago. Nobody told them.', clock: '02:00' };
+
+// show('title'), show('controls:1.7'), show('dead:2:dark:safe') -> name, time, backdrop, safe flag
+// extra flags in any position: debug, best, long
+window.show = (spec = 'title') => {
+  const parts = spec.replace(/^ui-/, '').split(':');
+  const name = parts[0];
+  const t = parts[1] !== undefined && parts[1] !== '' ? Number(parts[1]) : 2;
+  const flags = parts.slice(2);
+  const tone = flags.includes('bright') ? 'bright' : 'dark';
+  view.safe = flags.includes('safe') ? { top: 47, bottom: 34 } : { top: 0, bottom: 0 };
+  const debugMode = flags.includes('debug');
+  ctx.clearRect(0, 0, W, H);
+  drawBackdrop(ctx, W, H, tone);
+  const long = flags.includes('long');
+  if (name === 'title') drawTitle(ctx, view, { t, debugMode, best: flags.includes('nobest') ? 0 : 12450 });
+  else if (name === 'controls') drawControls(ctx, view, { t });
+  else if (name === 'intro') drawIntro(ctx, view, { t, level: long ? { ...LEVEL, name: 'THE COWGATE: EXTENDED VIP LOUNGE EDITION' } : LEVEL });
+  else if (name === 'dead') drawDead(ctx, view, { t, line: long ? 'Reviewed: one star. "Dead on arrival." Also, the bouncer wants a word about the trainers you wore.' : 'Beaten by a fizzy drink. In your own club.', score: 3400, best: 12450, newBest: flags.includes('newbest'), debugMode, levelName: 'THE COWGATE' });
+  else if (name === 'complete') drawComplete(ctx, view, { t, score: 8650, best: 12450, newBest: flags.includes('newbest'), timeSec: 221, kills: 14, totalEnemies: flags.includes('partial') ? 16 : 14, debugMode });
+  const mode = { title: 'title', controls: 'controls', dead: 'dead', complete: 'complete' }[name];
+  return mode ? buttons(mode, view, { t, debugMode }).map((b) => `${b.id}@${Math.round(b.y)}`) : [];
+};
+window.show('title');
+</script>
