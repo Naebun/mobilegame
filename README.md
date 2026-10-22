@@ -37,6 +37,14 @@ Then use Share, Add to Home Screen for a full-screen launch.
 
 Pages on a private repository needs a paid GitHub plan. If that applies, make the repo public or host the folder elsewhere (Netlify, Cloudflare Pages).
 
+## Play it inside Claude
+
+```
+npm run build:artifact       # bundles everything into dist/artifact.html (gitignored)
+```
+
+Publish that file as a Claude Artifact and it opens in the Claude app. It is a single self-contained file, so the service worker is skipped there. Saved progress lives in that artifact's own browser storage.
+
 ## Smoke test
 
 ```

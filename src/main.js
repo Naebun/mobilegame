@@ -5,6 +5,7 @@ if (location.search.includes("debug")) window.__game = game;
 
 start(document.getElementById('game'), game);
 
-if ('serviceWorker' in navigator) {
+// __ARTIFACT__ is defined by scripts/build-artifact.mjs: hosted pages cannot run service workers
+if ('serviceWorker' in navigator && typeof __ARTIFACT__ === 'undefined') {
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }

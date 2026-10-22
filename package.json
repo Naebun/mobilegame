@@ -6,9 +6,11 @@
   "description": "Mobile web game, played in the phone browser",
   "scripts": {
     "start": "node scripts/serve.mjs",
-    "smoke": "node scripts/smoke.mjs"
+    "smoke": "node scripts/smoke.mjs",
+    "build:artifact": "node scripts/build-artifact.mjs"
   },
   "devDependencies": {
+    "esbuild": "^0.28.2",
     "playwright": "^1.64.1"
   }
 }
