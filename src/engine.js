@@ -1,42 +1,56 @@
-// Minimal engine: DPR-aware canvas, fixed-timestep loop, pointer input.
-// Game code lives in game.js and only needs to export { init, update, render }.
+// Minimal engine: DPR-aware canvas, fixed-timestep loop, multi-touch pointer input.
+// Game code lives in game.js and exports { init, update, render } plus optional { resize, gesture }.
 
 const STEP = 1 / 60;
 const MAX_FRAME = 0.25; // clamp after tab switches / stalls
 
 export function start(canvas, game) {
   const ctx = canvas.getContext('2d');
-  const view = { w: 0, h: 0, dpr: 1 };
-  const pointer = { x: 0, y: 0, down: false, pressed: false, released: false };
+  const view = { w: 0, h: 0, dpr: 1, safe: { top: 0, bottom: 0 } };
+  // touches: live pointers by id ({ id, x, y, sx, sy, role }); pressed: new presses this step.
+  const input = { touches: new Map(), pressed: [], keys: new Set() };
+
+  // Canvas can't read env(); measure the safe-area insets through a hidden element.
+  const probe = document.createElement('div');
+  probe.style.cssText =
+    'position:fixed;visibility:hidden;pointer-events:none;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)';
+  document.body.appendChild(probe);
 
   function resize() {
     view.dpr = Math.min(window.devicePixelRatio || 1, 3);
     view.w = window.innerWidth;
     view.h = window.innerHeight;
+    const cs = getComputedStyle(probe);
+    view.safe.top = parseFloat(cs.paddingTop) || 0;
+    view.safe.bottom = parseFloat(cs.paddingBottom) || 0;
     canvas.width = Math.round(view.w * view.dpr);
     canvas.height = Math.round(view.h * view.dpr);
     ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
     game.resize?.(view);
   }
 
-  function setPointer(e) {
-    pointer.x = e.clientX;
-    pointer.y = e.clientY;
-  }
-
   canvas.addEventListener('pointerdown', (e) => {
-    canvas.setPointerCapture(e.pointerId);
-    setPointer(e);
-    pointer.down = pointer.pressed = true;
+    try { canvas.setPointerCapture(e.pointerId); } catch { /* synthetic events have no capturable pointer */ }
+    input.touches.set(e.pointerId, {
+      id: e.pointerId, x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, role: null,
+    });
+    input.pressed.push({ x: e.clientX, y: e.clientY });
+    game.gesture?.(); // audio must be unlocked inside a user-gesture handler
   });
-  canvas.addEventListener('pointermove', setPointer);
+  canvas.addEventListener('pointermove', (e) => {
+    const t = input.touches.get(e.pointerId);
+    if (t) { t.x = e.clientX; t.y = e.clientY; }
+  });
   const up = (e) => {
-    setPointer(e);
-    pointer.down = false;
-    pointer.released = true;
+    input.touches.delete(e.pointerId);
+    game.gesture?.(); // iOS only counts touchend/pointerup as an unlocking gesture
   };
   canvas.addEventListener('pointerup', up);
   canvas.addEventListener('pointercancel', up);
+
+  window.addEventListener('keydown', (e) => { input.keys.add(e.key.toLowerCase()); game.gesture?.(); });
+  window.addEventListener('keyup', (e) => input.keys.delete(e.key.toLowerCase()));
+  window.addEventListener('blur', () => { input.keys.clear(); input.touches.clear(); });
 
   // iOS Safari ignores touch-action for some gestures; belt and braces.
   document.addEventListener('gesturestart', (e) => e.preventDefault());
@@ -52,6 +66,7 @@ export function start(canvas, game) {
   document.addEventListener('visibilitychange', () => {
     running = !document.hidden;
     last = performance.now();
+    if (!running) input.touches.clear();
   });
 
   function frame(now) {
@@ -60,8 +75,8 @@ export function start(canvas, game) {
     acc += Math.min((now - last) / 1000, MAX_FRAME);
     last = now;
     while (acc >= STEP) {
-      game.update(STEP, pointer, view);
-      pointer.pressed = pointer.released = false;
+      game.update(STEP, input, view);
+      input.pressed.length = 0;
       acc -= STEP;
     }
     game.render(ctx, view, acc / STEP);

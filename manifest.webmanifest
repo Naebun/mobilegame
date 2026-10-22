@@ -1,6 +1,6 @@
 {
-  "name": "Mobile Game",
-  "short_name": "Game",
+  "name": "Freddie's Last Set",
+  "short_name": "Freddie",
   "start_url": "./",
   "scope": "./",
   "display": "fullscreen",

@@ -1,8 +1,8 @@
 // Network-first so edits always show up on reload; cache is only an offline fallback.
-const CACHE = 'mobilegame-v1';
+const CACHE = 'mobilegame-v2';
 const ASSETS = [
   './', 'index.html', 'manifest.webmanifest', 'icons/icon.svg',
-  'src/style.css', 'src/main.js', 'src/engine.js', 'src/game.js',
+  'src/style.css', 'src/main.js', 'src/engine.js', 'src/game.js', 'src/audio.js',
 ];
 
 self.addEventListener('install', (e) => {
