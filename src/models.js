@@ -47,7 +47,7 @@ const _s = new THREE.Vector3();
 // Merge primitives into one non-indexed geometry with per-vertex colours. Each part is
 // [geometry, hex, [x, y, z], [rx, ry, rz], [sx, sy, sz]]. `base` is subtracted from every
 // position so a group can be built in world-ish coordinates around its own pivot.
-function merge(parts, base = [0, 0, 0]) {
+function merge(parts, base = [0, 0, 0], grit = 0.16) {
   const pos = [];
   const nor = [];
   const col = [];
@@ -59,13 +59,17 @@ function merge(parts, base = [0, 0, 0]) {
     _s.set(s[0], s[1], s[2]);
     _m.compose(_p, _q, _s);
     g.applyMatrix4(_m);
-    const c = new THREE.Color(hex);
+    const c0 = new THREE.Color(hex);
     const a = g.attributes.position;
     const n = g.attributes.normal;
     for (let i = 0; i < a.count; i++) {
       pos.push(a.getX(i), a.getY(i), a.getZ(i));
       nor.push(n.getX(i), n.getY(i), n.getZ(i));
-      col.push(c.r, c.g, c.b);
+      // Scuffing: a stable brightness wobble per triangle, plus a grubby darkening towards the floor.
+      const tri = (pos.length / 9) | 0;
+      const f = 1 + grit * (((Math.sin(tri * 12.9898 + 4.1) * 43758.5453) % 1 + 1) % 1 - 0.5) * 2;
+      const dirt = grit > 0 ? 0.85 + 0.15 * clamp((p[1] - base[1]) / 1.5 + 0.5, 0, 1) : 1;
+      col.push(c0.r * f * dirt, c0.g * f * dirt, c0.b * f * dirt);
     }
     g.dispose();
     geo.dispose();
@@ -110,80 +114,97 @@ const smooth = (t) => t * t * (3 - 2 * t);
 const SPEC = {
   drpepper: {
     height: 2.1, radius: 0.55, headY: 1.62, hip: 0.45, neck: 1.62, bodyR: 0.5,
-    legX: 0.26, shoulderX: 0.64, shoulderY: 1.38, eyeEmissive: 0xff4a1a, emissive: 0x2e0a10,
+    legX: 0.26, shoulderX: 0.64, shoulderY: 1.38, eyeEmissive: 0xff5a22, emissive: 0x1a0d0a, lamp: [0.14, 1.36, -0.512, 0xffa030],
     walkRate: 6.5, bob: 0.05, stride: 0.75, eyeX: 0.17, eyeY: 1.84, eyeZ: -0.31, eyeTilt: 0.2,
     cannon: false, bothArms: false,
   },
   wray: {
     height: 2.0, radius: 0.5, headY: 1.5, hip: 0.42, neck: 1.5, bodyR: 0.47,
-    legX: 0.22, shoulderX: 0.54, shoulderY: 1.05, eyeEmissive: 0x35e6ff, emissive: 0x0a1822,
+    legX: 0.22, shoulderX: 0.54, shoulderY: 1.05, eyeEmissive: 0x35e6ff, emissive: 0x15120e, lamp: [0.26, 0.75, -0.46, 0xffa030],
     walkRate: 7.5, bob: 0.04, stride: 0.7, eyeX: 0.11, eyeY: 1.68, eyeZ: -0.235, eyeTilt: 0,
     cannon: true, bothArms: false,
   },
   bouncer: {
     height: 3.3, radius: 0.95, headY: 2.62, hip: 0.8, neck: 2.62, bodyR: 0.82,
-    legX: 0.42, shoulderX: 1.2, shoulderY: 2.35, eyeEmissive: 0xff2a2a, emissive: 0x1c0a28,
+    legX: 0.42, shoulderX: 1.2, shoulderY: 2.35, eyeEmissive: 0xff2a2a, emissive: 0x120d0e, lamp: null,
     walkRate: 4.6, bob: 0.07, stride: 0.55, eyeX: 0.27, eyeY: 2.94, eyeZ: -0.445, eyeTilt: 0.18,
     cannon: false, bothArms: true,
   },
 };
 
+// Look: battered painted sheet metal, grubby chrome, black rubber, rust patches. Glow is limited to the
+// eyes and a tiny indicator lamp. Colours are deliberately dull; merge() adds per-face scuffing.
+const RUST = 0x6b3a1c;
+const RUBBER = 0x141414;
+const CHROME = 0x9a9c98;
+
 function drPepperGeo() {
   const HIP = 0.45;
   const NECK = 1.62;
-  const maroon = 0x9a1b36;
-  const dark = 0x2e1219;
-  const silver = 0xd5dae4;
-  const steel = 0x6f7686;
-  const band = 0xd4506a;
-  const head = 0x565c6c;
+  const maroon = 0x6e222c;
+  const dark = 0x241819;
+  const steel = 0x575c63;
+  const band = 0xa06c5c;
+  const head = 0x4a4e52;
   return {
     leg: merge([
       [cyl(0.12, 0.11, 0.34), steel, [0, -0.17, 0]],
-      [ring(0.12, 0.025), silver, [0, -0.02, 0], [Math.PI / 2, 0, 0]],
-      [box(0.3, 0.12, 0.44), dark, [0, -0.39, -0.07]],
+      [cyl(0.135, 0.135, 0.06), RUBBER, [0, -0.1, 0]],
+      [box(0.3, 0.12, 0.44), RUBBER, [0, -0.39, -0.07]],
+      [box(0.3, 0.03, 0.44), 0x3a2a22, [0, -0.33, -0.07]],
     ]),
     torso: merge([
       [cyl(0.34, 0.4, 0.16), dark, [0, 0.46, 0]],
       [cyl(0.48, 0.48, 1.1), maroon, [0, 1.0, 0]],
-      [cyl(0.5, 0.5, 0.08), silver, [0, 0.52, 0]],
-      [cyl(0.5, 0.5, 0.1), silver, [0, 1.5, 0]],
-      [cyl(0.4, 0.5, 0.07), silver, [0, 1.58, 0]],
+      [cyl(0.5, 0.5, 0.08), CHROME, [0, 0.52, 0]],
+      [cyl(0.5, 0.5, 0.1), CHROME, [0, 1.5, 0]],
+      [cyl(0.4, 0.5, 0.07), CHROME, [0, 1.58, 0]],
       [cyl(0.495, 0.495, 0.22), band, [0, 1.0, 0]],
-      [cyl(0.16, 0.2, 0.1), steel, [0, 1.62, 0]],
-      [box(0.42, 0.32, 0.07), dark, [0, 1.25, -0.47]],
-    ], [0, HIP, 0]),
-    trim: merge([
-      [cyl(0.503, 0.503, 0.035), 0xff5a1f, [0, 0.84, 0]],
-      [cyl(0.503, 0.503, 0.035), 0xff5a1f, [0, 1.44, 0]],
-      [box(0.3, 0.025, 0.02), 0xff8a2a, [0, 1.17, -0.515]],
-      [box(0.3, 0.025, 0.02), 0xff8a2a, [0, 1.25, -0.515]],
-      [box(0.3, 0.025, 0.02), 0xff8a2a, [0, 1.33, -0.515]],
+      [cyl(0.16, 0.2, 0.1), RUBBER, [0, 1.62, 0]],
+      // vending-machine front: coin slot, buttons and a delivery flap
+      [box(0.4, 0.34, 0.07), 0x2b2c2e, [0, 1.25, -0.47]],
+      [box(0.2, 0.025, 0.02), 0x0a0a0a, [0.06, 1.34, -0.51]],
+      [box(0.06, 0.04, 0.02), 0x8a2a20, [-0.12, 1.2, -0.51]],
+      [box(0.06, 0.04, 0.02), 0xb89a3a, [-0.04, 1.2, -0.51]],
+      [box(0.06, 0.04, 0.02), 0x4a6a4a, [0.04, 1.2, -0.51]],
+      [box(0.3, 0.1, 0.05), 0x1a1a1a, [0, 1.08, -0.49]],
+      // rust and scrape patches
+      [box(0.2, 0.26, 0.03), RUST, [-0.3, 0.82, -0.37], [0, 0.6, 0]],
+      [box(0.16, 0.12, 0.03), RUST, [0.32, 1.38, -0.35], [0, -0.6, 0]],
+      [box(0.22, 0.3, 0.03), RUST, [0.1, 0.72, 0.47], [0, 3.14, 0]],
+      [box(0.1, 0.4, 0.03), 0x8a8a84, [-0.36, 1.1, -0.32], [0, 0.8, 0]],
+      // rubber hose wrapped round the waist
+      [ring(0.5, 0.035, 16), RUBBER, [0, 0.64, 0], [HALF, 0, 0]],
     ], [0, HIP, 0]),
     head: merge([
       [box(0.7, 0.4, 0.56), head, [0, 1.82, 0]],
-      [box(0.62, 0.17, 0.06), 0x07070b, [0, 1.84, -0.29]],
+      [box(0.62, 0.17, 0.06), 0x0a0a0c, [0, 1.84, -0.29]],
       [box(0.27, 0.06, 0.07), dark, [-0.17, 1.955, -0.3], [0, 0, -0.3]],
       [box(0.27, 0.06, 0.07), dark, [0.17, 1.955, -0.3], [0, 0, 0.3]],
-      [cyl(0.07, 0.07, 0.1), silver, [-0.38, 1.82, 0], [0, 0, Math.PI / 2]],
-      [cyl(0.07, 0.07, 0.1), silver, [0.38, 1.82, 0], [0, 0, Math.PI / 2]],
+      [cyl(0.07, 0.07, 0.1), CHROME, [-0.38, 1.82, 0], [0, 0, HALF]],
+      [cyl(0.07, 0.07, 0.1), CHROME, [0.38, 1.82, 0], [0, 0, HALF]],
       [box(0.36, 0.07, 0.05), dark, [0, 1.68, -0.29]],
-      [box(0.05, 0.06, 0.03), silver, [-0.1, 1.68, -0.31]],
-      [box(0.05, 0.06, 0.03), silver, [0, 1.68, -0.31]],
-      [box(0.05, 0.06, 0.03), silver, [0.1, 1.68, -0.31]],
-      [ring(0.085, 0.022), silver, [0, 2.045, 0.06], [Math.PI / 2, 0, 0]],
-      [box(0.1, 0.02, 0.1), silver, [0, 2.03, -0.04]],
+      [box(0.05, 0.06, 0.03), CHROME, [-0.1, 1.68, -0.31]],
+      [box(0.05, 0.06, 0.03), CHROME, [0, 1.68, -0.31]],
+      [box(0.05, 0.06, 0.03), CHROME, [0.1, 1.68, -0.31]],
+      [ring(0.085, 0.022), CHROME, [0, 2.045, 0.06], [HALF, 0, 0]],
+      [box(0.1, 0.02, 0.1), CHROME, [0, 2.03, -0.04]],
+      [box(0.22, 0.14, 0.03), RUST, [0.2, 1.8, 0.29]],
+      [box(0.03, 0.12, 0.03), 0x1a1a1a, [-0.3, 2.08, 0.1]],
     ], [0, NECK, 0]),
     eye: box(0.15, 0.085, 0.04),
+    lamp: ball(0.032, 6, 5),
     arm: merge([
-      [ball(0.17), silver],
-      [cyl(0.17, 0.16, 0.36), 0x4b5262, [0, -0.3, 0]],
-      [cyl(0.19, 0.19, 0.05), silver, [0, -0.13, 0]],
-      [cyl(0.19, 0.19, 0.05), silver, [0, -0.47, 0]],
-      [cyl(0.075, 0.075, 0.3), 0xe8ecf4, [0, -0.6, 0]],
+      [ball(0.17), CHROME],
+      [cyl(0.17, 0.16, 0.36), 0x484d55, [0, -0.3, 0]],
+      [cyl(0.19, 0.19, 0.05), RUBBER, [0, -0.13, 0]],
+      [cyl(0.19, 0.19, 0.05), RUBBER, [0, -0.47, 0]],
+      [cyl(0.075, 0.075, 0.3), 0xb4b6b2, [0, -0.6, 0]],
       [box(0.46, 0.4, 0.46), maroon, [0, -0.84, 0]],
-      [box(0.46, 0.07, 0.07), silver, [0, -0.74, -0.26]],
+      [box(0.46, 0.07, 0.07), CHROME, [0, -0.74, -0.26]],
       [box(0.5, 0.05, 0.5), dark, [0, -0.66, 0]],
+      [box(0.14, 0.2, 0.03), RUST, [0.1, -0.86, -0.24]],
+      [ring(0.17, 0.028, 12), RUBBER, [0.0, -0.3, 0], [HALF, 0, 0], [1.2, 1.2, 1]],
     ]),
   };
 }
@@ -191,54 +212,56 @@ function drPepperGeo() {
 function wrayGeo() {
   const HIP = 0.42;
   const NECK = 1.5;
-  const cream = 0xf0e6cc;
-  const dark = 0x1c2030;
-  const steel = 0x9aa3b5;
-  const gun = 0x30384a;
+  const cream = 0xc9bd9c;
+  const dark = 0x25262c;
+  const steel = 0x7c8086;
+  const gun = 0x363a40;
   return {
     leg: merge([
       [cyl(0.1, 0.09, 0.3), steel, [0, -0.15, 0]],
-      [box(0.26, 0.12, 0.4), 0x1b1f2a, [0, -0.36, -0.06]],
+      [cyl(0.115, 0.115, 0.05), RUBBER, [0, -0.1, 0]],
+      [box(0.26, 0.12, 0.4), RUBBER, [0, -0.36, -0.06]],
     ]),
     torso: merge([
-      [cyl(0.3, 0.36, 0.12), 0x1b1f2a, [0, 0.42, 0]],
+      [cyl(0.3, 0.36, 0.12), 0x1e1f24, [0, 0.42, 0]],
       [cyl(0.46, 0.46, 0.77), cream, [0, 0.755, 0]],
-      [cyl(0.47, 0.47, 0.07), 0xb5a888, [0, 0.41, 0]],
+      [cyl(0.47, 0.47, 0.07), 0x8a7f66, [0, 0.41, 0]],
       [cyl(0.475, 0.475, 0.34), dark, [0, 0.75, 0]],
       [cyl(0.2, 0.46, 0.4), cream, [0, 1.34, 0]],
-    ], [0, HIP, 0]),
-    trim: merge([
-      [cyl(0.48, 0.48, 0.025), 0xffd23a, [0, 0.58, 0]],
-      [cyl(0.48, 0.48, 0.025), 0xffd23a, [0, 0.92, 0]],
-      [box(0.2, 0.05, 0.02), 0x35e6ff, [0, 0.75, -0.48]],
+      // worn tape stripes either side of the label band, grime and a rust bloom
+      [cyl(0.48, 0.48, 0.03), 0xa88c3a, [0, 0.58, 0]],
+      [cyl(0.48, 0.48, 0.03), 0xa88c3a, [0, 0.92, 0]],
+      [box(0.24, 0.12, 0.03), 0x5a5a56, [0.0, 0.75, -0.47]],
+      [box(0.2, 0.22, 0.03), RUST, [0.3, 1.12, -0.34], [0, -0.7, 0]],
+      [box(0.14, 0.3, 0.03), 0x8a7a5a, [-0.34, 0.5, -0.3], [0, 0.8, 0]],
+      [ring(0.45, 0.03, 16), RUBBER, [0, 1.1, 0], [HALF, 0, 0]],
     ], [0, HIP, 0]),
     head: merge([
       [cyl(0.22, 0.25, 0.36), cream, [0, 1.68, 0]],
       [cyl(0.235, 0.235, 0.17), dark, [0, 1.68, 0]],
-      [cyl(0.29, 0.29, 0.1), 0xc9a23a, [0, 1.89, 0]],
-      [cyl(0.2, 0.29, 0.05), 0xc9a23a, [0, 1.965, 0]],
-      [ring(0.29, 0.022), 0xf0d36a, [0, 1.84, 0], [Math.PI / 2, 0, 0]],
+      [cyl(0.29, 0.29, 0.1), 0x7a6a2e, [0, 1.89, 0]],
+      [cyl(0.2, 0.29, 0.05), 0x7a6a2e, [0, 1.965, 0]],
+      [ring(0.29, 0.022), 0x9a8a4a, [0, 1.84, 0], [HALF, 0, 0]],
+      [box(0.1, 0.1, 0.02), RUST, [0.0, 1.55, 0.24]],
     ], [0, NECK, 0]),
     eye: cyl(0.085, 0.085, 0.03, 10),
-    // Arm hanging from the shoulder pivot.
+    lamp: ball(0.03, 6, 5),
     arm: merge([
       [ball(0.1), steel],
       [cyl(0.05, 0.05, 0.5), steel, [0, -0.3, 0]],
-      [box(0.13, 0.15, 0.13), 0x1b1f2a, [0, -0.62, 0]],
+      [cyl(0.065, 0.065, 0.06), RUBBER, [0, -0.2, 0]],
+      [box(0.13, 0.15, 0.13), 0x1e1f24, [0, -0.62, 0]],
     ]),
     // Cannon arm: points along local -y, so rotating it about x aims it.
     cannon: merge([
       [ball(0.14), steel],
       [cyl(0.12, 0.12, 0.34), gun, [0, -0.22, 0]],
-      [cyl(0.075, 0.075, 0.6), steel, [0, -0.62, 0]],
-      [cyl(0.1, 0.1, 0.04), 0xf0d36a, [0, -0.45, 0]],
-      [cyl(0.1, 0.1, 0.04), 0xf0d36a, [0, -0.72, 0]],
+      [cyl(0.075, 0.075, 0.6), 0x6a6e74, [0, -0.62, 0]],
+      [cyl(0.1, 0.1, 0.04), 0x7a6a2e, [0, -0.45, 0]],
+      [cyl(0.1, 0.1, 0.04), 0x7a6a2e, [0, -0.72, 0]],
       [cyl(0.075, 0.13, 0.12), gun, [0, -0.96, 0]],
-    ]),
-    cannonGlow: merge([
-      [cyl(0.125, 0.125, 0.03), 0x35e6ff, [0, -0.14, 0]],
-      [cyl(0.125, 0.125, 0.03), 0x35e6ff, [0, -0.3, 0]],
-      [cyl(0.09, 0.09, 0.02), 0x9ff4ff, [0, -1.02, 0]],
+      [ring(0.12, 0.028, 12), RUBBER, [0, -0.06, 0], [HALF, 0, 0]],
+      [box(0.08, 0.16, 0.03), RUST, [0.0, -0.22, 0.12]],
     ]),
   };
 }
@@ -246,56 +269,58 @@ function wrayGeo() {
 function bouncerGeo() {
   const HIP = 0.8;
   const NECK = 2.62;
-  const maroon = 0x9a1b36;
-  const silver = 0xd5dae4;
-  const black = 0x1e1e2a;
+  const maroon = 0x6e222c;
+  const black = 0x1a1a1e;
   return {
     leg: merge([
       [cyl(0.2, 0.18, 0.62), black, [0, -0.31, 0]],
-      [box(0.46, 0.2, 0.7), 0x0a0a10, [0, -0.7, -0.1]],
-      [box(0.04, 0.6, 0.04), 0x7c3aed, [0.2, -0.31, 0]],
+      [box(0.46, 0.2, 0.7), 0x08080a, [0, -0.7, -0.1]],
+      [box(0.4, 0.03, 0.66), 0x2a2420, [0, -0.6, -0.1]],
     ]),
     torso: merge([
-      [cyl(0.55, 0.65, 0.2), 0x2e1219, [0, 0.8, 0]],
+      [cyl(0.55, 0.65, 0.2), 0x241819, [0, 0.8, 0]],
       [cyl(0.82, 0.82, 0.95), maroon, [0, 1.17, 0]],
-      [cyl(0.84, 0.84, 0.1), silver, [0, 0.76, 0]],
-      [cyl(0.83, 0.83, 0.3), 0xd4506a, [0, 1.1, 0]],
+      [cyl(0.84, 0.84, 0.1), CHROME, [0, 0.76, 0]],
+      [cyl(0.83, 0.83, 0.3), 0xa06c5c, [0, 1.1, 0]],
+      [box(0.3, 0.4, 0.03), RUST, [-0.4, 0.95, -0.75], [0, 0.5, 0]],
       // dinner jacket: body, lapels, shirt front, bow tie, shoulder slab
       [box(1.7, 1.05, 1.2), black, [0, 2.075, 0]],
-      [box(0.36, 0.9, 0.05), 0xf2f2f6, [0, 2.07, -0.615]],
-      [box(0.22, 0.95, 0.06), 0x34344a, [-0.3, 2.05, -0.62], [0, 0, 0.2]],
-      [box(0.22, 0.95, 0.06), 0x34344a, [0.3, 2.05, -0.62], [0, 0, -0.2]],
-      [box(2.1, 0.4, 1.05), 0x262634, [0, 2.4, 0]],
-      [cone(0.14, 0.3), 0xe0194f, [-0.17, 2.45, -0.66], [0, 0, -Math.PI / 2]],
-      [cone(0.14, 0.3), 0xe0194f, [0.17, 2.45, -0.66], [0, 0, Math.PI / 2]],
-      [ball(0.075), 0xff4f86, [0, 2.45, -0.68]],
-      [cyl(0.25, 0.3, 0.12), 0x6f7686, [0, 2.62, 0]],
-    ], [0, HIP, 0]),
-    trim: merge([
-      [cyl(0.835, 0.835, 0.04), COLOURS.magenta, [0, 0.9, 0]],
-      [box(0.14, 0.04, 0.02), COLOURS.magenta, [0.5, 2.35, -0.605]],
+      [box(0.36, 0.9, 0.05), 0xc9c4b4, [0, 2.07, -0.615]],
+      [box(0.22, 0.95, 0.06), 0x2a2a30, [-0.3, 2.05, -0.62], [0, 0, 0.2]],
+      [box(0.22, 0.95, 0.06), 0x2a2a30, [0.3, 2.05, -0.62], [0, 0, -0.2]],
+      [box(2.1, 0.4, 1.05), 0x202024, [0, 2.4, 0]],
+      [cone(0.14, 0.3), 0x7a1a28, [-0.17, 2.45, -0.66], [0, 0, -HALF]],
+      [cone(0.14, 0.3), 0x7a1a28, [0.17, 2.45, -0.66], [0, 0, HALF]],
+      [ball(0.075), 0x5a1220, [0, 2.45, -0.68]],
+      [box(0.1, 0.1, 0.03), 0xc9c4b4, [0.5, 2.3, -0.61]],
+      [cyl(0.25, 0.3, 0.12), RUBBER, [0, 2.62, 0]],
+      [ring(0.84, 0.04, 18), RUBBER, [0, 1.5, 0], [HALF, 0, 0]],
     ], [0, HIP, 0]),
     head: merge([
-      [box(1.1, 0.6, 0.8), 0x565c6c, [0, 2.92, 0]],
-      [box(0.98, 0.22, 0.06), 0x07070b, [0, 2.94, -0.41]],
-      [box(0.42, 0.09, 0.08), 0x2e1219, [-0.27, 3.1, -0.43], [0, 0, -0.3]],
-      [box(0.42, 0.09, 0.08), 0x2e1219, [0.27, 3.1, -0.43], [0, 0, 0.3]],
-      [box(0.6, 0.1, 0.05), 0x2e1219, [0, 2.74, -0.41]],
-      [box(0.08, 0.09, 0.03), silver, [-0.18, 2.74, -0.44]],
-      [box(0.08, 0.09, 0.03), silver, [0, 2.74, -0.44]],
-      [box(0.08, 0.09, 0.03), silver, [0.18, 2.74, -0.44]],
-      [cyl(0.1, 0.1, 0.12), silver, [-0.6, 2.9, 0], [0, 0, Math.PI / 2]],
-      [box(0.1, 0.2, 0.14), 0x0a0a10, [0.6, 2.88, 0]],
-      [cyl(0.015, 0.015, 0.32), 0x0a0a10, [0.62, 2.68, 0.06]],
-      [ring(0.14, 0.03), silver, [0, 3.26, 0.1], [Math.PI / 2, 0, 0]],
+      [box(1.1, 0.6, 0.8), 0x4a4e52, [0, 2.92, 0]],
+      [box(0.98, 0.22, 0.06), 0x08080a, [0, 2.94, -0.41]],
+      [box(0.42, 0.09, 0.08), 0x241819, [-0.27, 3.1, -0.43], [0, 0, -0.3]],
+      [box(0.42, 0.09, 0.08), 0x241819, [0.27, 3.1, -0.43], [0, 0, 0.3]],
+      [box(0.6, 0.1, 0.05), 0x241819, [0, 2.74, -0.41]],
+      [box(0.08, 0.09, 0.03), CHROME, [-0.18, 2.74, -0.44]],
+      [box(0.08, 0.09, 0.03), CHROME, [0, 2.74, -0.44]],
+      [box(0.08, 0.09, 0.03), CHROME, [0.18, 2.74, -0.44]],
+      [cyl(0.1, 0.1, 0.12), CHROME, [-0.6, 2.9, 0], [0, 0, HALF]],
+      [box(0.1, 0.2, 0.14), 0x08080a, [0.6, 2.88, 0]],
+      [cyl(0.015, 0.015, 0.32), 0x08080a, [0.62, 2.68, 0.06]],
+      [ring(0.14, 0.03), CHROME, [0, 3.26, 0.1], [HALF, 0, 0]],
+      [box(0.3, 0.2, 0.03), RUST, [-0.3, 2.85, 0.41]],
+      [box(0.5, 0.04, 0.03), 0x8a8a84, [0.1, 3.18, -0.42], [0, 0, 0.2]],
     ], [0, NECK, 0]),
     eye: box(0.28, 0.09, 0.04),
     arm: merge([
       [ball(0.26), black],
       [cyl(0.26, 0.3, 0.8), black, [0, -0.5, 0]],
-      [cyl(0.29, 0.29, 0.08), 0xf2f2f6, [0, -0.92, 0]],
+      [cyl(0.29, 0.29, 0.08), 0xc9c4b4, [0, -0.92, 0]],
       [box(0.7, 0.6, 0.65), maroon, [0, -1.28, 0]],
-      [box(0.7, 0.1, 0.1), silver, [0, -1.15, -0.38]],
+      [box(0.7, 0.1, 0.1), CHROME, [0, -1.15, -0.38]],
+      [box(0.2, 0.3, 0.03), RUST, [0.15, -1.3, -0.34]],
+      [box(0.5, 0.3, 0.04), 0x2a2a30, [0, -0.5, -0.31], [0.0, 0, 0]],
     ]),
   };
 }
@@ -308,7 +333,6 @@ export function makeRobot(kind) {
   if (!spec) throw new Error(`makeRobot: unknown kind "${kind}"`);
   const geo = once(`robot:${kind}`, ROBOT_GEO[kind]);
   const lit = litMat(kind, spec.emissive);
-  const glow = glowMat();
   const phase = robotCount++ * 1.7;
   const meshes = [];
 
@@ -333,7 +357,7 @@ export function makeRobot(kind) {
   upper.position.y = spec.hip;
   root.add(upper);
   mk(geo.torso, lit, upper);
-  mk(geo.trim, glow, upper);
+  if (spec.lamp) mk(geo.lamp, flatGlow(spec.lamp[3]), upper, spec.lamp[0], spec.lamp[1] - spec.hip, spec.lamp[2]);
 
   const headG = new THREE.Group();
   headG.position.y = spec.neck - spec.hip;
@@ -367,7 +391,7 @@ export function makeRobot(kind) {
     cannonMesh = new THREE.Group();
     armR.add(cannonMesh);
     mk(geo.cannon, lit, cannonMesh);
-    cannonGlow = mk(geo.cannonGlow, glow, cannonMesh);
+    cannonGlow = mk(geo.lamp, flatGlow(0x35e6ff), cannonMesh, 0.0, -0.3, 0.125);
     muzzle = new THREE.Object3D();
     muzzle.name = 'muzzle';
     muzzle.position.set(0, -1.05, 0);
@@ -585,110 +609,97 @@ export function makeRobot(kind) {
 // Weapons
 // ---------------------------------------------------------------------------------------------
 
-const GUN_EMISSIVE = 0x1c1c2a;
+const GUN_EMISSIVE = 0x1a1612;
+// Plinth ring colour per weapon, and the colour of each gun's small indicator lamp.
 const WEAPON_COLOUR = { pistol: COLOURS.cyan, shotgun: COLOURS.amber, smg: 0xa77bff, launcher: COLOURS.magenta };
 const HALF = Math.PI / 2;
+const WOOD = 0x6b4a2c;
+const TAPE = 0x8a8678;
+const BRASS = 0x8a6a30;
+const PAPER = 0x2a2420; // speaker cone
 
-// Parts are [geometry, hex, pos, rot, scale]. 'body' is lit, 'glow' unlit, 'pump' (shotgun) can slide.
+// Parts are [geometry, hex, pos, rot, scale]. 'body' is lit, 'glow' is just the indicator lamp,
+// 'pump' (shotgun) can slide.
 const WEAPON_PARTS = {
   pistol() {
-    const gm = 0x3a4156;
-    const dk = 0x1e212b;
-    const c = WEAPON_COLOUR.pistol;
+    const rake = [-0.2, 0, 0];
     return {
       muzzle: [0, 0.045, -0.4],
       body: [
-        [box(0.062, 0.075, 0.38), gm, [0, 0.045, -0.15]],
-        [box(0.052, 0.04, 0.2), dk, [0, 0.0, -0.08]],
-        [cyl(0.02, 0.048, 0.06), dk, [0, 0.045, -0.37], [HALF, 0, 0]],
-        [box(0.062, 0.17, 0.078), dk, [0, -0.085, 0.03], [-0.2, 0, 0]],
-        [box(0.024, 0.03, 0.05), dk, [0, 0.0, -0.01]],
-        [box(0.03, 0.03, 0.02), gm, [0, 0.095, 0.03]],
+        [box(0.062, 0.075, 0.38), 0x5a5d62, [0, 0.045, -0.15]],
+        [box(0.052, 0.04, 0.2), 0x2a2b2e, [0, 0.0, -0.08]],
+        [cyl(0.02, 0.048, 0.06), PAPER, [0, 0.045, -0.37], [HALF, 0, 0]],
+        [ring(0.049, 0.007), CHROME, [0, 0.045, -0.4]],
+        [box(0.062, 0.17, 0.078), 0x161616, [0, -0.085, 0.03], rake],
+        ...[-0.05, 0, 0.05].map((d) => [box(0.067, 0.014, 0.083), TAPE, [0, -0.085 + d, 0.03 - 0.2 * d], rake]),
+        [box(0.024, 0.03, 0.05), 0x2a2b2e, [0, 0.0, -0.01]],
+        [box(0.03, 0.03, 0.02), 0x3a3d42, [0, 0.095, 0.03]],
+        [box(0.012, 0.02, 0.012), 0x3a3d42, [0, 0.092, -0.3]],
       ],
-      glow: [
-        [box(0.068, 0.012, 0.22), c, [0, 0.05, -0.13]],
-        [box(0.02, 0.01, 0.3), c, [0, 0.085, -0.15]],
-        [ring(0.05, 0.006), c, [0, 0.045, -0.4]],
-        [box(0.012, 0.012, 0.012), c, [0, 0.1, -0.31]],
-      ],
+      glow: [[ball(0.011, 6, 5), WEAPON_COLOUR.pistol, [0, 0.086, 0.0]]],
     };
   },
   shotgun() {
-    const gm = 0x353a4c;
-    const dk = 0x1e222e;
-    const c = WEAPON_COLOUR.shotgun;
     return {
       muzzle: [0, 0.05, -0.6],
       body: [
-        [box(0.078, 0.1, 0.22), gm, [0, 0.03, 0]],
-        [cyl(0.036, 0.036, 0.5), 0x454c64, [0, 0.05, -0.3], [HALF, 0, 0]],
-        [cyl(0.028, 0.028, 0.4), dk, [0, 0.0, -0.27], [HALF, 0, 0]],
-        [box(0.058, 0.09, 0.14), dk, [0, 0.0, 0.17], [0.12, 0, 0]],
-        [box(0.056, 0.14, 0.062), dk, [0, -0.08, 0.06], [-0.25, 0, 0]],
-        [cyl(0.04, 0.1, 0.07), 0x15171f, [0, 0.05, -0.545], [HALF, 0, 0]],
-        [cyl(0.044, 0.044, 0.03), 0x15171f, [0, 0.05, -0.5], [HALF, 0, 0]],
+        [box(0.078, 0.1, 0.22), 0x3d4046, [0, 0.03, 0]],
+        [cyl(0.036, 0.036, 0.5), 0x55585e, [0, 0.05, -0.3], [HALF, 0, 0]],
+        [cyl(0.028, 0.028, 0.4), 0x3a3d42, [0, 0.0, -0.27], [HALF, 0, 0]],
+        [box(0.058, 0.09, 0.14), WOOD, [0, 0.0, 0.17], [0.12, 0, 0]],
+        [box(0.056, 0.14, 0.062), WOOD, [0, -0.08, 0.06], [-0.25, 0, 0]],
+        [cyl(0.04, 0.1, 0.07), PAPER, [0, 0.05, -0.545], [HALF, 0, 0]],
+        [cyl(0.044, 0.044, 0.03), 0x3a3d42, [0, 0.05, -0.5], [HALF, 0, 0]],
+        [ring(0.1, 0.009), CHROME, [0, 0.05, -0.582]],
+        [cyl(0.039, 0.039, 0.016), BRASS, [0, 0.05, -0.42], [HALF, 0, 0]],
+        [cyl(0.039, 0.039, 0.016), BRASS, [0, 0.05, -0.2], [HALF, 0, 0]],
+        [box(0.08, 0.03, 0.06), 0x6b3a1c, [0, 0.085, 0.0]],
       ],
-      pump: [[box(0.088, 0.066, 0.16), 0x2a2f3f, [0, -0.02, -0.28]]],
-      glow: [
-        [box(0.084, 0.012, 0.14), c, [0, 0.05, 0.0]],
-        [ring(0.093, 0.008), c, [0, 0.05, -0.582]],
-        [ball(0.028), c, [0, 0.05, -0.575]],
-        [cyl(0.034, 0.034, 0.012), c, [0, 0.0, -0.4], [HALF, 0, 0]],
-        [cyl(0.034, 0.034, 0.012), c, [0, 0.0, -0.17], [HALF, 0, 0]],
-      ],
+      pump: [[box(0.088, 0.066, 0.16), WOOD, [0, -0.02, -0.28]]],
+      glow: [[ball(0.012, 6, 5), WEAPON_COLOUR.shotgun, [0.03, 0.084, 0.07]]],
     };
   },
   smg() {
-    const gm = 0x2e3344;
-    const dk = 0x1b1d26;
-    const c = WEAPON_COLOUR.smg;
     const sides = [-1, 1];
+    const rake = [-0.25, 0, 0];
     return {
       muzzle: [0, 0.035, -0.53],
       body: [
-        [box(0.056, 0.085, 0.34), gm, [0, 0.03, -0.08]],
-        [box(0.03, 0.02, 0.3), 0x1e2129, [0, 0.083, -0.08]],
-        [box(0.042, 0.05, 0.14), 0x3b4158, [0, 0.035, -0.32]],
-        [cyl(0.014, 0.014, 0.14), 0x4a526a, [0, 0.035, -0.44], [HALF, 0, 0]],
-        [ball(0.028, 8, 5), 0x15171f, [0, 0.035, -0.505], [0, 0, 0], [1, 1, 0.6]],
-        [box(0.037, 0.25, 0.052), dk, [0, -0.145, -0.1], [0.15, 0, 0]],
-        [box(0.05, 0.13, 0.056), dk, [0, -0.08, 0.05], [-0.25, 0, 0]],
-        [box(0.03, 0.04, 0.12), dk, [0, 0.03, 0.15]],
-        ...sides.map((s) => [cyl(0.034, 0.034, 0.008), dk, [s * 0.029, 0.03, -0.13], [0, 0, HALF]]),
+        [box(0.056, 0.085, 0.34), 0x34373c, [0, 0.03, -0.08]],
+        [box(0.03, 0.02, 0.3), 0x202225, [0, 0.083, -0.08]],
+        [box(0.042, 0.05, 0.14), 0x4a4d52, [0, 0.035, -0.32]],
+        [cyl(0.014, 0.014, 0.14), 0x55585e, [0, 0.035, -0.44], [HALF, 0, 0]],
+        [ball(0.028, 8, 5), PAPER, [0, 0.035, -0.505], [0, 0, 0], [1, 1, 0.6]],
+        [ring(0.03, 0.005), CHROME, [0, 0.035, -0.5]],
+        [box(0.037, 0.25, 0.052), 0x1a1a1a, [0, -0.145, -0.1], [0.15, 0, 0]],
+        [box(0.05, 0.13, 0.056), 0x161616, [0, -0.08, 0.05], rake],
+        ...[-0.04, 0.01, 0.06].map((d) => [box(0.054, 0.012, 0.06), TAPE, [0, -0.08 + d, 0.05 - 0.25 * d], rake]),
+        [box(0.03, 0.04, 0.12), 0x55585e, [0, 0.03, 0.15]],
+        // a small side-mounted speaker: paper cone, chrome ring and three grille bars
+        ...sides.map((s) => [cyl(0.034, 0.034, 0.008), PAPER, [s * 0.029, 0.03, -0.13], [0, 0, HALF]]),
+        ...sides.map((s) => [ring(0.034, 0.005, 12), CHROME, [s * 0.032, 0.03, -0.13], [0, HALF, 0]]),
+        ...sides.flatMap((s) => [-0.012, 0, 0.012].map((z) => [box(0.004, 0.056, 0.003), CHROME, [s * 0.034, 0.03, -0.13 + z]])),
       ],
-      glow: [
-        [box(0.04, 0.2, 0.01), c, [0, -0.15, -0.135], [0.15, 0, 0]],
-        [ring(0.03, 0.006), c, [0, 0.035, -0.505], [0, 0, 0]],
-        ...sides.map((s) => [ring(0.034, 0.005, 12), c, [s * 0.031, 0.03, -0.13], [0, HALF, 0]]),
-        ...sides.map((s) => [box(0.006, 0.05, 0.004), c, [s * 0.032, 0.03, -0.13]]),
-        ...sides.map((s) => [box(0.006, 0.004, 0.05), c, [s * 0.032, 0.03, -0.13]]),
-        [box(0.012, 0.012, 0.18), c, [0, 0.096, -0.08]],
-      ],
+      glow: [[ball(0.011, 6, 5), WEAPON_COLOUR.smg, [0, 0.096, 0.07]]],
     };
   },
   launcher() {
-    const gm = 0x34293f;
-    const dk = 0x1a1424;
-    const c = WEAPON_COLOUR.launcher;
+    const rake = [-0.2, 0, 0];
     return {
       muzzle: [0, 0.03, -0.63],
       body: [
-        [cyl(0.075, 0.075, 0.5), gm, [0, 0.03, -0.2], [HALF, 0, 0]],
-        [cyl(0.086, 0.074, 0.06), dk, [0, 0.03, 0.08], [HALF, 0, 0]],
-        [cyl(0.074, 0.17, 0.16), dk, [0, 0.03, -0.52], [HALF, 0, 0]],
-        [box(0.056, 0.15, 0.066), dk, [0, -0.1, 0.03], [-0.2, 0, 0]],
-        [box(0.042, 0.1, 0.042), dk, [0, -0.1, -0.22]],
-        [box(0.022, 0.05, 0.04), gm, [0, 0.12, -0.1]],
+        [cyl(0.075, 0.075, 0.5), 0x4a4d52, [0, 0.03, -0.2], [HALF, 0, 0]],
+        [cyl(0.086, 0.074, 0.06), 0x2a2b2e, [0, 0.03, 0.08], [HALF, 0, 0]],
+        [cyl(0.074, 0.17, 0.16), PAPER, [0, 0.03, -0.52], [HALF, 0, 0]],
+        [ring(0.168, 0.012), CHROME, [0, 0.03, -0.6]],
+        ...[-0.05, -0.2, -0.33].map((z) => [cyl(0.083, 0.083, 0.016), BRASS, [0, 0.03, z], [HALF, 0, 0]]),
+        [box(0.056, 0.15, 0.066), WOOD, [0, -0.1, 0.03], rake],
+        ...[-0.04, 0.01, 0.06].map((d) => [box(0.06, 0.012, 0.07), TAPE, [0, -0.1 + d, 0.03 - 0.2 * d], rake]),
+        [box(0.042, 0.1, 0.042), 0x161616, [0, -0.1, -0.22]],
+        [box(0.022, 0.05, 0.04), 0x3a3d42, [0, 0.12, -0.1]],
+        [box(0.06, 0.05, 0.12), 0x6b3a1c, [0.07, 0.04, -0.27]],
       ],
-      glow: [
-        [cyl(0.083, 0.083, 0.016), c, [0, 0.03, -0.05], [HALF, 0, 0]],
-        [cyl(0.083, 0.083, 0.016), c, [0, 0.03, -0.2], [HALF, 0, 0]],
-        [cyl(0.083, 0.083, 0.016), c, [0, 0.03, -0.33], [HALF, 0, 0]],
-        [box(0.02, 0.01, 0.34), c, [0, 0.109, -0.2]],
-        [ring(0.168, 0.01), c, [0, 0.03, -0.6]],
-        [cyl(0.1, 0.1, 0.006), 0xff8cc4, [0, 0.03, -0.585], [HALF, 0, 0]],
-        [box(0.012, 0.012, 0.012), c, [0, 0.148, -0.1]],
-      ],
+      glow: [[ball(0.012, 6, 5), WEAPON_COLOUR.launcher, [0, 0.152, -0.1]]],
     };
   },
 };
@@ -701,7 +712,7 @@ export function makeWeaponModel(id) {
     return {
       muzzle: p.muzzle,
       body: merge(p.body),
-      glow: merge(p.glow),
+      glow: merge(p.glow, [0, 0, 0], 0),
       pump: p.pump ? merge(p.pump) : null,
     };
   });
@@ -710,7 +721,7 @@ export function makeWeaponModel(id) {
   const body = new THREE.Mesh(parts.body, litMat('weapon', GUN_EMISSIVE));
   body.name = 'body';
   const glow = new THREE.Mesh(parts.glow, glowMat());
-  glow.name = 'glow';
+  glow.name = 'glow'; // the small indicator lamp
   g.add(body, glow);
   if (parts.pump) {
     const pump = new THREE.Mesh(parts.pump, litMat('weapon', GUN_EMISSIVE));
@@ -724,18 +735,14 @@ export function makeWeaponModel(id) {
   return g;
 }
 
+// A plain glowing ring on the floor so pickups can be found in a dark room.
 function plinth(colour) {
   const g = new THREE.Group();
-  const baseGeo = once('plinth:base', () => merge([[cyl(0.42, 0.46, 0.06, 14), 0x16121f, [0, 0.03, 0]]]));
-  const base = new THREE.Mesh(baseGeo, litMat('weapon', GUN_EMISSIVE));
-  const ringGeo = once('plinth:ring', () => new THREE.TorusGeometry(0.4, 0.028, 5, 24));
+  const ringGeo = once('plinth:ring', () => new THREE.TorusGeometry(0.4, 0.03, 5, 24));
   const rim = new THREE.Mesh(ringGeo, flatGlow(colour));
   rim.rotation.x = HALF;
-  rim.position.y = 0.075;
-  const beamGeo = once('plinth:beam', () => new THREE.CylinderGeometry(0.36, 0.42, 0.9, 16, 1, true));
-  const beam = new THREE.Mesh(beamGeo, addMat(colour, 0.07));
-  beam.position.y = 0.5;
-  g.add(base, rim, beam);
+  rim.position.y = 0.03;
+  g.add(rim);
   return g;
 }
 
@@ -748,8 +755,8 @@ export function makeWeaponPickup(id) {
   const item = new THREE.Group();
   item.name = 'item';
   const model = makeWeaponModel(id);
-  // Pickups sit in a dim room, so brighten the gunmetal a little with a separate material.
-  model.traverse((o) => { if (o.isMesh && o.material === litMat('weapon', GUN_EMISSIVE)) o.material = litMat('weaponPickup', 0x34344e); });
+  // Pickups sit in a dim room, so lift the metal a little with a separate material.
+  model.traverse((o) => { if (o.isMesh && o.material === litMat('weapon', GUN_EMISSIVE)) o.material = litMat('weaponPickup', 0x2e2820); });
   // Centre the model on its own bounding box so it spins about its middle.
   const bb = new THREE.Box3().setFromObject(model);
   const c = bb.getCenter(new THREE.Vector3());
@@ -764,27 +771,28 @@ export function makeWeaponPickup(id) {
 export function makeHealthPickup() {
   const g = new THREE.Group();
   g.name = 'pickup-health';
-  g.add(plinth(0xff2a4a));
+  g.add(plinth(0xff3030));
+  // A dented first-aid tin with a painted cross.
+  const red = 0xa81c1c;
   const kitGeo = once('medkit:body', () => merge([
-    [box(0.54, 0.38, 0.2), 0xe9e9f0, [0, 0, 0]],
-    [box(0.56, 0.03, 0.22), 0xb4b8c6, [0, 0.0, 0]],
-    [box(0.22, 0.05, 0.06), 0x30343f, [0, 0.215, 0]],
-    [box(0.04, 0.06, 0.06), 0x30343f, [-0.1, 0.19, 0]],
-    [box(0.04, 0.06, 0.06), 0x30343f, [0.1, 0.19, 0]],
-    [box(0.06, 0.4, 0.22), 0x30343f, [-0.28, 0, 0]],
-    [box(0.06, 0.4, 0.22), 0x30343f, [0.28, 0, 0]],
+    [box(0.54, 0.38, 0.2), 0xcfc9b8, [0, 0, 0]],
+    [box(0.56, 0.03, 0.22), 0x8a8678, [0, 0.0, 0]],
+    [box(0.22, 0.05, 0.06), 0x3a3d42, [0, 0.215, 0]],
+    [box(0.04, 0.06, 0.06), 0x3a3d42, [-0.1, 0.19, 0]],
+    [box(0.04, 0.06, 0.06), 0x3a3d42, [0.1, 0.19, 0]],
+    [box(0.06, 0.4, 0.22), 0x55585e, [-0.28, 0, 0]],
+    [box(0.06, 0.4, 0.22), 0x55585e, [0.28, 0, 0]],
+    [box(0.22, 0.07, 0.012), red, [0, 0.03, -0.106]],
+    [box(0.07, 0.22, 0.012), red, [0, 0.03, -0.106]],
+    [box(0.22, 0.07, 0.012), red, [0, 0.03, 0.106]],
+    [box(0.07, 0.22, 0.012), red, [0, 0.03, 0.106]],
+    [box(0.05, 0.08, 0.02), CHROME, [-0.12, 0.02, -0.11]],
+    [box(0.05, 0.08, 0.02), CHROME, [0.12, 0.02, -0.11]],
+    [box(0.16, 0.12, 0.012), 0x6b3a1c, [0.1, -0.1, 0.108]],
   ]));
-  const kit = new THREE.Mesh(kitGeo, litMat('weapon', 0x2a2a34));
+  const kit = new THREE.Mesh(kitGeo, litMat('weaponPickup', 0x2e2820));
   kit.position.y = 0.62;
-  const crossGeo = once('medkit:cross', () => merge([
-    [box(0.22, 0.07, 0.012), 0xff2a4a, [0, 0, -0.106]],
-    [box(0.07, 0.22, 0.012), 0xff2a4a, [0, 0, -0.106]],
-    [box(0.22, 0.07, 0.012), 0xff2a4a, [0, 0, 0.106]],
-    [box(0.07, 0.22, 0.012), 0xff2a4a, [0, 0, 0.106]],
-  ]));
-  const cross = new THREE.Mesh(crossGeo, glowMat());
-  cross.position.y = 0.62;
-  g.add(kit, cross);
+  g.add(kit);
   return g;
 }
 
@@ -796,35 +804,37 @@ export function makeProjectile(kind) {
   const g = new THREE.Group();
   g.name = `projectile-${kind}`;
   if (kind === 'rocket') {
+    // Unlit so it stays visible in the dark: a scuffed tube with a small speaker cone for a tail.
     const geo = once('proj:rocket', () => merge([
-      [cyl(0.045, 0.045, 0.28), 0xe8e4f0, [0, 0, 0.0], [HALF, 0, 0]],
-      [cone(0.048, 0.14), 0xff2e93, [0, 0, -0.21], [-HALF, 0, 0]],
-      [box(0.1, 0.012, 0.07), 0xff2e93, [0, 0, 0.12]],
-      [box(0.012, 0.1, 0.07), 0xff2e93, [0, 0, 0.12]],
-      [ring(0.065, 0.007), COLOURS.cyan, [0, 0, 0.22]],
-      [ring(0.085, 0.007), COLOURS.cyan, [0, 0, 0.3]],
-      [ring(0.105, 0.007), COLOURS.cyan, [0, 0, 0.38]],
+      [cyl(0.045, 0.045, 0.28), 0x8a8d90, [0, 0, 0.0], [HALF, 0, 0]],
+      [cone(0.048, 0.14), 0x8a2a20, [0, 0, -0.21], [-HALF, 0, 0]],
+      [cyl(0.047, 0.047, 0.03), CHROME, [0, 0, -0.06], [HALF, 0, 0]],
+      [box(0.1, 0.012, 0.07), 0x6b3a1c, [0, 0, 0.12]],
+      [box(0.012, 0.1, 0.07), 0x6b3a1c, [0, 0, 0.12]],
+      [cyl(0.02, 0.055, 0.05), PAPER, [0, 0, 0.17], [HALF, 0, 0]],
     ]));
     const body = new THREE.Mesh(geo, glowMat());
-    const trailGeo = once('proj:trail', () => new THREE.ConeGeometry(0.06, 0.4, 8, 1, true));
-    const trail = new THREE.Mesh(trailGeo, addMat(0xff6ac0, 0.4));
+    const trailGeo = once('proj:trail', () => new THREE.ConeGeometry(0.05, 0.36, 8, 1, true));
+    const trail = new THREE.Mesh(trailGeo, addMat(0xffa030, 0.5));
     trail.rotation.x = HALF;
     trail.position.z = 0.34;
     g.add(body, trail);
     return g;
   }
-  // 'bottle': axis along y inside a 'spin' child, so rotating spin about x tumbles it end over end.
+  // 'bottle': a glass bottle with a burning rag in the neck. Axis along y inside a 'spin' child, so
+  // rotating spin about x tumbles it end over end.
   const spin = new THREE.Group();
   spin.name = 'spin';
   const geo = once('proj:bottle', () => merge([
-    [cyl(0.06, 0.06, 0.16), 0xfb923c, [0, -0.04, 0]],
-    [cyl(0.026, 0.06, 0.05), 0xfb923c, [0, 0.065, 0]],
-    [cyl(0.026, 0.026, 0.06), 0xffd08a, [0, 0.12, 0]],
-    [cyl(0.034, 0.034, 0.025), 0xfff2b0, [0, 0.165, 0]],
-    [cyl(0.062, 0.062, 0.05), 0xffb347, [0, -0.04, 0]],
-  ]));
+    [cyl(0.06, 0.06, 0.16), 0xc47a20, [0, -0.04, 0]],
+    [cyl(0.026, 0.06, 0.05), 0xc47a20, [0, 0.065, 0]],
+    [cyl(0.026, 0.026, 0.06), 0xd89a3a, [0, 0.12, 0]],
+    [cyl(0.014, 0.01, 0.05), 0xd8d0b0, [0, 0.175, 0]],
+    [cone(0.032, 0.09), 0xffa030, [0, 0.25, 0]],
+    [cyl(0.062, 0.062, 0.05), 0xe8dcc0, [0, -0.04, 0]],
+  ], [0, 0, 0], 0.08));
   spin.add(new THREE.Mesh(geo, glowMat()));
-  const halo = new THREE.Mesh(once('proj:halo', () => ball(0.14, 8, 6)), addMat(0xff8a2a, 0.14));
+  const halo = new THREE.Mesh(once('proj:halo', () => ball(0.12, 8, 6)), addMat(0xff8a2a, 0.1));
   g.add(spin, halo);
   return g;
 }
