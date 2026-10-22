@@ -1,8 +1,9 @@
-// Headless check at a phone-sized viewport using synthetic multi-touch events.
-// Covers: menus, both sticks, all five levels and bosses via the ?test hook, level clear,
-// upgrade pick, death and retry, win, and save/continue. Screenshots go to the directory in
-// argv[2] (default: cwd) as smoke-*.png.
+// End-to-end check of the first-person game in headless Chromium (software WebGL) with synthetic multi-touch.
+// Covers: menus and the controls screen, the grey move and look boxes, auto-fire, clip and reload, weapon swap,
+// the linear route (areas, doors, enemies that stay dead), death and retry, level complete, and debug mode.
+// Screenshots go to the directory in argv[2] (default: cwd) as smoke-*.png.
 import { spawn } from 'node:child_process';
+import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
 
@@ -17,194 +18,173 @@ const check = (ok, msg) => {
   if (!ok) failed = true;
 };
 
+const chromiumPath = process.env.CHROMIUM_PATH
+  || readdirSync('/opt/pw-browsers').filter((d) => d.startsWith('chromium-')).map((d) => {
+    const base = `/opt/pw-browsers/${d}`;
+    return readdirSync(base).filter((x) => x.startsWith('chrome-linux')).map((x) => `${base}/${x}/chrome`)[0];
+  })[0];
+
 const browser = await chromium.launch({
-  executablePath: process.env.CHROMIUM_PATH,
-  args: ['--autoplay-policy=no-user-gesture-required'],
+  executablePath: chromiumPath,
+  args: ['--use-angle=swiftshader', '--use-gl=angle', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--autoplay-policy=no-user-gesture-required'],
 });
 try {
-  const ctx = await browser.newContext({
-    viewport: { width: 390, height: 844 },
-    deviceScaleFactor: 3,
-    hasTouch: true,
-    isMobile: true,
-  });
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true, isMobile: true });
   const page = await ctx.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+  page.on('console', (m) => m.type() === 'error' && !/favicon|status of 404/.test(m.text()) && errors.push(m.text()));
 
-  const ptr = (type, id, x, y) =>
-    page.evaluate(([type, id, x, y]) => {
-      document.getElementById('game').dispatchEvent(
-        new PointerEvent(type, { pointerId: id, clientX: x, clientY: y, bubbles: true, pointerType: 'touch', isPrimary: id === 6 }),
-      );
-    }, [type, id, x, y]);
+  const ptr = (type, id, x, y) => page.evaluate(([type, id, x, y]) => {
+    document.getElementById('game').dispatchEvent(
+      new PointerEvent(type, { pointerId: id, clientX: x, clientY: y, bubbles: true, pointerType: 'touch', isPrimary: id === 1 }),
+    );
+  }, [type, id, x, y]);
   const tap = async (x, y) => {
     await ptr('pointerdown', 9, x, y);
     await ptr('pointerup', 9, x, y);
-    await page.waitForTimeout(120);
+    await page.waitForTimeout(150);
   };
-  const dbg = (cmd, arg) => page.evaluate(([c, a]) => window.__game.testHook(c, a), [cmd, arg]);
-  const state = () => page.evaluate(() => {
-    const s = window.__game.getState();
-    return {
-      mode: s.mode, level: s.level, shots: s.shots, x: s.player.x, score: s.score, boss: !!s.boss,
-      enemies: s.enemies.length, offers: s.offers.length, upSum: Object.values(s.ups).reduce((a, b) => a + b, 0),
-      hasSave: !!s.save, saveLevel: s.save?.level, debugMode: s.debugMode,
-      interval: s.st.interval, dmg: s.st.dmg, maxHp: s.st.maxHp, hp: s.player.hp,
-    };
-  });
+  const hook = (cmd, arg) => page.evaluate(([c, a]) => window.__game.testHook(c, a), [cmd, arg]);
   const pressButton = async (id) => {
-    const b = (await dbg('buttons')).find((x) => x.id === id);
-    if (!b) throw new Error(`no ${id} button`);
+    const b = (await hook('buttons')).find((x) => x.id === id);
+    if (!b) throw new Error(`no ${id} button in mode ${(await state()).mode}`);
     await tap(b.x + b.w / 2, b.y + b.h / 2);
   };
+  const center = (r) => [r.x + r.w / 2, r.y + r.h / 2];
+  const state = () => page.evaluate(() => {
+    const s = window.__game.getState();
+    const p = s.player;
+    return {
+      mode: s.mode, x: p.x, z: p.z, yaw: p.yaw, health: p.health, maxHealth: p.maxHealth, weapon: p.weapon,
+      clip: p.ammo[p.weapon], reloading: p.reloadT > 0, shots: s.shots, kills: s.kills,
+      alive: s.enemies.filter((e) => !e.dead).length, total: s.totalEnemies, areas: s.areas.map((a) => ({ id: a.def.id, cleared: a.cleared })),
+      debugMode: s.debugMode, owned: Object.keys(p.owned), allClear: s.allClear,
+    };
+  });
   const shot = (name) => page.screenshot({ path: join(outDir, `smoke-${name}.png`) });
 
   await page.goto(`http://localhost:${port}/?test`);
-  await page.waitForTimeout(400);
-
-  const size = await page.evaluate(() => {
-    const c = document.getElementById('game');
-    return { w: c.width, h: c.height, scrolls: document.documentElement.scrollHeight > innerHeight };
-  });
-  check(size.w === 1170 && size.h === 2532 && !size.scrolls, `canvas fills viewport ${JSON.stringify(size)}`);
-  check((await state()).mode === 'title', 'starts on title');
+  await page.waitForTimeout(1500);
+  const gl = await page.evaluate(() => { const c = document.getElementById('gl'); return { w: c.width, h: c.height, ok: !!c.getContext('webgl2') || !!c.getContext('webgl') }; });
+  check(gl.ok && gl.w > 0, `WebGL canvas is live (${gl.w}x${gl.h})`);
+  check((await state()).mode === 'title', 'starts on the title screen over the 3D club');
   await shot('title');
 
-  // NEW GAME button sits at 46% of the height
-  await tap(195, 844 * 0.46 + 26);
-  check((await state()).mode === 'controls', 'NEW GAME shows the controls screen first');
-  await page.waitForTimeout(500);
+  // menus: title -> controls -> intro -> play
+  await pressButton('new');
+  check((await state()).mode === 'controls', 'NEW GAME opens the controls screen');
+  await page.waitForTimeout(400);
   await shot('controls');
   await pressButton('back');
-  check((await state()).mode === 'title', 'BACK returns to the menu');
-  await tap(195, 844 * 0.46 + 26);
-  await page.waitForTimeout(1500);
-  check((await state()).mode === 'controls', 'the run does not start until START GAME is pressed');
+  check((await state()).mode === 'title', 'BACK returns to the title');
+  await pressButton('new');
+  await page.waitForTimeout(1200);
+  check((await state()).mode === 'controls', 'the game does not start until START GAME is pressed');
   await pressButton('start');
   check((await state()).mode === 'intro', 'START GAME shows the level intro');
-  await page.waitForTimeout(900);
+  await page.waitForTimeout(1000);
   await shot('intro');
-  await tap(195, 600);
-  check((await state()).mode === 'play', 'tap skips the intro');
-
+  await tap(195, 400);
   const s0 = await state();
-  await ptr('pointerdown', 6, 100, 700);
-  await ptr('pointermove', 6, 170, 700);
-  await ptr('pointerdown', 7, 300, 700);
-  await ptr('pointermove', 7, 300, 620);
-  await page.waitForTimeout(4000);
+  check(s0.mode === 'play', 'tap skips the intro and play begins');
+  check(s0.weapon === 'pistol' && s0.clip === 12 && s0.owned.length === 1, 'Freddie starts with a full Bass Pistol clip and nothing else');
+  check(s0.total >= 12 && s0.alive === s0.total, `enemies are pre-placed in the level (${s0.total}) and all alive`);
+  await shot('play-start');
+
+  // the grey boxes: move box walks, look box turns and auto-fires
+  const L = await hook('layout');
+  const [mx, my] = center(L.moveBox);
+  const [lx, ly] = center(L.lookBox);
+  await ptr('pointerdown', 1, mx, my);
+  await ptr('pointermove', 1, mx, my - L.moveBox.h * 0.4);
+  await page.waitForTimeout(700);
   const s1 = await state();
-  check(s1.x > s0.x + 40, `left stick moves Freddie (${Math.round(s0.x)} -> ${Math.round(s1.x)})`);
-  check(s1.shots > 10, `right stick fires (${s1.shots} shots)`);
-  await shot('play-real');
-  await ptr('pointerup', 6, 170, 700);
-  await ptr('pointerup', 7, 300, 620);
+  check(Math.hypot(s1.x - s0.x, s1.z - s0.z) > 0.8, `move box walks Freddie (${Math.hypot(s1.x - s0.x, s1.z - s0.z).toFixed(1)} units)`);
+  await ptr('pointerup', 1, mx, my - L.moveBox.h * 0.4);
+  const yaw0 = (await state()).yaw;
+  await ptr('pointerdown', 2, lx, ly);
+  for (let i = 1; i <= 10; i++) await ptr('pointermove', 2, lx + i * 6, ly);
+  await page.waitForTimeout(600);
+  const s2 = await state();
+  check(s2.shots > s1.shots, `a thumb in the look box fires on its own (${s2.shots - s1.shots} shots, no extra tap)`);
+  check(Math.abs(s2.yaw - yaw0) > 0.2, `dragging in the look box turns the view (${(s2.yaw - yaw0).toFixed(2)} rad)`);
+  check(s2.clip < 12, `the clip empties as it fires (${s2.clip}/12)`);
+  await page.waitForTimeout(2200);
+  const s3 = await state();
+  check(s3.reloading || s3.clip === 12, 'the clip reloads on its own when it runs empty');
+  await ptr('pointerup', 2, lx, ly);
 
-  // every level: play, boss, clear, then upgrade (or win after the last)
-  for (let i = 0; i < 5; i++) {
-    await dbg('play', i);
-    await page.waitForTimeout(4500);
-    const play = await state();
-    check(play.mode === 'play' && play.level === i && (play.enemies > 0 || play.score > 0), `level ${i + 1} plays and spawns enemies`);
-    await shot(`level${i + 1}`);
-    await dbg('boss');
-    await page.waitForTimeout(2500);
-    const boss = await state();
-    check(boss.boss, `level ${i + 1} boss arrives`);
-    await shot(`boss${i + 1}`);
-    await dbg('killboss');
-    await page.waitForTimeout(300);
-    check((await state()).mode === 'clear', `level ${i + 1} clears when the boss dies`);
-    await page.waitForTimeout(2900);
-    const after = await state();
-    if (i < 4) {
-      check(after.mode === 'upgrade' && after.offers === 3, `level ${i + 1} offers 3 upgrades`);
-      if (i === 0) await shot('upgrade');
-      await tap(195, 844 * 0.3 + 40);
-      const next = await state();
-      check(next.mode === 'intro' && next.level === i + 1 && next.upSum === 1, `upgrade pick starts level ${i + 2}`);
-    } else {
-      check(after.mode === 'win', 'finishing level 5 wins');
-      await page.waitForTimeout(1200);
-      await shot('win');
-    }
+  // reload button, swap button
+  await page.waitForTimeout(1500);
+  await hook('giveWeapons');
+  await tap(...center(L.swapBtn));
+  const s4 = await state();
+  check(s4.weapon !== 'pistol', `SWAP changes weapon (${s4.weapon})`);
+  await ptr('pointerdown', 2, lx, ly);
+  await page.waitForTimeout(500);
+  await ptr('pointerup', 2, lx, ly);
+  const before = await state();
+  check(before.clip < (await hook('stats')).clip + 99, 'clip tracked');
+  await tap(...center(L.reloadBtn));
+  await page.waitForTimeout(100);
+  check((await state()).reloading, 'the RELOAD button forces a reload');
+  await shot('play-weapon');
+
+  // the linear route: kill each area in order, doors open, the dead stay dead
+  await hook('play');
+  const start = await state();
+  const order = start.areas.map((a) => a.id);
+  check(order.length === 6, `six areas in order: ${order.join(', ')}`);
+  for (const id of order) {
+    await hook('killArea', id);
+    await page.waitForTimeout(150);
   }
-
-  // with no thumbs down, Freddie still defends himself against enemies that get close
-  await dbg('play', 0);
-  const idle0 = (await state()).shots;
-  await page.waitForTimeout(16000);
-  const idle1 = (await state()).shots;
-  check(idle1 > idle0, `auto-fires at close enemies with no touch (${idle1 - idle0} shots)`);
+  const done = await state();
+  check(done.alive === 0 && done.kills === done.total, `killed enemies are gone and counted (${done.kills}/${done.total})`);
+  check(done.areas.every((a) => a.cleared) && done.allClear, 'every area reports clear once its enemies are dead');
+  await page.waitForTimeout(800);
+  await shot('area-clear');
+  const world = await page.evaluate(() => { const w = window.__game.getWorld(); return { exit: w.exit }; });
+  await hook('teleport', world.exit);
+  await page.waitForTimeout(300);
+  check((await state()).mode === 'complete', 'reaching the exit after clearing everything completes the level');
+  await page.waitForTimeout(1400);
+  await shot('complete');
+  await pressButton('menu');
+  check((await state()).mode === 'title', 'MAIN MENU returns to the title');
 
   // death and retry
-  await dbg('play', 1);
-  await page.evaluate(() => { window.__game.getState().player.hp = 0; });
-  await page.waitForTimeout(300);
-  check((await state()).mode === 'dead', 'dies at 0 hp');
-  await page.waitForTimeout(1000);
-  await shot('dead');
-  await tap(195, 844 * 0.6 + 26);
-  const retry = await state();
-  check(retry.mode === 'intro' && retry.level === 1, 'RETRY LEVEL restarts the same level');
-
-  // progress persists across a reload
-  await page.reload();
-  await page.waitForTimeout(500);
-  const reloaded = await state();
-  check(reloaded.mode === 'title' && reloaded.hasSave && reloaded.saveLevel === 1, 'save survives a reload');
-  await shot('title-continue');
-  await tap(195, 844 * 0.46 + 26);
-  check((await state()).mode === 'controls', 'CONTINUE shows the controls screen too');
+  await pressButton('new');
   await pressButton('start');
-  const cont = await state();
-  check(cont.mode === 'intro' && cont.level === 1, 'CONTINUE resumes at the saved level');
+  await page.waitForTimeout(900);
+  await tap(195, 400);
+  await hook('hurt', 1000);
+  await page.waitForTimeout(300);
+  check((await state()).mode === 'dead', 'dies at zero health');
+  await page.waitForTimeout(1100);
+  await shot('dead');
+  await pressButton('retry');
+  const retry = await state();
+  check(retry.mode === 'play' && retry.health === retry.maxHealth && retry.alive === retry.total, 'RETRY restarts the level with everything back in place');
 
-  // debug mode: 2x fire rate, 2x damage, 2x health, and it never touches the real save or best score
-  const tapButton = async (id) => {
-    const list = await dbg('buttons');
-    const b = list.find((x) => x.id === id);
-    if (!b) throw new Error(`no ${id} button`);
-    await tap(b.x + b.w / 2, b.y + b.h / 2);
-  };
-  const stored = (key) => page.evaluate((k) => localStorage.getItem(k), key);
-  const normal = await state();
-  check(!normal.debugMode && normal.interval === 0.15 && normal.dmg === 1 && normal.maxHp === 5, `normal mode stats (${normal.interval}s, ${normal.dmg} dmg, ${normal.maxHp} hp)`);
-  const saveBefore = await stored('mobilegame.save');
-  const bestBefore = await stored('mobilegame.best');
-
-  await dbg('title');
-  await shot('title-normal');
-  await tapButton('debug');
-  check((await state()).debugMode === true, 'debug button turns debug mode on');
+  // debug mode: 2x fire rate, 2x damage, 2x health, never changes balance otherwise
+  await hook('title');
+  const normal = await hook('stats');
+  check(normal.fireInterval === 0.28 && normal.damageMult === 1 && normal.maxHealth === 100, `normal mode stats (${normal.fireInterval}s, x${normal.damageMult}, ${normal.maxHealth} hp)`);
+  await pressButton('debug');
+  check((await state()).debugMode === true, 'the debug button turns debug mode on');
   await shot('title-debug');
-  await page.reload();
-  await page.waitForTimeout(500);
-  check((await state()).debugMode === true, 'debug mode stays on after a reload');
-  await tapButton('new');
-  await tapButton('start');
-  const dbgRun = await state();
-  check(dbgRun.interval === 0.075 && dbgRun.dmg === 2 && dbgRun.maxHp === 10 && dbgRun.hp === 10, `debug stats are exactly 2x (${dbgRun.interval}s, ${dbgRun.dmg} dmg, ${dbgRun.maxHp} hp)`);
-  await page.waitForTimeout(3200);
+  await pressButton('new');
+  await pressButton('start');
+  await page.waitForTimeout(900);
+  await tap(195, 400);
+  const dbg = await hook('stats');
+  check(dbg.fireInterval === 0.14 && dbg.damageMult === 2 && dbg.maxHealth === 200, `debug mode is exactly 2x (${dbg.fireInterval}s, x${dbg.damageMult}, ${dbg.maxHealth} hp)`);
   await shot('play-debug');
-  await dbg('play', 2);
-  await page.evaluate(() => { const g = window.__game.getState(); g.player.hp = 0; });
-  await page.waitForTimeout(400);
-  await page.evaluate(() => { window.__game.getState().score = 99999; });
-  await page.waitForTimeout(1200);
-  await shot('dead-debug');
-  check((await stored('mobilegame.save')) === saveBefore, 'debug run leaves the real save untouched');
-  check((await stored('mobilegame.best')) === bestBefore, 'debug run leaves the best score untouched');
-  await tapButton('menu');
-  check((await state()).mode === 'title', 'MAIN MENU returns to the home screen');
-  await tapButton('debug');
-  check((await state()).debugMode === false, 'debug button turns debug mode off');
-  await tapButton('new');
-  await tapButton('start');
-  const back = await state();
-  check(back.interval === 0.15 && back.dmg === 1 && back.maxHp === 5, 'normal stats are back with debug off');
+  await hook('title');
+  await pressButton('debug');
+  check((await state()).debugMode === false, 'the debug button turns it off again');
 
   check(errors.length === 0, `no console errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
 } finally {

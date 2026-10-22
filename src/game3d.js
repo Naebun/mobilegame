@@ -1227,6 +1227,11 @@ export function testHook(cmd, arg) {
       for (const id of WEAPON_ORDER) { S.player.owned[id] = true; S.player.ammo[id] = WEAPONS[id].clip; }
       return undefined;
     case 'layout': return layoutFor(v);
+    case 'hurt': hurtPlayer(arg, S.player.x, S.player.z + 5, false); return undefined;
+    case 'stats': {
+      const w = WEAPONS[S.player.weapon];
+      return { fireInterval: w.interval / mult().fire, damageMult: mult().damage, maxHealth: S.player.maxHealth, weapon: w.id, clip: S.player.ammo[w.id], reloading: S.player.reloadT > 0 };
+    }
     default: return undefined;
   }
 }
