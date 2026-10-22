@@ -22,6 +22,11 @@ const BASE_HP = 5;
 const BASE_SPEED = 215;
 const SAVE_KEY = 'mobilegame.save';
 const BEST_KEY = 'mobilegame.best';
+const DEBUG_KEY = 'mobilegame.debugMode';
+// Debug mode is a testing aid for the player character only. It must never feed back into balance:
+// enemies, spawns, bosses and every number in levels.js are tuned for normal mode alone.
+const DEBUG_MULT = { fire: 2, damage: 2, health: 2 };
+const NORMAL_MULT = { fire: 1, damage: 1, health: 1 };
 const LAST = LEVELS.length - 1;
 
 const S = {
@@ -38,6 +43,7 @@ const S = {
   best: 0,
   newBest: false,
   save: null,
+  debugMode: false,
   ups: {},
   st: null,
   shots: 0,
@@ -98,12 +104,13 @@ const zeroUps = () => Object.fromEntries(UPGRADES.map((u) => [u.id, 0]));
 
 function stats() {
   const u = S.ups;
+  const m = S.debugMode ? DEBUG_MULT : NORMAL_MULT;
   return {
-    interval: BASE_INTERVAL * 0.78 ** u.rate,
+    interval: (BASE_INTERVAL * 0.78 ** u.rate) / m.fire,
     shots: 1 + u.twin,
     pierce: u.pierce,
-    dmg: 1 + u.dmg,
-    maxHp: BASE_HP + u.hp,
+    dmg: (1 + u.dmg) * m.damage,
+    maxHp: (BASE_HP + u.hp) * m.health,
     speed: BASE_SPEED * (1 + 0.12 * u.speed),
     light: 1 + 0.25 * u.torch,
   };
@@ -148,6 +155,7 @@ export function init(view) {
   S.view = view;
   S.best = Number(read(BEST_KEY)) || 0;
   S.save = read(SAVE_KEY);
+  S.debugMode = read(DEBUG_KEY) === true;
   S.ups = zeroUps();
   S.st = stats();
   S.level = 0;
@@ -208,11 +216,34 @@ function beginLevel(idx, view) {
   layoutObstacles(view);
   initRain(view);
   audio.setLevel(idx);
-  S.save = { level: idx, ups: { ...S.ups }, score: S.score };
-  write(SAVE_KEY, S.save);
+  if (!S.debugMode) {
+    S.save = { level: idx, ups: { ...S.ups }, score: S.score };
+    write(SAVE_KEY, S.save);
+  }
+}
+
+// Back to the home screen with a clean backdrop (level 1, nothing in play).
+function toTitle(view) {
+  S.mode = 'title';
+  S.level = 0;
+  S.score = 0;
+  S.levelT = 0;
+  S.boss = null;
+  S.bossSpawned = false;
+  S.banner = null;
+  S.toast = null;
+  S.enemies.length = S.bullets.length = S.ebul.length = S.parts.length = S.pickups.length = 0;
+  S.ups = zeroUps();
+  S.st = stats();
+  S.player = newPlayer(view);
+  S.save = read(SAVE_KEY);
+  layoutObstacles(view);
+  initRain(view);
+  audio.setLevel(0);
 }
 
 function recordBest() {
+  if (S.debugMode) return; // debug runs never touch the real best score
   if (S.score > S.best) {
     S.best = S.score;
     S.newBest = true;
@@ -259,8 +290,10 @@ function win() {
   S.winT = 0;
   S.newBest = false;
   recordBest();
-  S.save = null;
-  write(SAVE_KEY, null);
+  if (!S.debugMode) {
+    S.save = null;
+    write(SAVE_KEY, null);
+  }
 }
 
 // ---- spawning ----
@@ -387,7 +420,7 @@ function buttons(view) {
   const list = [];
   const w = Math.min(view.w - 48, 300);
   const x = (view.w - w) / 2;
-  const add = (id, label, y, primary = true, h = 52) => list.push({ id, label, x, y, w, h, primary });
+  const add = (id, label, y, primary = true, h = 52, accent = null) => list.push({ id, label, x, y, w, h, primary, accent });
   if (S.mode === 'title') {
     let y = view.h * 0.46;
     if (S.save) {
@@ -395,11 +428,14 @@ function buttons(view) {
       y += 64;
     }
     add('new', 'NEW GAME', y, !S.save);
+    add('debug', `DEBUG MODE: ${S.debugMode ? 'ON' : 'OFF'}`, y + 68, false, 40, S.debugMode ? '#fbbf24' : null);
   } else if (S.mode === 'dead' && S.deadT > 0.9) {
     add('retry', 'RETRY LEVEL', view.h * 0.6);
     add('new', 'NEW GAME', view.h * 0.6 + 64, false);
+    add('menu', 'MAIN MENU', view.h * 0.6 + 128, false, 44);
   } else if (S.mode === 'win' && S.winT > 1) {
     add('new', 'PLAY AGAIN', view.h * 0.7);
+    add('menu', 'MAIN MENU', view.h * 0.7 + 64, false, 44);
   } else if (S.mode === 'upgrade') {
     const cw = Math.min(view.w - 40, 340);
     const cx = (view.w - cw) / 2;
@@ -412,7 +448,12 @@ function handlePress(view, p) {
   for (const b of buttons(view)) {
     if (p.x < b.x || p.x > b.x + b.w || p.y < b.y || p.y > b.y + b.h) continue;
     audio.blip();
-    if (b.id === 'new') newGame(view);
+    if (b.id === 'debug') {
+      S.debugMode = !S.debugMode;
+      write(DEBUG_KEY, S.debugMode);
+      S.st = stats();
+    } else if (b.id === 'menu') toTitle(view);
+    else if (b.id === 'new') newGame(view);
     else if (b.id === 'continue') continueGame(view);
     else if (b.id === 'retry') {
       S.score = S.levelStartScore;
@@ -921,9 +962,10 @@ function drawHud(ctx, view) {
   const L = LEVELS[S.level];
   const p = S.player;
   const top = view.safe.top + 26;
-  const gap = S.st.maxHp > 6 ? 23 : 26;
+  const gap = Math.min(26, 170 / Math.max(1, S.st.maxHp - 1));
+  const hs = Math.min(11, gap * 0.45);
   for (let i = 0; i < S.st.maxHp; i++) {
-    heart(ctx, 22 + i * gap, top, 11);
+    heart(ctx, 22 + i * gap, top, hs);
     if (i < p.hp) {
       ctx.fillStyle = '#ff2e93';
       ctx.fill();
@@ -933,6 +975,7 @@ function drawHud(ctx, view) {
       ctx.stroke();
     }
   }
+  if (S.debugMode) text(ctx, 'DEBUG MODE', view.w / 2, view.safe.top + 8, 10, '#fbbf24', 'center', 700);
   const prog = S.bossSpawned ? 1 : clamp(S.levelT / L.duration, 0, 1);
   const mins = Math.round(lerp(L.clock[0], L.clock[1], prog));
   text(ctx, `${pad2(Math.floor(mins / 60) % 24)}:${pad2(mins % 60)}`, view.w / 2 + 36, top, 18, 'rgba(255,255,255,0.7)', 'center', 600);
@@ -973,12 +1016,13 @@ function drawHud(ctx, view) {
 
 function drawButton(ctx, b) {
   rrect(ctx, b.x, b.y, b.w, b.h, 12);
-  ctx.fillStyle = b.primary ? '#ff2e93' : 'rgba(255,255,255,0.08)';
+  ctx.fillStyle = b.primary ? '#ff2e93' : b.accent ? 'rgba(251,191,36,0.14)' : 'rgba(255,255,255,0.08)';
   ctx.fill();
-  ctx.strokeStyle = b.primary ? '#ff2e93' : 'rgba(255,255,255,0.3)';
+  ctx.strokeStyle = b.primary ? '#ff2e93' : b.accent || 'rgba(255,255,255,0.3)';
   ctx.lineWidth = 2;
   ctx.stroke();
-  text(ctx, b.label, b.x + b.w / 2, b.y + b.h / 2, 17, '#ffffff', 'center', 700);
+  const small = b.h < 48;
+  text(ctx, b.label, b.x + b.w / 2, b.y + b.h / 2, small ? 14 : 17, b.accent || '#ffffff', 'center', 700);
 }
 
 function drawCard(ctx, b) {
@@ -1001,7 +1045,13 @@ function drawTitle(ctx, view) {
   text(ctx, "FREDDIE'S", cx, cy, 52, '#ff2e93', 'center', 800);
   text(ctx, 'LAST SET', cx, cy + 54, 52, '#22d3ee', 'center', 800);
   text(ctx, 'Edinburgh. 2am. Everyone is dead.', cx, cy + 106, 15, '#c9c2e0', 'center', 500);
-  for (const b of buttons(view)) drawButton(ctx, b);
+  const list = buttons(view);
+  for (const b of list) drawButton(ctx, b);
+  if (S.debugMode) {
+    const d = list.find((b) => b.id === 'debug');
+    text(ctx, '2x fire rate, 2x damage, 2x health', cx, d.y + d.h + 18, 12, '#fbbf24', 'center', 600);
+    text(ctx, 'Progress and scores are not saved', cx, d.y + d.h + 36, 12, 'rgba(251,191,36,0.7)', 'center', 500);
+  }
   if (S.best > 0) text(ctx, `BEST ${S.best}`, cx, view.h * 0.46 - 30, 14, '#c9c2e0', 'center', 600);
   text(ctx, 'Left thumb: move   Right thumb: aim and fire', cx, view.h - view.safe.bottom - 210, 13, 'rgba(255,255,255,0.45)', 'center', 500);
 }
@@ -1042,7 +1092,8 @@ function drawDead(ctx, view) {
   text(ctx, LEVELS[S.level].name, cx, view.h * 0.2 + 36, 14, '#9fb3c8', 'center', 600);
   paragraph(ctx, S.deadLine, cx, view.h * 0.2 + 70, view.w - 64, 16, '#e5e0f5', 'center', 500);
   text(ctx, `Score ${S.score}`, cx, view.h * 0.46, 20, '#ffffff', 'center', 700);
-  text(ctx, S.newBest ? 'NEW BEST' : `Best ${S.best}`, cx, view.h * 0.46 + 28, 14, S.newBest ? '#22d3ee' : '#c9c2e0', 'center', 600);
+  if (S.debugMode) text(ctx, 'DEBUG RUN: not recorded', cx, view.h * 0.46 + 28, 14, '#fbbf24', 'center', 600);
+  else text(ctx, S.newBest ? 'NEW BEST' : `Best ${S.best}`, cx, view.h * 0.46 + 28, 14, S.newBest ? '#22d3ee' : '#c9c2e0', 'center', 600);
   for (const b of buttons(view)) drawButton(ctx, b);
 }
 
@@ -1054,7 +1105,8 @@ function drawWin(ctx, view) {
   paragraph(ctx, WIN_LINES[1], cx, view.h * 0.2 + 56, view.w - 64, 18, '#ffffff', 'center', 600);
   paragraph(ctx, WIN_LINES[2], cx, view.h * 0.2 + 100, view.w - 64, 15, '#e5e0f5', 'center', 500);
   text(ctx, `Final score ${S.score}`, cx, view.h * 0.5, 22, '#ffffff', 'center', 700);
-  text(ctx, S.newBest ? 'NEW BEST' : `Best ${S.best}`, cx, view.h * 0.5 + 30, 14, S.newBest ? '#22d3ee' : '#c9c2e0', 'center', 600);
+  if (S.debugMode) text(ctx, 'DEBUG RUN: not recorded', cx, view.h * 0.5 + 30, 14, '#fbbf24', 'center', 600);
+  else text(ctx, S.newBest ? 'NEW BEST' : `Best ${S.best}`, cx, view.h * 0.5 + 30, 14, S.newBest ? '#22d3ee' : '#c9c2e0', 'center', 600);
   for (const b of buttons(view)) drawButton(ctx, b);
 }
 
@@ -1138,8 +1190,9 @@ export function render(ctx, view) {
   }
 }
 
-// Test hook, reachable only through window.__game (?debug). Lets the smoke test jump around the campaign.
-export function debug(cmd, arg) {
+// Test hook, reachable only through window.__game (?test). Lets the smoke test jump around the campaign.
+// Not the player-facing debug mode: that is S.debugMode, toggled on the home screen.
+export function testHook(cmd, arg) {
   const v = S.view;
   if (cmd === 'play') {
     S.ups = zeroUps();
@@ -1152,5 +1205,9 @@ export function debug(cmd, arg) {
     S.levelT = LEVELS[S.level].duration;
   } else if (cmd === 'killboss') {
     if (S.boss) S.boss.hp = 0;
+  } else if (cmd === 'title') {
+    toTitle(v);
+  } else if (cmd === 'buttons') {
+    return buttons(v);
   }
 }

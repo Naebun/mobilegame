@@ -4,6 +4,8 @@ A portrait-mode horror shooter for the phone browser, set in Edinburgh. Freddie 
 
 **Campaign:** five levels (the Cowgate, the Royal Mile, the Grassmarket, Princes Street Gardens, Arthur's Seat). Survive until dawn, then a boss arrives. Beat it, pick one of three upgrades, move on. Progress is saved on the device, so CONTINUE works after closing the tab.
 
+**Debug mode:** a toggle on the home screen for testing. Freddie fires twice as fast, deals twice the damage and has twice the health. Debug runs never touch your saved progress or best score, and a DEBUG MODE badge shows during play. It exists only to help test. The game is balanced for normal mode.
+
 **Controls:** left thumb moves, right thumb aims and fires (WASD works on desktop, with the mouse on the right half of the screen to aim).
 
 ## Layout
@@ -49,5 +51,5 @@ Publish that file as a Claude Artifact and it opens in the Claude app. It is a s
 
 ```
 npm install                  # first time only; set CHROMIUM_PATH to reuse an installed Chromium
-npm run smoke -- ./shots     # plays every level and boss through the ?debug hook, screenshots land in ./shots (gitignored)
+npm run smoke -- ./shots     # plays every level and boss through the ?test hook, screenshots land in ./shots (gitignored)
 ```
