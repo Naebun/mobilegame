@@ -20,6 +20,7 @@ const html = `<title>Freddie's Last Set</title>
 :root { --bg: #050309; color-scheme: dark; }
 html, body { background: var(--bg); }
 ${css}</style>
+<canvas id="gl"></canvas>
 <canvas id="game"></canvas>
 <script>${js}</script>
 `;

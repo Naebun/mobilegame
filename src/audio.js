@@ -156,11 +156,58 @@ export function setMood(i, isMuffled) {
 
 // ---- sound effects ----
 
-export function shoot() {
+// Each weapon sounds different: the pistol is a clean bass thump, the shotgun a wide boom, the SMG a dry tick.
+export function shoot(kind = 'pistol') {
   if (!running()) return;
   const t = ac.currentTime;
-  osc('sine', 260 + Math.random() * 30, t, 0.14, 0.45, sfxBus, { to: 70 });
-  noise(t, 0.06, 0.2, sfxBus, { freq: 3000 });
+  if (kind === 'shotgun') {
+    osc('sine', 150, t, 0.3, 0.7, sfxBus, { to: 38 });
+    noise(t, 0.28, 0.5, sfxBus, { type: 'lowpass', freq: 3500, to: 300 });
+  } else if (kind === 'smg') {
+    osc('square', 420 + Math.random() * 40, t, 0.05, 0.18, sfxBus, { to: 160 });
+    noise(t, 0.04, 0.22, sfxBus, { freq: 4500 });
+  } else if (kind === 'launcher') {
+    osc('sawtooth', 200, t, 0.35, 0.4, sfxBus, { to: 55 });
+    noise(t, 0.3, 0.25, sfxBus, { type: 'bandpass', freq: 500, to: 2000 });
+  } else {
+    osc('sine', 260 + Math.random() * 30, t, 0.14, 0.45, sfxBus, { to: 70 });
+    noise(t, 0.06, 0.2, sfxBus, { freq: 3000 });
+  }
+}
+
+export function reload(done = false) {
+  if (!running()) return;
+  const t = ac.currentTime;
+  if (done) {
+    osc('square', 300, t, 0.05, 0.2, sfxBus, { to: 520 });
+    noise(t, 0.04, 0.2, sfxBus, { freq: 5000 });
+  } else {
+    osc('square', 180, t, 0.05, 0.18, sfxBus, { to: 110 });
+    noise(t, 0.05, 0.15, sfxBus, { freq: 2500 });
+  }
+}
+
+export function door() {
+  if (!running()) return;
+  const t = ac.currentTime;
+  osc('sawtooth', 90, t, 0.6, 0.25, sfxBus, { to: 50, attack: 0.05 });
+  noise(t, 0.5, 0.2, sfxBus, { type: 'bandpass', freq: 300, to: 900 });
+}
+
+// A heavy robot fist landing on Freddie.
+export function melee() {
+  if (!running()) return;
+  const t = ac.currentTime;
+  osc('sine', 120, t, 0.25, 0.7, sfxBus, { to: 40 });
+  noise(t, 0.15, 0.4, sfxBus, { type: 'lowpass', freq: 1500, to: 200 });
+}
+
+// A robot lobbing a bottle.
+export function spit() {
+  if (!running()) return;
+  const t = ac.currentTime;
+  osc('triangle', 500, t, 0.15, 0.2, sfxBus, { to: 250 });
+  noise(t, 0.1, 0.12, sfxBus, { type: 'bandpass', freq: 1500, to: 600 });
 }
 
 export function kill() {

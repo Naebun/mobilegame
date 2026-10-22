@@ -1,5 +1,5 @@
 import { start } from './engine.js';
-import * as game from './game.js';
+import * as game from './game3d.js';
 
 if (location.search.includes("test")) window.__game = game;
 
