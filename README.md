@@ -6,6 +6,8 @@ A portrait-mode horror shooter for the phone browser, set in Edinburgh. Freddie 
 
 **Debug mode:** a toggle on the home screen for testing. Freddie fires twice as fast, deals twice the damage and has twice the health. Debug runs never touch your saved progress or best score, and a DEBUG MODE badge shows during play. It exists only to help test. The game is balanced for normal mode.
 
+**Flow:** home screen, then a controls screen, then the level intro. The run starts only when the player presses START GAME on the controls screen. Retrying a level or restarting from the end screens skips it.
+
 **Controls:** left thumb moves, right thumb aims and fires (WASD works on desktop, with the mouse on the right half of the screen to aim).
 
 ## Layout

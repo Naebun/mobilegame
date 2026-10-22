@@ -30,7 +30,8 @@ const NORMAL_MULT = { fire: 1, damage: 1, health: 1 };
 const LAST = LEVELS.length - 1;
 
 const S = {
-  mode: 'title', // title | intro | play | clear | upgrade | dead | win
+  mode: 'title', // title | controls | intro | play | clear | upgrade | dead | win
+  pendingStart: 'new', // which menu button led to the controls screen
   t: 0,
   level: 0,
   levelT: 0,
@@ -429,6 +430,10 @@ function buttons(view) {
     }
     add('new', 'NEW GAME', y, !S.save);
     add('debug', `DEBUG MODE: ${S.debugMode ? 'ON' : 'OFF'}`, y + 68, false, 40, S.debugMode ? '#fbbf24' : null);
+  } else if (S.mode === 'controls') {
+    const y = view.h - view.safe.bottom - 126;
+    add('start', 'START GAME', y);
+    add('back', 'BACK', y + 60, false, 44);
   } else if (S.mode === 'dead' && S.deadT > 0.9) {
     add('retry', 'RETRY LEVEL', view.h * 0.6);
     add('new', 'NEW GAME', view.h * 0.6 + 64, false);
@@ -453,6 +458,11 @@ function handlePress(view, p) {
       write(DEBUG_KEY, S.debugMode);
       S.st = stats();
     } else if (b.id === 'menu') toTitle(view);
+    else if ((b.id === 'new' || b.id === 'continue') && S.mode === 'title') {
+      S.pendingStart = b.id; // the run begins only when START GAME is pressed
+      S.mode = 'controls';
+    } else if (b.id === 'back') S.mode = 'title';
+    else if (b.id === 'start') (S.pendingStart === 'continue' ? continueGame : newGame)(view);
     else if (b.id === 'new') newGame(view);
     else if (b.id === 'continue') continueGame(view);
     else if (b.id === 'retry') {
@@ -490,6 +500,7 @@ export function update(dt, input, view) {
 
   switch (S.mode) {
     case 'title':
+    case 'controls':
     case 'upgrade':
       for (const p of input.pressed) handlePress(view, p);
       break;
@@ -1056,6 +1067,73 @@ function drawTitle(ctx, view) {
   text(ctx, 'Left thumb: move   Right thumb: aim and fire', cx, view.h - view.safe.bottom - 210, 13, 'rgba(255,255,255,0.45)', 'center', 500);
 }
 
+// An animated thumb pad: a ring with a knob that shows what the thumb does.
+function drawPad(ctx, x, y, R, colour, kind) {
+  ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(x, y, R, 0, 6.283);
+  ctx.stroke();
+  const ang = kind === 'move' ? S.t * 1.4 : Math.sin(S.t * 1.1) * 1.1 - 0.4;
+  const kx = x + Math.cos(ang) * R * 0.55;
+  const ky = y + Math.sin(ang) * R * 0.55;
+  ctx.fillStyle = colour;
+  ctx.beginPath();
+  ctx.arc(kx, ky, R * 0.4, 0, 6.283);
+  ctx.fill();
+  if (kind === 'aim') {
+    ctx.strokeStyle = '#22d3ee';
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    for (let i = 0; i < 3; i++) {
+      const d = R + 16 + ((S.t * 70 + i * 14) % 42);
+      ctx.globalAlpha = 1 - (d - R - 16) / 42;
+      ctx.beginPath();
+      ctx.arc(x, y, d, ang - 0.28, ang + 0.28);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+}
+
+function drawControls(ctx, view) {
+  const cx = view.w / 2;
+  const compact = view.h < 760;
+  ctx.fillStyle = 'rgba(4,2,8,0.86)';
+  ctx.fillRect(0, 0, view.w, view.h);
+  text(ctx, 'CONTROLS', cx, view.safe.top + view.h * 0.075, 30, '#ff2e93', 'center', 800);
+
+  const R = compact ? 34 : 42;
+  const py = view.safe.top + view.h * (compact ? 0.2 : 0.235);
+  const colW = view.w / 2 - 24;
+  [
+    { x: view.w * 0.25, kind: 'move', colour: 'rgba(255,255,255,0.28)', head: 'LEFT THUMB', name: 'MOVE', tip: 'Drag anywhere on the left half of the screen.' },
+    { x: view.w * 0.75, kind: 'aim', colour: 'rgba(34,211,238,0.4)', head: 'RIGHT THUMB', name: 'AIM + FIRE', tip: 'Drag on the right half. Freddie fires where you point.' },
+  ].forEach((c) => {
+    drawPad(ctx, c.x, py, R, c.colour, c.kind);
+    const ty = py + R + 36;
+    text(ctx, c.head, c.x, ty, 12, '#9fb3c8', 'center', 600);
+    text(ctx, c.name, c.x, ty + 22, 20, '#ffffff', 'center', 800);
+    if (!compact) paragraph(ctx, c.tip, c.x, ty + 50, colW, 12.5, '#c9c2e0', 'center', 500, 17);
+  });
+
+  const tips = [
+    'Shots bend towards enemies near your aim. With no right thumb down, Freddie fires at anything that gets close.',
+    'The dead are red eyes in the dark. Stay in the light.',
+    'Hearts heal you. Survive until dawn, then beat the boss.',
+  ];
+  let y = py + R + (compact ? 90 : 160);
+  for (const tip of tips) {
+    ctx.fillStyle = '#ff2e93';
+    ctx.beginPath();
+    ctx.arc(26, y + 1, 3, 0, 6.283);
+    ctx.fill();
+    y += paragraph(ctx, tip, 40, y, view.w - 64, 13.5, '#e5e0f5', 'left', 500, 18) + 10;
+  }
+  if (!compact) text(ctx, 'Keyboard: WASD to move, drag on the right side to aim.', cx, y + 6, 12, 'rgba(255,255,255,0.4)', 'center', 500);
+  for (const b of buttons(view)) drawButton(ctx, b);
+}
+
 function drawIntro(ctx, view) {
   const L = LEVELS[S.level];
   const cx = view.w / 2;
@@ -1170,6 +1248,9 @@ export function render(ctx, view) {
       ctx.fillStyle = 'rgba(4,2,8,0.35)';
       ctx.fillRect(0, 0, view.w, view.h);
       drawTitle(ctx, view);
+      break;
+    case 'controls':
+      drawControls(ctx, view);
       break;
     case 'intro':
       drawIntro(ctx, view);

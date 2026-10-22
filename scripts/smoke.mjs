@@ -54,6 +54,11 @@ try {
       interval: s.st.interval, dmg: s.st.dmg, maxHp: s.st.maxHp, hp: s.player.hp,
     };
   });
+  const pressButton = async (id) => {
+    const b = (await dbg('buttons')).find((x) => x.id === id);
+    if (!b) throw new Error(`no ${id} button`);
+    await tap(b.x + b.w / 2, b.y + b.h / 2);
+  };
   const shot = (name) => page.screenshot({ path: join(outDir, `smoke-${name}.png`) });
 
   await page.goto(`http://localhost:${port}/?test`);
@@ -69,7 +74,16 @@ try {
 
   // NEW GAME button sits at 46% of the height
   await tap(195, 844 * 0.46 + 26);
-  check((await state()).mode === 'intro', 'NEW GAME shows the level intro');
+  check((await state()).mode === 'controls', 'NEW GAME shows the controls screen first');
+  await page.waitForTimeout(500);
+  await shot('controls');
+  await pressButton('back');
+  check((await state()).mode === 'title', 'BACK returns to the menu');
+  await tap(195, 844 * 0.46 + 26);
+  await page.waitForTimeout(1500);
+  check((await state()).mode === 'controls', 'the run does not start until START GAME is pressed');
+  await pressButton('start');
+  check((await state()).mode === 'intro', 'START GAME shows the level intro');
   await page.waitForTimeout(900);
   await shot('intro');
   await tap(195, 600);
@@ -143,6 +157,8 @@ try {
   check(reloaded.mode === 'title' && reloaded.hasSave && reloaded.saveLevel === 1, 'save survives a reload');
   await shot('title-continue');
   await tap(195, 844 * 0.46 + 26);
+  check((await state()).mode === 'controls', 'CONTINUE shows the controls screen too');
+  await pressButton('start');
   const cont = await state();
   check(cont.mode === 'intro' && cont.level === 1, 'CONTINUE resumes at the saved level');
 
@@ -168,6 +184,7 @@ try {
   await page.waitForTimeout(500);
   check((await state()).debugMode === true, 'debug mode stays on after a reload');
   await tapButton('new');
+  await tapButton('start');
   const dbgRun = await state();
   check(dbgRun.interval === 0.075 && dbgRun.dmg === 2 && dbgRun.maxHp === 10 && dbgRun.hp === 10, `debug stats are exactly 2x (${dbgRun.interval}s, ${dbgRun.dmg} dmg, ${dbgRun.maxHp} hp)`);
   await page.waitForTimeout(3200);
@@ -185,6 +202,7 @@ try {
   await tapButton('debug');
   check((await state()).debugMode === false, 'debug button turns debug mode off');
   await tapButton('new');
+  await tapButton('start');
   const back = await state();
   check(back.interval === 0.15 && back.dmg === 1 && back.maxHp === 5, 'normal stats are back with debug off');
 

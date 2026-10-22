@@ -21,3 +21,4 @@ Mobile-first web game. Vanilla JS (ES modules) on a 2D canvas. No bundler, no ru
 - Progress is stored under `mobilegame.save` and `mobilegame.best` in localStorage. Wrap every access in try/catch.
 - Current focus is level 1 only. Levels 2 to 5 are deliberately parked: do not change them until asked. The record of what is deferred, and why, is in `ROADMAP.md`.
 - Debug mode (home-screen toggle, `S.debugMode` in `game.js`) gives Freddie 2x fire rate, 2x damage, 2x health through `DEBUG_MULT` in `stats()`. Never balance against it: all tuning is for normal mode. Debug runs must not write the save or best score. It is separate from the `?test` hook, which is for automated tests.
+- Modes: title, controls, intro, play, clear, upgrade, dead, win. NEW GAME and CONTINUE on the title go to `controls` first (`S.pendingStart` remembers which); only START GAME begins the run. If you change the controls, update `drawControls` in `game.js` so the screen stays true.
