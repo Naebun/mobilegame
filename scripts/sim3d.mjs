@@ -1,7 +1,7 @@
 // Headless playtest bot for the first-person level. Runs the real game logic (src/game3d.js) at 60 Hz in Node,
 // with no rendering, driven by a bot that navigates, aims, strafes and picks weapons.
 //
-//   node scripts/sim3d.mjs [--runs 30] [--skill casual|good|both] [--trace SEED]
+//   node scripts/sim3d.mjs [--runs 30] [--skill sloppy|casual|good|both] [--trace SEED]
 //
 // NORMAL MODE ONLY: balance is never tuned against debug mode. The bot is a proxy for a person, not a replacement:
 // it answers "is the level winnable, and roughly how hard is each area", not "is it fun".
@@ -9,13 +9,14 @@ import * as game from '../src/game3d.js';
 
 const args = Object.fromEntries(process.argv.slice(2).reduce((a, v, i, all) => (v.startsWith('--') ? [...a, [v.slice(2), all[i + 1]]] : a), []));
 const RUNS = Number(args.runs || 30);
-const SKILLS = args.skill === 'both' || !args.skill ? ['casual', 'good'] : [args.skill];
+const SKILLS = args.skill === 'both' || !args.skill ? ['sloppy', 'casual', 'good'] : [args.skill];
 const TRACE = args.trace === undefined ? null : Number(args.trace);
 const VIEW = { w: 390, h: 844, dpr: 1, safe: { top: 0, bottom: 0 } };
 const DT = 1 / 60;
 const LIMIT = 900; // seconds of game time before a run counts as stuck
 
 const SKILL = {
+  sloppy: { sigma: 0.16, react: 0.55, turn: 3, tol: 0.1 },
   casual: { sigma: 0.07, react: 0.3, turn: 5, tol: 0.06 },
   good: { sigma: 0.025, react: 0.15, turn: 8, tol: 0.04 },
 };

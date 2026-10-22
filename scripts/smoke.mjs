@@ -29,7 +29,7 @@ const browser = await chromium.launch({
   args: ['--use-angle=swiftshader', '--use-gl=angle', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--autoplay-policy=no-user-gesture-required'],
 });
 try {
-  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true, isMobile: true });
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1, hasTouch: true, isMobile: true });
   const page = await ctx.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
@@ -40,10 +40,16 @@ try {
       new PointerEvent(type, { pointerId: id, clientX: x, clientY: y, bubbles: true, pointerType: 'touch', isPrimary: id === 1 }),
     );
   }, [type, id, x, y]);
+  // Software WebGL runs at a few frames a second, so poll the game for a condition instead of sleeping.
+  const until = async (expr, arg, timeout = 20000) => {
+    try {
+      await page.waitForFunction(([e, a]) => new Function('s', 'a', `return (${e})`)(window.__game.getState(), a), [expr, arg], { timeout, polling: 100 });
+      return true;
+    } catch { return false; }
+  };
   const tap = async (x, y) => {
     await ptr('pointerdown', 9, x, y);
     await ptr('pointerup', 9, x, y);
-    await page.waitForTimeout(150);
   };
   const hook = (cmd, arg) => page.evaluate(([c, a]) => window.__game.testHook(c, a), [cmd, arg]);
   const pressButton = async (id) => {
@@ -65,6 +71,7 @@ try {
   const shot = (name) => page.screenshot({ path: join(outDir, `smoke-${name}.png`) });
 
   await page.goto(`http://localhost:${port}/?test`);
+  await page.waitForFunction(() => window.__game && window.__game.getState().player, null, { timeout: 60000 });
   await page.waitForTimeout(1500);
   const gl = await page.evaluate(() => { const c = document.getElementById('gl'); return { w: c.width, h: c.height, ok: !!c.getContext('webgl2') || !!c.getContext('webgl') }; });
   check(gl.ok && gl.w > 0, `WebGL canvas is live (${gl.w}x${gl.h})`);
@@ -73,118 +80,141 @@ try {
 
   // menus: title -> controls -> intro -> play
   await pressButton('new');
-  check((await state()).mode === 'controls', 'NEW GAME opens the controls screen');
-  await page.waitForTimeout(400);
+  check(await until("s.mode === 'controls'"), 'NEW GAME opens the controls screen');
   await shot('controls');
   await pressButton('back');
-  check((await state()).mode === 'title', 'BACK returns to the title');
+  check(await until("s.mode === 'title'"), 'BACK returns to the title');
   await pressButton('new');
-  await page.waitForTimeout(1200);
+  await until("s.mode === 'controls'");
+  await page.waitForTimeout(1500);
   check((await state()).mode === 'controls', 'the game does not start until START GAME is pressed');
   await pressButton('start');
-  check((await state()).mode === 'intro', 'START GAME shows the level intro');
-  await page.waitForTimeout(1000);
+  check(await until("s.mode === 'intro'"), 'START GAME shows the level intro');
+  await page.waitForTimeout(1200);
   await shot('intro');
   await tap(195, 400);
+  check(await until("s.mode === 'play'"), 'tap skips the intro and play begins');
   const s0 = await state();
-  check(s0.mode === 'play', 'tap skips the intro and play begins');
   check(s0.weapon === 'pistol' && s0.clip === 12 && s0.owned.length === 1, 'Freddie starts with a full Bass Pistol clip and nothing else');
   check(s0.total >= 12 && s0.alive === s0.total, `enemies are pre-placed in the level (${s0.total}) and all alive`);
+  await page.waitForTimeout(1000);
   await shot('play-start');
 
-  // the grey boxes: move box walks, look box turns and auto-fires
+  // the grey boxes: the move box walks, the look box turns and auto-fires
   const L = await hook('layout');
   const [mx, my] = center(L.moveBox);
   const [lx, ly] = center(L.lookBox);
   await ptr('pointerdown', 1, mx, my);
   await ptr('pointermove', 1, mx, my - L.moveBox.h * 0.4);
-  await page.waitForTimeout(700);
+  const walked = await until('Math.hypot(s.player.x - a.x, s.player.z - a.z) > 1.5', { x: s0.x, z: s0.z });
   const s1 = await state();
-  check(Math.hypot(s1.x - s0.x, s1.z - s0.z) > 0.8, `move box walks Freddie (${Math.hypot(s1.x - s0.x, s1.z - s0.z).toFixed(1)} units)`);
+  check(walked, `the move box walks Freddie (${Math.hypot(s1.x - s0.x, s1.z - s0.z).toFixed(1)} units)`);
   await ptr('pointerup', 1, mx, my - L.moveBox.h * 0.4);
   const yaw0 = (await state()).yaw;
   await ptr('pointerdown', 2, lx, ly);
   for (let i = 1; i <= 10; i++) await ptr('pointermove', 2, lx + i * 6, ly);
-  await page.waitForTimeout(600);
+  check(await until('s.shots > a', s1.shots), 'a thumb held in the look box fires on its own, with no extra tap');
   const s2 = await state();
-  check(s2.shots > s1.shots, `a thumb in the look box fires on its own (${s2.shots - s1.shots} shots, no extra tap)`);
   check(Math.abs(s2.yaw - yaw0) > 0.2, `dragging in the look box turns the view (${(s2.yaw - yaw0).toFixed(2)} rad)`);
   check(s2.clip < 12, `the clip empties as it fires (${s2.clip}/12)`);
-  await page.waitForTimeout(2200);
-  const s3 = await state();
-  check(s3.reloading || s3.clip === 12, 'the clip reloads on its own when it runs empty');
+  check(await until('s.player.reloadT > 0', null, 30000), 'the clip reloads on its own when it runs empty');
   await ptr('pointerup', 2, lx, ly);
+  await until('s.player.reloadT === 0 && s.player.ammo.pistol === 12', null, 30000);
 
-  // reload button, swap button
-  await page.waitForTimeout(1500);
+  // swap and reload buttons
   await hook('giveWeapons');
   await tap(...center(L.swapBtn));
-  const s4 = await state();
-  check(s4.weapon !== 'pistol', `SWAP changes weapon (${s4.weapon})`);
+  check(await until("s.player.weapon !== 'pistol'"), `SWAP changes weapon (${(await state()).weapon})`);
+  const full = (await hook('stats')).clip;
   await ptr('pointerdown', 2, lx, ly);
-  await page.waitForTimeout(500);
+  await until('s.player.ammo[s.player.weapon] < a', full, 30000);
   await ptr('pointerup', 2, lx, ly);
-  const before = await state();
-  check(before.clip < (await hook('stats')).clip + 99, 'clip tracked');
   await tap(...center(L.reloadBtn));
-  await page.waitForTimeout(100);
-  check((await state()).reloading, 'the RELOAD button forces a reload');
+  check(await until('s.player.reloadT > 0', null, 8000), 'the RELOAD button forces a reload before the clip is empty');
   await shot('play-weapon');
+
+  // the launcher: a rocket flies, explodes and hurts a robot; the render path for explosions must not error
+  await hook('play');
+  await hook('giveWeapons');
+  for (let i = 0; i < 4 && (await state()).weapon !== 'launcher'; i++) {
+    await tap(...center(L.swapBtn));
+    await page.waitForTimeout(400);
+  }
+  check((await state()).weapon === 'launcher', 'the Reverb Launcher can be selected');
+  await ptr('pointerdown', 2, lx, ly);
+  check(await until('s.shots >= 2'), 'the launcher fires rockets');
+  await ptr('pointerup', 2, lx, ly);
+  check(await until('s.projectiles.length === 0', null, 15000), 'rockets explode on impact and clean up');
+
+  // enemy bottles: a Wray and Nephew bot with a clear line of sight throws one
+  await hook('play');
+  await page.evaluate(() => {
+    const g = window.__game;
+    const w = g.getWorld();
+    const e = g.getState().enemies.find((x) => x.kind === 'wray');
+    for (const d of [8, 7, 6, 5, 4]) {
+      const x = e.x - Math.sin(e.yaw) * d;
+      const z = e.z - Math.cos(e.yaw) * d;
+      if (!w.isSolidAt(x, z) && w.los(x, z, e.x, e.z)) { g.testHook('teleport', { x, z, yaw: e.yaw + Math.PI }); break; }
+    }
+  });
+  check(await until("s.projectiles.some((p) => p.owner === 'enemy')", null, 30000), 'a Wray and Nephew bot throws bottles when it sees Freddie');
+  await shot('bottles');
 
   // the linear route: kill each area in order, doors open, the dead stay dead
   await hook('play');
   const start = await state();
   const order = start.areas.map((a) => a.id);
   check(order.length === 6, `six areas in order: ${order.join(', ')}`);
-  for (const id of order) {
-    await hook('killArea', id);
-    await page.waitForTimeout(150);
-  }
+  for (const id of order) await hook('killArea', id);
+  check(await until('s.areas.every((a) => a.cleared) && s.allClear'), 'every area reports clear once its enemies are dead');
   const done = await state();
   check(done.alive === 0 && done.kills === done.total, `killed enemies are gone and counted (${done.kills}/${done.total})`);
-  check(done.areas.every((a) => a.cleared) && done.allClear, 'every area reports clear once its enemies are dead');
-  await page.waitForTimeout(800);
   await shot('area-clear');
-  const world = await page.evaluate(() => { const w = window.__game.getWorld(); return { exit: w.exit }; });
-  await hook('teleport', world.exit);
-  await page.waitForTimeout(300);
-  check((await state()).mode === 'complete', 'reaching the exit after clearing everything completes the level');
-  await page.waitForTimeout(1400);
+  const exit = await page.evaluate(() => window.__game.getWorld().exit);
+  await hook('teleport', exit);
+  check(await until("s.mode === 'complete'"), 'reaching the exit after clearing everything completes the level');
+  await page.waitForTimeout(2500);
   await shot('complete');
   await pressButton('menu');
-  check((await state()).mode === 'title', 'MAIN MENU returns to the title');
+  check(await until("s.mode === 'title'"), 'MAIN MENU returns to the title');
 
   // death and retry
   await pressButton('new');
+  await until("s.mode === 'controls'");
   await pressButton('start');
-  await page.waitForTimeout(900);
+  await until("s.mode === 'intro'");
   await tap(195, 400);
+  await until("s.mode === 'play'");
   await hook('hurt', 1000);
-  await page.waitForTimeout(300);
-  check((await state()).mode === 'dead', 'dies at zero health');
-  await page.waitForTimeout(1100);
+  check(await until("s.mode === 'dead'"), 'dies at zero health');
+  await page.waitForTimeout(2200);
   await shot('dead');
   await pressButton('retry');
+  check(await until("s.mode === 'play'"), 'RETRY restarts the level');
   const retry = await state();
-  check(retry.mode === 'play' && retry.health === retry.maxHealth && retry.alive === retry.total, 'RETRY restarts the level with everything back in place');
+  check(retry.health === retry.maxHealth && retry.alive === retry.total, 'RETRY puts health and every enemy back in place');
 
-  // debug mode: 2x fire rate, 2x damage, 2x health, never changes balance otherwise
+  // debug mode: 2x fire rate, 2x damage, 2x health, and nothing else about balance changes
   await hook('title');
   const normal = await hook('stats');
   check(normal.fireInterval === 0.28 && normal.damageMult === 1 && normal.maxHealth === 100, `normal mode stats (${normal.fireInterval}s, x${normal.damageMult}, ${normal.maxHealth} hp)`);
   await pressButton('debug');
-  check((await state()).debugMode === true, 'the debug button turns debug mode on');
+  check(await until('s.debugMode === true'), 'the debug button turns debug mode on');
   await shot('title-debug');
   await pressButton('new');
+  await until("s.mode === 'controls'");
   await pressButton('start');
-  await page.waitForTimeout(900);
+  await until("s.mode === 'intro'");
   await tap(195, 400);
+  await until("s.mode === 'play'");
   const dbg = await hook('stats');
   check(dbg.fireInterval === 0.14 && dbg.damageMult === 2 && dbg.maxHealth === 200, `debug mode is exactly 2x (${dbg.fireInterval}s, x${dbg.damageMult}, ${dbg.maxHealth} hp)`);
+  await page.waitForTimeout(1200);
   await shot('play-debug');
   await hook('title');
   await pressButton('debug');
-  check((await state()).debugMode === false, 'the debug button turns it off again');
+  check(await until('s.debugMode === false'), 'the debug button turns it off again');
 
   check(errors.length === 0, `no console errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
 } finally {

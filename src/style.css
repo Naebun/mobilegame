@@ -26,3 +26,15 @@ html, body {
 
 #gl { z-index: 0; }
 #game { z-index: 1; }
+
+#loading {
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  color: #c9c2e0;
+  font: 700 14px system-ui, -apple-system, sans-serif;
+  letter-spacing: 0.2em;
+  pointer-events: none;
+}

@@ -106,7 +106,7 @@ export function init(view) {
 export function resize(view) {
   S.view = view;
   if (!R) return;
-  R.renderer.setPixelRatio(Math.min(view.dpr, 2));
+  R.renderer.setPixelRatio(Math.min(view.dpr, 1.5));
   R.renderer.setSize(view.w, view.h, false);
   R.camera.aspect = view.w / view.h;
   R.camera.updateProjectionMatrix();
@@ -586,7 +586,7 @@ function stickFrom(t, box, dead) {
 }
 
 // Reads the touches: assigns each to the move box, the look box or a button on first contact, then
-// returns { mx, mz (move, -1..1), yawD, pitchD, firing, reload, swap }.
+// returns { mx, mz (move, -1..1), yawD, pitchD, firing, reload, swap }. Buttons are read from tap events.
 function readControls(input, view, dt) {
   const L = layoutFor(view);
   const out = { mx: 0, mz: 0, yawD: 0, pitchD: 0, firing: false, reload: false, swap: false };
@@ -596,10 +596,14 @@ function readControls(input, view, dt) {
     if (t.role === 'move') moveTaken = true;
     else if (t.role === 'look') lookTaken = true;
   }
+  // Buttons react to the press event itself, not to a live touch, so a quick tap is never lost between frames.
+  for (const press of input.pressed) {
+    if (inRect(press.x, press.y, L.reloadHit)) out.reload = true;
+    else if (inRect(press.x, press.y, L.swapHit)) out.swap = true;
+  }
   for (const t of input.touches.values()) {
     if (t.role) continue;
-    if (inRect(t.sx, t.sy, L.reloadHit)) { t.role = 'btn'; out.reload = true; }
-    else if (inRect(t.sx, t.sy, L.swapHit)) { t.role = 'btn'; out.swap = true; }
+    if (inRect(t.sx, t.sy, L.reloadHit) || inRect(t.sx, t.sy, L.swapHit)) t.role = 'btn';
     else if (!moveTaken && inRect(t.sx, t.sy, L.moveHit)) { t.role = 'move'; moveTaken = true; }
     else if (!lookTaken && inRect(t.sx, t.sy, L.lookHit)) { t.role = 'look'; lookTaken = true; }
     else t.role = 'none';
@@ -1172,8 +1176,9 @@ function animateViewmodel(dt) {
   const reloading = p.reloadT > 0 ? 1 - p.reloadT / w.reload : 0;
   const dip = Math.sin(reloading * Math.PI);
   const sw = p.switchT / 0.25;
-  const baseX = p.weapon === 'launcher' ? 0.05 : 0.07;
-  wroot.position.set(baseX + bobX, -0.2 + bobY - dip * 0.22 - sw * 0.4, -0.58 + p.kick * 0.09);
+  const baseX = p.weapon === 'launcher' ? 0.12 : 0.15;
+  wroot.scale.setScalar(0.68);
+  wroot.position.set(baseX + bobX, -0.24 + bobY - dip * 0.22 - sw * 0.4, -0.62 + p.kick * 0.08);
   wroot.rotation.set(0.03 + p.kick * 0.22 + dip * 0.7, 0.07 + dip * -0.25, dip * 0.2);
   R.muzzleT = Math.max(0, R.muzzleT - dt);
   for (const id of WEAPON_ORDER) {
