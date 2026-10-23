@@ -253,6 +253,7 @@ function findBlock(W, wantFull) {
     };
     const stand = hurtBy(false);
     const flee = hurtBy(true);
+    console.log(`  (dodge: running costs ${flee}, standing still ${stand})`);
     ok(stand > flee && flee < b.player * 0.6, `running from the lunge costs ${flee}, standing still ${stand}`);
   }
   // a Shaken that is shot does flinch but is not otherwise special: two pistol shots kill it

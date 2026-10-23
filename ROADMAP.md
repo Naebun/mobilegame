@@ -70,9 +70,9 @@ the new names.
 - Graphics: the owner wants a more modern look than the current flat-shaded low-poly. Direction still to decide.
 - The full plan is in `docs/full-game-plan.md`.
 
-## Approved enemy ideas (not built)
+## Approved enemy ideas (1 built and placed; 2 to 5 built, not placed)
 
-The owner approved all five of these for the game. Number 1 is built and used in level 2. Numbers 2 to 5 are being **prepared** (model, definition, AI and tests) at the owner's request, but are **not placed in any level** until the owner says so.
+The owner approved all five of these for the game. Number 1 is built and used in level 2. Numbers 2 to 5 are **built** (model, definition, AI, sounds and tests) at the owner's request, but are **not placed in any level** until the owner says so. Design, numbers, rules and what is not verified: `docs/enemies-next.md`.
 They are not tied to level 1 and may appear in any level. Approval of an enemy is not permission to build a later
 level (see the standing rule). The melee and ranged rule holds: Fizzbang robots only fight in melee, Bampot robots can
 shoot.
@@ -80,14 +80,16 @@ shoot.
 | # | Robot | Camp | Idea |
 | --- | --- | --- | --- |
 | 1 | Shielded Fizzbang | Melee | **Built, in level 2.** Carries a vending-machine door as a shield. Shots from the front do almost nothing, so the player flanks it, shoots it from behind, or uses the launcher or shotgun up close |
-| 2 | Fizzbang Shaken | Melee, exploder | A shaken can that rattles faster as it nears, then bursts in a fizzy blast when it dies or touches Naebun. It can set off neighbouring robots, so shooting it close is a mistake |
-| 3 | Bampot Longshot | Ranged, sniper | A tall bottle robot with a visible laser line that charges for a moment, then fires one heavy shot. Makes cover matter |
-| 4 | Bampot Nurse | Support | Does not attack, but revives dead robots after a few seconds unless killed first. Makes kill order matter |
-| 5 | Vending Mimic | Melee, dormant | An ordinary-looking drinks machine in a corner that unfolds into a robot when Naebun walks past. It is in the level from the start, so nothing appears from nowhere |
+| 2 | Fizzbang Shaken | Melee, exploder | **Built, not placed.** A can on spring legs that rattles faster as it nears, primes with a red blast ring on the floor, then bursts when it dies, touches Naebun or its fuse ends. The blast hurts Naebun and every robot in 3.2 m and sets off neighbouring Shakens in a ripple, so shooting it close is a mistake |
+| 3 | Bampot Longshot | Ranged, sniper | **Built, not placed.** A tall green bottle in a flat cap with a rifle. A red laser line tracks Naebun for 1.1 s, locks white-hot for 0.55 s, then one 38-damage hitscan shot along the locked line. Walls and pillars stop it, so cover matters; a sidestep after the lock beats it |
+| 4 | Bampot Nurse | Support | **Built, not placed.** An apothecary bottle with a syringe and a lantern. Never attacks. Revives a dead robot of her own area (not bosses, Shakens or Nurses; once each) 3.6 s after starting, within 6 m and in sight, with a visible beam, unless she is killed first. Keeps away from Naebun at 1.7 m/s. Makes kill order matter |
+| 5 | Vending Mimic | Melee, dormant | **Built, not placed.** A clean teal drinks machine that unfolds into a robot when Naebun comes within 3.4 m in sight, or when it is shot. Hit like any robot while disguised, counts for its area, ignores noise. It is in the level from the start, so nothing appears from nowhere |
 
-Notes for whoever builds them: each needs a model and poses in `src/models.js`, a definition in `src/data.js`, AI in
-`src/game3d.js`, placement in the level data, a bot and headless check, and a screenshot review. The idea of the first
-three for level 1 (Shielded, Longshot, Mimic) was suggested but not approved for level 1 specifically.
+Notes for whoever places them: the model, definition, AI, sounds and headless checks (`scripts/harness/enemies-check.mjs`)
+are done and screenshots of each were reviewed (`scripts/harness/enemy-views.mjs`). What is left is placement in a level's
+data (map letters are reserved in `docs/enemies-next.md`), a bot that can deal with them, and a human playtest. No level
+contains them yet, and `enemies-check` asserts that. The idea of the first three for level 1 (Shielded, Longshot, Mimic)
+was suggested but not approved for level 1 specifically.
 
 ## Parked
 - **Top-down version.** Replaced by this rebuild. It is in git history on `main` (squash commits up to PR #2).
