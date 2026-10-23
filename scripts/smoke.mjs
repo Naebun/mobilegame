@@ -218,8 +218,62 @@ try {
   check(await until("s.mode === 'complete'"), 'reaching the exit after clearing everything completes the level');
   await page.waitForTimeout(2500);
   await shot('complete');
+  const next = (await hook('buttons')).map((b) => b.id);
+  check(next.includes('next') && next.includes('again') && next.includes('menu'), `level 1 complete offers NEXT LEVEL, PLAY AGAIN and MAIN MENU (${next.join(', ')})`);
+
+  // level 2: NEXT LEVEL -> Cheryl's voicemail -> intro -> the Vaults
+  await pressButton('next');
+  check(await until("s.mode === 'voicemail' && s.level === 2"), 'NEXT LEVEL loads level 2 behind a voicemail card');
+  await page.waitForTimeout(4200);
+  await shot('voicemail');
+  await pressButton('continue');
+  check(await until("s.mode === 'intro'"), 'CONTINUE shows the level 2 intro');
+  await page.waitForTimeout(1200);
+  await shot('intro-2');
+  await tap(195, 400);
+  check(await until("s.mode === 'play'"), 'play begins on level 2');
+  const v0 = await state();
+  const v = await page.evaluate(() => {
+    const w = window.__game.getWorld();
+    const S = window.__game.getState();
+    return { id: w.id, level: w.level, kinds: [...new Set(S.enemies.map((e) => e.kind))].sort(), weapons: S.pickups.filter((p) => p.def.kind === 'weapon').map((p) => p.def.item), areas: S.areas.map((a) => a.def.id) };
+  });
+  check(v.id === 'vaults' && v.level === 2, 'the world is now the Vaults');
+  check(v0.weapon === 'pistol' && v0.owned.length === 1 && v0.health === v0.maxHealth, 'Freddie starts level 2 with the pistol only and full health');
+  check(v.kinds.includes('shielded') && v.kinds.includes('tourguide') && v.kinds.includes('fizzbang') && v.kinds.includes('bampot'), `level 2 has its robots (${v.kinds.join(', ')})`);
+  check(v.weapons.includes('vinyl') && v.weapons.includes('launcher'), `the Vinyl Disc and the launcher lie on the floor (${v.weapons.join(', ')})`);
+  await page.waitForTimeout(1500);
+  await shot('vaults-start');
+  const tele = async (id, d = 4) => page.evaluate(([id, d]) => {
+    const g = window.__game;
+    const w = g.getWorld();
+    const a = w.areas.find((x) => x.id === id);
+    const sp = a.spawns[0];
+    for (const dd of [d, d + 2, d - 1, 3]) {
+      const x = sp.x - Math.sin(sp.yaw) * dd;
+      const z = sp.z - Math.cos(sp.yaw) * dd;
+      if (!w.isSolidAt(x, z) && w.los(x, z, sp.x, sp.z)) { g.testHook('teleport', { x, z, yaw: sp.yaw + Math.PI }); return true; }
+    }
+    return false;
+  }, [id, d]);
+  for (const id of ['longvault', 'casks', 'close', 'plague', 'tour']) {
+    await tele(id, 6);
+    await page.waitForTimeout(1600);
+    await shot(`vaults-${id}`);
+  }
+  // clear it: the same route rule as level 1, then the exit
+  for (const id of v.areas) await hook('killArea', id);
+  check(await until('s.areas.every((a) => a.cleared) && s.allClear'), 'every level 2 area reports clear once its robots are dead');
+  const exit2 = await page.evaluate(() => window.__game.getWorld().exit);
+  await hook('teleport', exit2);
+  check(await until("s.mode === 'complete'"), 'reaching the exit completes level 2');
+  await page.waitForTimeout(2500);
+  await shot('complete-2');
+  const last = (await hook('buttons')).map((b) => b.id);
+  check(!last.includes('next') && last.includes('again') && last.includes('menu'), `the last level offers no NEXT LEVEL (${last.join(', ')})`);
   await pressButton('menu');
-  check(await until("s.mode === 'title'"), 'MAIN MENU returns to the title');
+  check(await until("s.mode === 'title' && s.level === 1"), 'MAIN MENU returns to the title, ready for level 1 again');
+  check(await page.evaluate(() => window.__game.getWorld().id) === 'cowgate', 'and the Cowgate is loaded again behind it');
 
   // death and retry
   await pressButton('new');

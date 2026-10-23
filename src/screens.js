@@ -67,9 +67,10 @@ export function buttons(mode, view, state) {
     add('menu', 'MAIN MENU', view.h * 0.6 + 64, false, 44);
   } else if (mode === 'complete' && t > 1) {
     if (st.hasNext) {
-      add('next', 'NEXT LEVEL', view.h * 0.7);
-      add('again', 'PLAY AGAIN', view.h * 0.7 + 64, false, 44);
-      add('menu', 'MAIN MENU', view.h * 0.7 + 116, false, 40);
+      const y = Math.min(view.h * 0.7, view.h - sb - 164); // three buttons: keep them on short screens
+      add('next', 'NEXT LEVEL', y);
+      add('again', 'PLAY AGAIN', y + 62, false, 44);
+      add('menu', 'MAIN MENU', y + 114, false, 40);
     } else {
       add('again', 'PLAY AGAIN', view.h * 0.7);
       add('menu', 'MAIN MENU', view.h * 0.7 + 64, false, 44);

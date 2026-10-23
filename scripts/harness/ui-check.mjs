@@ -2,7 +2,7 @@
 // Run: node scripts/harness/ui-check.mjs
 import assert from 'node:assert/strict';
 import { layout, drawPlayHud } from '../../src/hud.js';
-import { buttons, drawTitle, drawControls, drawIntro, drawDead, drawComplete } from '../../src/screens.js';
+import { buttons, drawTitle, drawControls, drawIntro, drawDead, drawComplete, drawVoicemail } from '../../src/screens.js';
 
 let calls = 0;
 function fakeCtx() {
@@ -77,8 +77,8 @@ for (const v of views) {
   const ctx = fakeCtx();
   for (const h of hudStates) drawPlayHud(ctx, v, h);
 
-  const bstates = [undefined, null, {}, { t: -1 }, { t: 0.5 }, { t: 5, debugMode: true }, { t: huge }, { t: NaN }];
-  for (const mode of ['title', 'controls', 'dead', 'complete', 'bogus']) {
+  const bstates = [undefined, null, {}, { t: -1 }, { t: 0.5 }, { t: 5, debugMode: true }, { t: huge }, { t: NaN }, { t: 3, hasNext: true }];
+  for (const mode of ['title', 'controls', 'dead', 'complete', 'voicemail', 'bogus']) {
     for (const s of bstates) {
       const list = buttons(mode, v, s);
       assert.ok(Array.isArray(list));
@@ -95,6 +95,9 @@ for (const v of views) {
   assert.deepEqual(buttons('dead', v, { t: 0.91 }).map((b) => b.id), ['retry', 'menu']);
   assert.deepEqual(buttons('complete', v, { t: 1 }).map((b) => b.id), []);
   assert.deepEqual(buttons('complete', v, { t: 1.01 }).map((b) => b.id), ['again', 'menu']);
+  assert.deepEqual(buttons('complete', v, { t: 1.01, hasNext: true }).map((b) => b.id), ['next', 'again', 'menu']);
+  assert.deepEqual(buttons('voicemail', v, { t: 0.8 }).map((b) => b.id), []);
+  assert.deepEqual(buttons('voicemail', v, { t: 0.81 }).map((b) => b.id), ['continue']);
   assert.equal(buttons('title', v, { debugMode: true })[1].label, 'DEBUG MODE: ON');
   assert.equal(buttons('title', v, { debugMode: false })[1].label, 'DEBUG MODE: OFF');
 
@@ -105,7 +108,11 @@ for (const v of views) {
     drawIntro(ctx, v, s);
     drawDead(ctx, v, s);
     drawComplete(ctx, v, s);
+    drawVoicemail(ctx, v, s);
   }
+  drawVoicemail(ctx, v, { t: 4, mail: { from: long, lines: [long, '', null, 'Do not shake anything.', long, long, long] } });
+  drawVoicemail(ctx, v, { t: 0.2, mail: { from: 'CHERYL (AGENT)', lines: 'not an array' } });
+  drawComplete(ctx, v, { t: 3, hasNext: true, title: long, line: long, sub: long, score: 5, kills: 2, totalEnemies: 2 });
   const lv = { number: 1, name: long, sub: long, line: long, clock: [30, 90] };
   drawIntro(ctx, v, { t: 2, level: lv });
   drawIntro(ctx, v, { t: 2, level: { number: huge, name: '', clock: null } });

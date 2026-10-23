@@ -39,6 +39,8 @@ const S = {
   mode: 'title', // title | controls | voicemail | intro | play | dead | complete
   level: 1, // the level being played (or about to be)
   mailT: 0,
+  pendingLoad: false,
+  loadReady: false,
   t: 0,
   runT: 0,
   introT: 0,
@@ -374,10 +376,18 @@ function resetLevel() {
   flow.update(S.player.x, S.player.z);
 }
 
+// Building a level takes a moment, so in the browser the swap waits until a frame showing the new screen has been drawn.
+function requestLevel(n) {
+  if (!R) { loadLevel(n); resetLevel(); return; }
+  S.level = n;
+  S.pendingLoad = true;
+  S.loadReady = false;
+}
+
 function toTitle() {
   S.mode = 'title';
-  loadLevel(startLevel());
-  resetLevel();
+  if (world.level !== startLevel()) requestLevel(startLevel());
+  else resetLevel();
   audio.setMood(0.1, false);
 }
 
@@ -392,8 +402,7 @@ function beginRun() {
 
 // Level complete, NEXT LEVEL: load the next level behind a voicemail card (or straight to its intro if it has none).
 function nextLevel() {
-  loadLevel(S.level + 1);
-  resetLevel();
+  requestLevel(S.level + 1);
   audio.setLevel(S.level - 1);
   if (levelInfo().voicemail) {
     S.mode = 'voicemail';
@@ -1459,6 +1468,11 @@ export function update(dt, input, view) {
   S.view = view;
   S.t += dt;
   audio.tick();
+  if (S.pendingLoad && S.loadReady) {
+    S.pendingLoad = false;
+    loadLevel(S.level);
+    resetLevel();
+  }
   world.update(dt, S.t);
   if (S.banner && (S.banner.t -= dt) <= 0) S.banner = null;
   if (S.toast && (S.toast.t -= dt) <= 0) S.toast = null;
@@ -1782,6 +1796,7 @@ export function render(ctx, view, alpha) {
   const dtv = 1 / 60;
   ctx.clearRect(0, 0, view.w, view.h);
   if (!R) return;
+  if (S.pendingLoad) S.loadReady = true; // this frame shows the new screen; the world swaps on the next update
   placeCamera();
   animateWorld();
   animateViewmodel(dtv);
@@ -1846,6 +1861,12 @@ export function testHook(cmd, arg) {
     case 'layout': return layoutFor(v);
     case 'hurt': hurtPlayer(arg, S.player.x, S.player.z + 5, false); return undefined;
     case 'drink': startDrink(arg); return undefined;
+    case 'hitEnemy': { // headless combat checks: damage enemy arg.i as if shot from (arg.fx, arg.fz); returns the hp it lost
+      const e = S.enemies[arg.i];
+      const hp0 = e.hp;
+      damageEnemy(e, arg.amount, !!arg.head, arg.fx, arg.fz, arg.knock || 0, arg.opts || {});
+      return hp0 - e.hp;
+    }
     case 'stats': {
       const w = WEAPONS[S.player.weapon];
       return {

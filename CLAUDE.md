@@ -1,13 +1,14 @@
 # Freddie's Last Set
 
 ## Standing rule: levels
-Only level 1 exists. **Never build level 2 or any later level (maps, enemies, bosses, textures, story cards, anything
-that belongs to a future level) without the owner's explicit permission.** Planning documents are fine; building is
-not. Features are built and tested on level 1 only.
+Levels 1 (the Cowgate) and 2 (the Vaults) exist. Level 2 was built with the owner's explicit permission. **Never build
+level 3 or any later level (maps, enemies, bosses, textures, story cards, anything that belongs to a future level) without
+the owner's explicit permission.** Permission for one level is not permission for the next. Planning documents are fine;
+building is not. A feature is built on the levels that exist and tested on both.
 
 First-person 3D horror shooter, phone browser, set in an Edinburgh basement club. Dark comedy tone, light Scottish
 voice. Portrait. Three.js (vendored in `vendor/`), plain ES modules, no bundler for development, no backend.
-Level 1 only for now. Read `README.md` for the layout and `docs/fps-design.md` for the module contract.
+Two levels so far. Read `README.md` for the layout and `docs/fps-design.md` for the module contract.
 
 ## Conventions
 - Match the surrounding code: 2-space indent, single quotes, semicolons, short comments that say why. British English.
@@ -21,8 +22,9 @@ Level 1 only for now. Read `README.md` for the layout and `docs/fps-design.md` f
   its neon pink and cyan.
 - Mobile performance: share geometries and materials, merge static geometry (about 30 draw calls for the level),
   at most 4 point lights in the world plus one on the camera, no shadows, pixel ratio capped at 1.5.
-- Content and tuning live in `src/data.js`. Enemies: "Dr Fizzbang" robots are melee only, "Bampot and Nephew" robots can
-  shoot. The names are invented, in the spirit of a fizzy-drink brand and a family-firm spirits brand. Do not use real
+- Content and tuning live in `src/data.js`. Levels are definitions in `src/levels/` (data) plus a decor module for the look
+  (`vaults-decor.js`; level 1's dressing is still inside `world.js`), built by `buildWorld({ level })`. Enemies: "Dr Fizzbang"
+  robots are melee only, "Bampot and Nephew" robots can shoot. The names are invented, in the spirit of a fizzy-drink brand and a family-firm spirits brand. Do not use real
   brand names, logos or packaging in names, text or models.
 - Controls: two grey boxes (move left, aim right). A thumb in the right box auto-fires. A drag that starts anywhere
   else (not in a box or on a button) aims only, no fire. There is no aim assist.

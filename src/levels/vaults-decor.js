@@ -32,9 +32,7 @@ export function makeVaultsDecor(lv, env) {
   let k = null;
   const disc = (...a) => k.disc(...a);
   const annulus = (...a) => k.annulus(...a);
-  let flameA = null;
-  let flameB = null;
-  const flicker = { a: null, b: null };
+  let flames = null; // { mesh, mat, pos } once built
   const lamps = []; // real point lights: { light, base, kind }
 
   const jitter = (h, a) => 1 + (((h >>> 3) % 1000) / 1000 - 0.5) * 2 * a;
@@ -107,7 +105,7 @@ export function makeVaultsDecor(lv, env) {
     for (const [fc, what] of planMap) {
       const x = (fc.f.cx + fc.nx * 0.35) / T;
       const z = (fc.f.cz + fc.nz * 0.35) / T;
-      if (what === 'torch') emit(x, z, 1.95, 0xff8a38, 1.15, 7.5);
+      if (what === 'torch') emit(x, z, 1.95, 0xff8a38, 2.1, 9);
       else if (what === 'window') emit(x, z, 1.5, 0xffb060, 0.55, 4.2);
       else if (what === 'doorway') emit(x, z, 1.5, 0xff9a50, 0.3, 3.2);
     }
@@ -126,20 +124,14 @@ export function makeVaultsDecor(lv, env) {
   // ---- geometry ----
   function init(kit) {
     k = kit;
-    flameA = new k.Mesher(1, null, true);
-    flameB = new k.Mesher(1, null, true);
   }
 
   const ceilingTile = () => false; // flat ceiling; the stone ribs below carry the vaulted look
 
-  function flame(x, y, z, size, m) {
-    const hex = 0xff7a1c;
-    const outer = k.mul(k.rgb(hex), 2.4);
-    const inner = k.mul(k.rgb(0xffd890), 6);
-    const s = size;
-    m.frustum(x, z, 0.09 * s, 0.01, y, y + 0.34 * s, 6, outer, false);
-    m.frustum(x, z, 0.05 * s, 0.005, y + 0.01, y + 0.24 * s, 5, inner, false);
-    m.tri([x - 0.1 * s, y + 0.02, z], [x, y + 0.02, z + 0.1 * s], [x + 0.1 * s, y + 0.02, z], outer, [0, -1, 0]);
+  // Flames are crossed soft quads with a teardrop texture, drawn additively and re-shaped every frame (see finish).
+  const FL = []; // { x, y, z, s, ph }
+  function flame(x, y, z, size) {
+    FL.push({ x, y, z, s: size, ph: FL.length * 1.37 });
   }
 
   // torch bracket with a flame on a wall face
@@ -150,7 +142,8 @@ export function makeVaultsDecor(lv, env) {
     M.metal.tube(f.p(0, 1.55, 0.03), [p[0], 1.62, p[2]], 0.02, C.iron, 4);
     M.metal.frustum(p[0], p[2], 0.06, 0.09, 1.6, 1.82, 8, C.iron, false);
     M.props.frustum(p[0], p[2], 0.05, 0.05, 1.62, 1.86, 8, [0.12, 0.08, 0.05]);
-    flame(p[0], 1.84, p[2], 1.25, i % 2 ? flameA : flameB);
+    flame(p[0], 1.84, p[2], 1.25);
+    void i;
   }
 
   function niche(f, mode, h) {
@@ -184,7 +177,7 @@ export function makeVaultsDecor(lv, env) {
     } else if (mode === 'candle') {
       const q = f.p(0, 0, 0.14);
       M.props.frustum(q[0], q[2], 0.035, 0.03, 0.26, 0.46, 6, [0.8, 0.78, 0.66]);
-      flame(q[0], 0.46, q[2], 0.5, flameA);
+      flame(q[0], 0.46, q[2], 0.5);
     }
   }
 
@@ -455,7 +448,7 @@ export function makeVaultsDecor(lv, env) {
   }
 
   // ---- everything else ----
-  function brazier(x, z, flameM) {
+  function brazier(x, z) {
     const { M, C } = k;
     const y = 2.3;
     const top = WALL_H;
@@ -467,8 +460,8 @@ export function makeVaultsDecor(lv, env) {
     M.metal.frustum(x, z, 0.14, 0.34, y - 0.12, y + 0.18, 10, C.iron, true);
     M.metal.frustum(x, z, 0.35, 0.35, y + 0.15, y + 0.2, 10, C.ironD, false);
     M.props.frustum(x, z, 0.3, 0.3, y + 0.17, y + 0.2, 8, [0.06, 0.03, 0.02]);
-    flame(x, y + 0.2, z, 2.2, flameM);
-    flame(x + 0.12, y + 0.2, z - 0.1, 1.5, flameM === flameA ? flameB : flameA);
+    flame(x, y + 0.2, z, 2.2);
+    flame(x + 0.12, y + 0.2, z - 0.1, 1.5);
   }
 
   function dress() {
@@ -499,14 +492,14 @@ export function makeVaultsDecor(lv, env) {
       else if (what === 'chains') chains(f);
     }
     // braziers and lanterns
-    BRAZIERS.forEach(([, ps], gi) => ps.forEach(([c, r], i) => brazier(c * T, r * T, (gi + i) % 2 ? flameA : flameB)));
+    BRAZIERS.forEach(([, ps]) => ps.forEach(([c, r]) => brazier(c * T, r * T)));
     for (const [c, r] of LANTERNS) {
       const x = c * T;
       const z = r * T;
       for (let y = WALL_H; y > 2.75; y -= 0.1) M.hang.box(x - 0.008, y - 0.08, z - 0.008, x + 0.008, y, z + 0.008, C.ironD);
       M.metal.frustum(x, z, 0.14, 0.14, 2.45, 2.75, 6, C.ironD, true);
       M.glass.frustum(x, z, 0.12, 0.12, 2.5, 2.7, 6, [0.5, 0.45, 0.3]);
-      flame(x, 2.5, z, 0.9, flameA);
+      flame(x, 2.5, z, 0.9);
     }
     // puddles on the flags
     for (const [c, r, rad] of PUDDLES) patch(M.glass, c * T, 0.016, r * T, rad * 0.9, 11, [0.02, 0.03, 0.04], c * 7 + r);
@@ -526,15 +519,92 @@ export function makeVaultsDecor(lv, env) {
   }
 
   // ---- materials, lights, animation ----
-  function finish({ group, basic }) {
-    const mA = basic(true);
-    const mB = basic(true);
-    flicker.a = mA;
-    flicker.b = mB;
-    const a = flameA.mesh(mA);
-    const b = flameB.mesh(mB);
-    if (a) { a.renderOrder = 2; group.add(a); }
-    if (b) { b.renderOrder = 2; group.add(b); }
+  function flameTexture() {
+    const W = 32;
+    const H = 64;
+    const data = new Uint8Array(W * H * 4);
+    for (let j = 0; j < H; j++) {
+      const v = j / (H - 1); // 0 at the base, 1 at the tip
+      const width = 0.46 * Math.pow(Math.sin(Math.PI * Math.min(1, 0.12 + v * 0.88)), 0.75) * (1 - 0.4 * v);
+      for (let i = 0; i < W; i++) {
+        const u = Math.abs(i / (W - 1) - 0.5);
+        const e = Math.max(0, 1 - u / Math.max(width, 0.001));
+        const a = Math.pow(e, 0.9) * Math.pow(1 - v, 0.55);
+        const core = Math.pow(e, 2.2) * (1 - v * 0.8); // white-yellow in the middle, orange at the edges
+        const o = (j * W + i) * 4;
+        data[o] = 255;
+        data[o + 1] = Math.round(90 + 150 * core);
+        data[o + 2] = Math.round(10 + 150 * core * core);
+        data[o + 3] = Math.round(255 * Math.min(1, a));
+      }
+    }
+    const t = new THREE.DataTexture(data, W, H, THREE.RGBAFormat);
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.magFilter = THREE.LinearFilter;
+    t.minFilter = THREE.LinearFilter;
+    t.needsUpdate = true;
+    return t;
+  }
+
+  function buildFlames(group) {
+    const n = FL.length;
+    if (!n) return;
+    const QN = 3; // crossed quads per flame
+    const pos = new Float32Array(n * QN * 12);
+    const uv = new Float32Array(n * QN * 8);
+    const col = new Float32Array(n * QN * 12);
+    const idx = new Uint16Array(n * QN * 6);
+    for (let q = 0; q < n * QN; q++) {
+      uv.set([0, 0, 1, 0, 1, 1, 0, 1], q * 8);
+      idx.set([q * 4, q * 4 + 1, q * 4 + 2, q * 4, q * 4 + 2, q * 4 + 3], q * 6);
+      for (let v = 0; v < 4; v++) col.set([2.6, 1.25, 0.45], q * 12 + v * 3); // HDR orange, so it blooms
+    }
+    const g = new THREE.BufferGeometry();
+    const pa = new THREE.BufferAttribute(pos, 3);
+    pa.setUsage(THREE.DynamicDrawUsage);
+    g.setAttribute('position', pa);
+    g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    g.setIndex(new THREE.BufferAttribute(idx, 1));
+    g.boundingSphere = new THREE.Sphere(new THREE.Vector3(lv.cols * T / 2, 2, lv.rows * T / 2), 120);
+    const mat = new THREE.MeshBasicMaterial({ map: flameTexture(), vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+    const mesh = new THREE.Mesh(g, mat);
+    mesh.frustumCulled = false;
+    mesh.renderOrder = 2;
+    group.add(mesh);
+    flames = { mesh, mat, pos: pa };
+  }
+
+  function updateFlames(t) {
+    if (!flames) return;
+    const a = flames.pos.array;
+    let o = 0;
+    for (let i = 0; i < FL.length; i++) {
+      const f = FL[i];
+      const flick = 0.5 + 0.5 * Math.sin(t * 11 + f.ph * 3) * Math.sin(t * 6.3 + f.ph);
+      const h = 0.7 * f.s * (0.82 + 0.3 * flick);
+      const w = 0.17 * f.s * (0.9 + 0.2 * (1 - flick));
+      const swx = Math.sin(t * 7.1 + f.ph) * 0.07 * f.s;
+      const swz = Math.cos(t * 5.3 + f.ph * 2) * 0.05 * f.s;
+      for (let q = 0; q < 3; q++) {
+        const ang = (q * Math.PI) / 3;
+        const dx = Math.cos(ang) * w;
+        const dz = Math.sin(ang) * w;
+        const tx = f.x + swx;
+        const tz = f.z + swz;
+        a[o] = f.x - dx; a[o + 1] = f.y; a[o + 2] = f.z - dz;
+        a[o + 3] = f.x + dx; a[o + 4] = f.y; a[o + 5] = f.z + dz;
+        a[o + 6] = tx + dx * 0.3; a[o + 7] = f.y + h; a[o + 8] = tz + dz * 0.3;
+        a[o + 9] = tx - dx * 0.3; a[o + 10] = f.y + h; a[o + 11] = tz - dz * 0.3;
+        o += 12;
+      }
+    }
+    flames.pos.needsUpdate = true;
+  }
+
+  function finish({ group }) {
+    buildFlames(group);
+    updateFlames(0);
     const mk = (hex, power, range, x, y, z, kind) => {
       const light = new THREE.PointLight(hex, power, range, 2);
       light.position.set(x * T, y, z * T);
@@ -548,17 +618,14 @@ export function makeVaultsDecor(lv, env) {
   }
 
   function animate(t) {
-    if (!flicker.a) return;
+    updateFlames(t);
     const fa = 0.82 + 0.18 * Math.sin(t * 13.1) * Math.sin(t * 7.7) + 0.06 * Math.sin(t * 31.0);
     const fb = 0.82 + 0.18 * Math.sin(t * 11.3 + 1.7) * Math.sin(t * 8.9) + 0.06 * Math.sin(t * 27.0);
-    flicker.a.color.setScalar(clampv(fa));
-    flicker.b.color.setScalar(clampv(fb));
     lamps.forEach((l, i) => {
       const f = (i % 2 ? fa : fb);
       l.light.intensity = l.base * (l.kind === 'lamp' ? 0.92 + 0.08 * f : 0.78 + 0.28 * f);
     });
   }
-  const clampv = (v) => Math.max(0.5, Math.min(1.1, v));
 
   return {
     plan(fc) {

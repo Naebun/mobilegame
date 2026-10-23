@@ -1517,7 +1517,10 @@ function buildVisuals(ctx) {
         if (sol(0, 1)) vs.splice(vs.length - 1, 0, 0.8);
       }
       const colf = (i, j, p) => { const k = jit(hash(Math.round(p[0] * 4), Math.round(p[2] * 4), 5), 0.07); return [ft[0] * k, ft[1] * k, ft[2] * k]; };
-      fm.grid([x0, 0, z0], [x0 + T, 0, z0], [x0, 0, z0 + T], us, vs, colf, [0, 1, 0]);
+      // dark level: the baked pools are the lighting, so the floor samples them finer (the ceiling keeps the coarse grid)
+      const fus = Q.fine && D ? [...us, 0.25, 0.75].sort((a, b) => a - b) : us;
+      const fvs = Q.fine && D ? [...vs, 0.25, 0.75].sort((a, b) => a - b) : vs;
+      fm.grid([x0, 0, z0], [x0 + T, 0, z0], [x0, 0, z0 + T], fus, fvs, colf, [0, 1, 0]);
       const cj = (i, j, p) => { const k = jit(hash(Math.round(p[0] * 4), Math.round(p[2] * 4), 9), 0.08); return [0.9 * k, 0.82 * k, 0.74 * k]; };
       if (!(D && D.ceilingTile(c, r, an, cj))) M.plaster.grid([x0, WALL_H, z0], [x0 + T, WALL_H, z0], [x0, WALL_H, z0 + T], Q.detail ? us : [0, 1], Q.detail ? vs : [0, 1], cj, [0, -1, 0]);
     }
