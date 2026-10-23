@@ -68,13 +68,13 @@ if (CHILD) {
   // ?difficulty=extra&level=2: the shortcuts, as the dev and the smoke test use them
   game.init(VIEW);
   ok(S.difficulty === 'extra' && S.level === 2, 'the URL shortcut starts level 2 in Extra Hard');
-  ok(S.enemies.length > 0 && S.enemies.every((e) => e.maxHp === Math.round(ENEMY_DEFS[e.kind].hp * 1.5)), 'and its robots are Extra Hard robots');
+  ok(S.enemies.length > 0 && S.enemies.every((e) => e.maxHp === Math.round(ENEMY_DEFS[e.kind].hp * DIFFICULTY.extra.health)), 'and its robots are Extra Hard robots');
   press('new');
   ok(S.mode === 'difficulty' && game.testHook('buttons').find((b) => b.selected).mode === 'extra', 'NEW GAME opens the difficulty page with the shortcut\'s mode highlighted');
   tap('enter');
   ok(S.mode === 'controls' && S.difficulty === 'extra', 'Enter takes the highlighted one');
   press('start');
-  ok(S.mode === 'intro' && S.level === 2 && S.difficulty === 'extra' && S.enemies.every((e) => e.maxHp === Math.round(ENEMY_DEFS[e.kind].hp * 1.5)), 'START GAME begins level 2 in Extra Hard');
+  ok(S.mode === 'intro' && S.level === 2 && S.difficulty === 'extra' && S.enemies.every((e) => e.maxHp === Math.round(ENEMY_DEFS[e.kind].hp * DIFFICULTY.extra.health)), 'START GAME begins level 2 in Extra Hard');
   ok(cookieSave() && cookieSave().difficulty === 'extra', 'and saves it');
   console.log(`${checks - failures}/${checks} child checks`);
   process.exit(failures ? 1 : 0);
@@ -190,7 +190,7 @@ if (CHILD) {
   ok(S.mode === 'intro' && S.difficulty === 'hard', 'START GAME begins the run');
   ok(cookieSave().difficulty === 'hard', 'the choice is in the cookie');
   ok(JSON.parse(ls.get('mobilegame.save')).difficulty === 'hard', 'and in local storage');
-  ok(S.enemies.length === 19 && hpOf('fizzbang').every((h) => h === Math.round(60 * 1.25)) && hpOf('bouncer')[0] === Math.round(450 * 1.25), `level 1 robots are Hard robots (fizzbang ${hpOf('fizzbang')[0]} hp, the Bouncer ${hpOf('bouncer')[0]})`);
+  ok(S.enemies.length === 19 && hpOf('fizzbang').every((h) => h === Math.round(60 * DIFFICULTY.hard.health)) && hpOf('bouncer')[0] === Math.round(450 * DIFFICULTY.hard.health), `level 1 robots are Hard robots (fizzbang ${hpOf('fizzbang')[0]} hp, the Bouncer ${hpOf('bouncer')[0]})`);
   step([], 60 * 4);
   ok(S.mode === 'play', 'the intro ends in play');
 
@@ -202,7 +202,7 @@ if (CHILD) {
   step([], 70);
   ok(game.testHook('buttons').map((b) => b.id).join() === 'retry,menu', 'RETRY and MAIN MENU are offered');
   press('retry');
-  ok(S.mode === 'play' && S.difficulty === 'hard' && hpOf('fizzbang').every((h) => h === 75), 'RETRY stays in the same mode with fresh Hard robots');
+  ok(S.mode === 'play' && S.difficulty === 'hard' && hpOf('fizzbang').every((h) => h === Math.round(60 * DIFFICULTY.hard.health)), 'RETRY stays in the same mode with fresh Hard robots');
   game.testHook('hurt', 1e6);
   step([], 70);
   press('menu');
@@ -218,7 +218,7 @@ if (CHILD) {
   ok(S.difficulty === 'extra' && game.testHook('buttons')[0].label === 'CONTINUE: LEVEL 2 (EXTRA HARD)', 'after a reload the title offers CONTINUE in the saved mode');
   press('resume');
   ok(S.mode === 'voicemail' && S.difficulty === 'extra' && S.level === 2, 'CONTINUE resumes level 2 in Extra Hard');
-  ok(S.enemies.length === 24 && S.enemies.every((e) => e.maxHp === Math.round(ENEMY_DEFS[e.kind].hp * 1.5)), 'with Extra Hard robots');
+  ok(S.enemies.length === 24 && S.enemies.every((e) => e.maxHp === Math.round(ENEMY_DEFS[e.kind].hp * DIFFICULTY.extra.health)), 'with Extra Hard robots');
   ok(S.best === 0, 'and the best shown is the Extra Hard one for that level');
   // a different mode on NEW GAME afterwards: the new run's mode is saved
   S.mode = 'title';
@@ -322,7 +322,7 @@ if (CHILD) {
   press('mode:extra');
   press('start');
   ok(S.difficulty === 'extra' && S.mode === 'intro', 'a debug run can pick Extra Hard');
-  ok(hpOf('fizzbang').every((h) => h === 90) && S.player.maxHealth === 200, 'with Extra Hard robots, and Naebun on 2x health');
+  ok(hpOf('fizzbang').every((h) => h === Math.round(60 * DIFFICULTY.extra.health)) && S.player.maxHealth === 200, 'with Extra Hard robots, and Naebun on 2x health');
   ok(snapshot() === before && wrote.cookie === w0.cookie && wrote.ls === w0.ls, 'starting it wrote neither the cookie nor local storage');
   step([], 60 * 5);
   S.score = 99999;

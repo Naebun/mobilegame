@@ -268,6 +268,8 @@ export const RECORDS = [
 // per run on the difficulty screen and saved. They change robots only: never Naebun's weapons, health, pickups, stun
 // durations or score values, and never the maps or what is placed where. Normal is all 1s and leaves ENEMY_DEFS untouched.
 // Balance is still for normal mode alone: tune the table below, never the base numbers against it, and never against debug.
+// The first guesses (Hard 1.5 / 1.25 / 1.1 / 0.9, Extra 2 / 1.5 / 1.2 / 0.8) were too much for level 2 with the sim bots: the good bot
+// won 53 and 13 percent of runs there. These are the tuned values; the runs behind them are in docs/difficulty.md.
 //   damage  multiplies what a robot does to Naebun: melee, slam, bottles, the Longshot's shot, the Shaken's blast on Naebun
 //   health  multiplies a robot's hp (a Nurse's revive is a fraction of the new maximum, so it follows)
 //   speed   multiplies how fast a robot walks (the Shaken's lunge too); projectile speed and the enrage factor are left alone
@@ -275,8 +277,8 @@ export const RECORDS = [
 // ---------------------------------------------------------------------------------------------
 export const DIFFICULTY = {
   normal: { id: 'normal', name: 'NORMAL', tag: '', line: 'The game as designed.', damage: 1, health: 1, speed: 1, windup: 1 },
-  hard: { id: 'hard', name: 'HARD', tag: 'HARD', line: 'Robots hit harder, last longer and move faster.', damage: 1.5, health: 1.25, speed: 1.1, windup: 0.9 },
-  extra: { id: 'extra', name: 'EXTRA HARD', tag: 'EXTRA HARD', line: 'Double damage, tougher and quicker again.', damage: 2, health: 1.5, speed: 1.2, windup: 0.8 },
+  hard: { id: 'hard', name: 'HARD', tag: 'HARD', line: 'Robots hit harder, last longer and move faster.', damage: 1.35, health: 1.2, speed: 1.1, windup: 0.9 },
+  extra: { id: 'extra', name: 'EXTRA HARD', tag: 'EXTRA HARD', line: 'Hits much harder, tougher and quicker again.', damage: 1.75, health: 1.35, speed: 1.15, windup: 0.85 },
 };
 export const DIFFICULTY_ORDER = ['normal', 'hard', 'extra'];
 // A warning is never shortened below this many seconds (a wind-up already shorter than it is left as it is). It is the time

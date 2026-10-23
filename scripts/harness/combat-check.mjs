@@ -315,8 +315,10 @@ function setEnemy(S, e, x, z, yaw) { e.x = x; e.z = z; e.yaw = yaw; e.kx = e.kz 
 
   ok(JSON.stringify(DIFFICULTY_ORDER) === '["normal","hard","extra"]', 'three modes: normal, hard, extra');
   ok(DIFFICULTY.normal.damage === 1 && DIFFICULTY.normal.health === 1 && DIFFICULTY.normal.speed === 1 && DIFFICULTY.normal.windup === 1, 'normal is all ones');
-  ok(DIFFICULTY.hard.damage === 1.5 && DIFFICULTY.hard.health === 1.25 && DIFFICULTY.hard.speed === 1.1 && near(DIFFICULTY.hard.windup, 0.9), 'the Hard table is 1.5 damage, 1.25 health, 1.1 speed, 10 percent quicker wind-ups');
-  ok(DIFFICULTY.extra.damage === 2 && DIFFICULTY.extra.health === 1.5 && DIFFICULTY.extra.speed === 1.2 && near(DIFFICULTY.extra.windup, 0.8), 'the Extra Hard table is 2 damage, 1.5 health, 1.2 speed, 20 percent quicker wind-ups');
+  // the numbers themselves are tuned with the bots (docs/difficulty.md), so the table is checked for its shape, not pinned
+  for (const k of ['damage', 'health', 'speed']) ok(DIFFICULTY.normal[k] < DIFFICULTY.hard[k] && DIFFICULTY.hard[k] < DIFFICULTY.extra[k] && DIFFICULTY.hard[k] <= 2 && DIFFICULTY.extra[k] <= 2.5, `${k} rises from normal to hard to extra (${DIFFICULTY.normal[k]}, ${DIFFICULTY.hard[k]}, ${DIFFICULTY.extra[k]})`);
+  ok(DIFFICULTY.normal.windup > DIFFICULTY.hard.windup && DIFFICULTY.hard.windup > DIFFICULTY.extra.windup && DIFFICULTY.extra.windup >= 0.7, `wind-ups get shorter, by at most 30 percent (${DIFFICULTY.normal.windup}, ${DIFFICULTY.hard.windup}, ${DIFFICULTY.extra.windup})`);
+  ok(DIFFICULTY.hard.speed <= 1.2 && DIFFICULTY.extra.speed <= 1.2 && 3.6 * DIFFICULTY.extra.speed < PLAYER.speed, 'no robot, the quick Shaken included, can outwalk Naebun in any mode');
 
   // the pure function: every kind, every mode, every number it is meant to touch and none it is not
   for (const kind of KINDS) {

@@ -51,11 +51,17 @@ Two levels so far. Read `README.md` for the layout and `docs/fps-design.md` for 
 - The Settings page (from the title) switches CONTROLS between PC and MOBILE and sets mouse sensitivity (PC only). In PC mode the
   mouse aims with no button held and the left button fires. Progress is saved by `src/save.js` (cookie plus localStorage); debug runs never write it.
 - Menu buttons come from `screens.buttons(mode, view, state)`, used for both drawing and hit testing.
-- NEW GAME goes to the controls screen first; only START GAME begins the run.
+- NEW GAME goes to the difficulty screen first (NORMAL, HARD, EXTRA HARD), then the controls screen; only START GAME begins the run.
 
 ## Balance rule
 Debug mode (home-screen toggle, `DEBUG_MULT` in `game3d.js`) gives Naebun 2x fire rate, 2x damage and 2x health.
-**Never balance against it.** All tuning is for normal mode. Debug runs must not write the best score.
+**Never balance against it.** All tuning is for normal mode. Debug runs must not write the best score or the saved difficulty.
+
+**Difficulty:** Hard and Extra Hard are multipliers on top of normal, in one `DIFFICULTY` table in `src/data.js` (robot damage, health,
+speed and wind-up; applied once when a robot spawns, by `defFor`). Same maps, same pickups, nothing about Naebun changes, no warning
+shorter than `TELEGRAPH_FLOOR`. The mode is picked once per run, saved, and never changed mid-run; best scores are kept per mode.
+The balance rule stands: tune the base numbers for normal mode, the table for the two harder modes, and never against debug.
+See `docs/difficulty.md`.
 
 ## Testing
 - `npm run smoke -- <dir>` is the end-to-end test (needs the `?test` hook, `window.__game`, which the page exposes only
