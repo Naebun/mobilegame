@@ -41,7 +41,7 @@ export const ENEMY_DEFS = {
 };
 
 export const PLAYER = {
-  health: 100, speed: 4.4, medkit: 35,
+  health: 100, speed: 4.4,
   // drag sensitivity in radians per pixel, and the continuous turn rate (rad/s) when the thumb rests at the box edge
   lookX: 0.009, lookY: 0.0075, edgeTurn: 2.4,
 };
@@ -72,3 +72,20 @@ export const DEATH_LINES = [
   'The robots were not feeling it.',
   'Turns out the warranty does not cover you.',
 ];
+
+// Power-ups are drinks. Walking onto one plays a first-person drinking animation (the model's `duration` is the
+// length of the animation), then the effect lands at about 65 percent through it. All names are invented.
+// heal: instant health. buff: a timed effect for `seconds`. These numbers are for normal mode only.
+export const DRINKS = {
+  dram: { id: 'dram', name: 'WEE DRAM', heal: 35, duration: 1.2, line: 'Aaah. That hit the spot.' },
+  orange: {
+    id: 'orange', name: 'BRUISER ORANGE', buff: 'speed', mult: 1.25, seconds: 20, duration: 1.6, label: 'FAST', line: 'Fizzy. Faster.',
+  },
+  heavy: {
+    id: 'heavy', name: 'PINT OF HEAVY', buff: 'guard', mult: 0.5, seconds: 20, duration: 2.0, label: 'TOUGH', line: 'Liquid courage.',
+  },
+  energy: {
+    id: 'energy', name: 'BASSLINE ENERGY', buff: 'rapid', mult: 1.5, reload: 0.35, seconds: 15, duration: 1.7, label: 'RAPID', line: 'Everything is louder.',
+  },
+};
+export const DRINK_ORDER = ['dram', 'orange', 'heavy', 'energy'];

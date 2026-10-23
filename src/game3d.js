@@ -15,7 +15,8 @@ import {
 } from './models.js';
 import * as hud from './hud.js';
 import * as screens from './screens.js';
-import { WEAPONS, WEAPON_ORDER, ENEMY_DEFS, PLAYER, LEVEL, AREA_HINTS, DEATH_LINES } from './data.js';
+import * as M from './models.js';
+import { WEAPONS, WEAPON_ORDER, ENEMY_DEFS, PLAYER, LEVEL, AREA_HINTS, DEATH_LINES, DRINKS, DRINK_ORDER } from './data.js';
 
 const TAU = Math.PI * 2;
 const HURT_DUR = 0.38; // matches the hurt animation length in models.js
@@ -61,6 +62,8 @@ const S = {
   hitMarker: 0,
   headshot: false,
   allClear: false,
+  drink: null, // the drink being drunk: { id, t, dur, opened, gulpT, applied }
+  buffs: { speed: 0, guard: 0, rapid: 0 }, // seconds left
   view: null,
   ui: { move: { active: false, nx: 0, ny: 0 }, look: { active: false, nx: 0, ny: 0 }, firing: false },
 };
@@ -96,6 +99,10 @@ function layoutFor(view) {
   }
   return layoutCache;
 }
+
+// Drink models come from models.js; until a model exists the old medkit stands in so nothing breaks.
+const makeDrinkMesh = (id) => (M.makeDrinkPickup ? M.makeDrinkPickup(id) : M.makeHealthPickup());
+const buffOn = (name) => S.buffs[name] > 0;
 
 const inRect = (x, y, r) => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
 
@@ -175,6 +182,16 @@ function initRender(view) {
     flashes[id] = flash;
   }
 
+  const drinkVms = {};
+  if (M.makeDrinkViewmodel) {
+    for (const id of DRINK_ORDER) {
+      const vm = M.makeDrinkViewmodel(id);
+      vm.group.visible = false;
+      wroot.add(vm.group);
+      drinkVms[id] = vm;
+    }
+  }
+
   const impacts = [];
   for (let i = 0; i < 24; i++) {
     const o = makeImpact();
@@ -188,7 +205,7 @@ function initRender(view) {
   const pipeline = createPipeline(renderer, view, Q.tier);
   const fx = createFx(scene);
   fx.setQuality(FX_QUALITY[Q.tier]);
-  R = { renderer, scene, camera, torch, wscene, wcam, wroot, models, flashes, impacts, explosions: [], flashT: 0, muzzleT: 0, pipeline, fx, look };
+  R = { renderer, scene, camera, torch, wscene, wcam, wroot, models, flashes, impacts, explosions: [], flashT: 0, muzzleT: 0, pipeline, fx, look, drinkVms };
   resize(view);
 }
 
@@ -211,8 +228,9 @@ function resetLevel() {
   for (const a of world.areas) for (const sp of a.spawns) spawnEnemy(a, sp);
   S.totalEnemies = S.enemies.length;
 
-  for (const def of world.pickups) {
-    const mesh = def.kind === 'weapon' ? makeWeaponPickup(def.item) : makeHealthPickup();
+  for (const raw of world.pickups) {
+    const def = raw.kind === 'health' ? { ...raw, kind: 'drink', item: 'dram' } : raw; // older levels had medkits
+    const mesh = def.kind === 'weapon' ? makeWeaponPickup(def.item) : makeDrinkMesh(def.item);
     mesh.position.set(def.x, 0, def.z);
     if (R) R.scene.add(mesh);
     S.pickups.push({ def, mesh, taken: false, phase: rand(0, TAU) });
@@ -237,6 +255,8 @@ function resetLevel() {
   S.allClear = false;
   S.currentArea = null;
   S.newBest = false;
+  S.drink = null;
+  S.buffs.speed = S.buffs.guard = S.buffs.rapid = 0;
   flowT = 0;
   flow.update(S.player.x, S.player.z);
 }
@@ -556,6 +576,7 @@ function fireBottle(e) {
 function hurtPlayer(amount, srcX, srcZ, melee) {
   const p = S.player;
   if (S.mode !== 'play' || p.health <= 0) return;
+  if (buffOn('guard')) amount = Math.max(1, Math.round(amount * DRINKS.heavy.mult));
   p.health -= amount;
   p.hurt = 1;
   p.shake = Math.max(p.shake, 0.3);
@@ -690,7 +711,8 @@ function startReload() {
   const p = S.player;
   const w = WEAPONS[p.weapon];
   if (p.reloadT > 0 || p.ammo[p.weapon] >= w.clip) return;
-  p.reloadT = w.reload;
+  p.reloadTotal = w.reload * (buffOn('rapid') ? DRINKS.energy.reload : 1);
+  p.reloadT = p.reloadTotal;
   audio.reload(false);
 }
 
@@ -756,7 +778,7 @@ function fire() {
   const w = WEAPONS[p.weapon];
   const m = mult();
   p.ammo[p.weapon]--;
-  p.fireT = w.interval / m.fire;
+  p.fireT = w.interval / m.fire / (buffOn('rapid') ? DRINKS.energy.mult : 1);
   p.kick = Math.min(1, p.kick + w.kick * 8);
   S.shots++;
   audio.shoot(w.id);
@@ -868,6 +890,11 @@ function updateWeapon(dt, ctl) {
   p.switchT = Math.max(0, p.switchT - dt);
   p.heat = Math.max(0, p.heat - dt * 6);
   p.kick = Math.max(0, p.kick - dt * 6);
+  if (S.drink) {
+    // hands are full: no firing, reloading or swapping until the drink is done
+    p.fireT = Math.max(p.fireT, 0.1);
+    return;
+  }
   if (ctl.swap) cycleWeapon();
   if (ctl.reload) startReload();
   if (p.reloadT > 0) {
@@ -955,10 +982,10 @@ function updatePickups(dt) {
     pk.mesh.position.y = 0.05 + Math.sin(pk.phase * 2.2) * 0.06;
     pk.mesh.rotation.y += dt * 1.4;
     if (Math.hypot(pk.def.x - p.x, pk.def.z - p.z) > 1.2) continue;
-    if (pk.def.kind === 'health') {
-      if (p.health >= p.maxHealth) continue;
-      p.health = Math.min(p.maxHealth, p.health + PLAYER.medkit * mult().health);
-      toast('MEDKIT');
+    if (pk.def.kind === 'drink') {
+      if (S.drink) continue; // one drink at a time
+      if (pk.def.item === 'dram' && p.health >= p.maxHealth) continue; // keep it for when it is needed
+      startDrink(pk.def.item);
     } else {
       const w = WEAPONS[pk.def.item];
       if (p.owned[w.id]) continue;
@@ -971,6 +998,53 @@ function updatePickups(dt) {
     pk.mesh.visible = false;
     audio.pickup();
   }
+}
+
+// ---- drinks ----
+
+function startDrink(id) {
+  const p = S.player;
+  const dr = DRINKS[id];
+  const vm = R && R.drinkVms[id];
+  S.drink = { id, t: 0, dur: vm ? vm.duration : dr.duration, opened: false, gulpT: 0, applied: false };
+  p.reloadT = 0; // reloading is interrupted, the clip stays as it was
+}
+
+function applyDrink(id) {
+  const p = S.player;
+  const dr = DRINKS[id];
+  if (dr.heal) {
+    p.health = Math.min(p.maxHealth, p.health + dr.heal * mult().health);
+    toast(`${dr.name}: +${Math.round(dr.heal * mult().health)} HEALTH`);
+  } else {
+    S.buffs[dr.buff] = dr.seconds;
+    toast(`${dr.name}: ${dr.label} FOR ${dr.seconds}S`);
+  }
+  audio.pickup();
+}
+
+function updateDrink(dt) {
+  const d = S.drink;
+  if (!d) return;
+  d.t += dt;
+  const k = d.t / d.dur;
+  if (!d.opened && k >= 0.12) {
+    d.opened = true;
+    audio.drinkOpen(d.id);
+  }
+  if (k >= 0.3 && k <= 0.72) {
+    d.gulpT -= dt;
+    if (d.gulpT <= 0) {
+      d.gulpT = 0.17;
+      audio.gulp();
+    }
+  }
+  if (!d.applied && k >= 0.65) {
+    d.applied = true;
+    audio.drinkDone(d.id);
+    applyDrink(d.id);
+  }
+  if (k >= 1) S.drink = null;
 }
 
 function toast(text) {
@@ -1087,7 +1161,7 @@ function updatePlay(dt, input, view) {
   p.pitch = clamp(p.pitch + ctl.pitchD, -1.2, 1.2);
 
   // move: forward is (-sin yaw, -cos yaw), right is (cos yaw, -sin yaw)
-  const sp = PLAYER.speed;
+  const sp = PLAYER.speed * (buffOn('speed') ? DRINKS.orange.mult : 1);
   const tvx = (-Math.sin(p.yaw) * ctl.mz + Math.cos(p.yaw) * ctl.mx) * sp;
   const tvz = (-Math.cos(p.yaw) * ctl.mz - Math.sin(p.yaw) * ctl.mx) * sp;
   const k = Math.min(1, dt * 14);
@@ -1113,6 +1187,8 @@ function updatePlay(dt, input, view) {
   p.hurt = Math.max(0, p.hurt - dt * 1.6);
   p.shake = Math.max(0, p.shake - dt);
 
+  for (const name of Object.keys(S.buffs)) S.buffs[name] = Math.max(0, S.buffs[name] - dt);
+  updateDrink(dt);
   updateWeapon(dt, ctl);
 
   flowT -= dt;
@@ -1137,10 +1213,11 @@ function updatePlay(dt, input, view) {
 
 // ---- render ----
 
+const BUFF_MAX = { speed: DRINKS.orange.seconds, guard: DRINKS.heavy.seconds, rapid: DRINKS.energy.seconds };
 const hudState = {
   health: 0, maxHealth: 0, hurt: 0, damageDirs: null, weapon: { id: '', name: '', clip: 0, clipSize: 0, reload: null },
   weapons: null, hitMarker: 0, headshot: false, toast: null, banner: null, objective: '', enemiesLeft: 0, areaName: '',
-  boss: null, score: 0, timeSec: 0, debugMode: false, move: null, look: null, firing: false,
+  boss: null, score: 0, timeSec: 0, debugMode: false, move: null, look: null, firing: false, buffs: null,
 };
 
 function buildHudState() {
@@ -1151,7 +1228,7 @@ function buildHudState() {
   h.maxHealth = p.maxHealth;
   h.hurt = p.hurt;
   h.damageDirs = S.damageDirs;
-  h.weapon = { id: w.id, name: w.name, clip: p.ammo[w.id], clipSize: w.clip, reload: p.reloadT > 0 ? 1 - p.reloadT / w.reload : null };
+  h.weapon = { id: w.id, name: w.name, clip: p.ammo[w.id], clipSize: w.clip, reload: p.reloadT > 0 ? 1 - p.reloadT / (p.reloadTotal || w.reload) : null };
   h.weapons = WEAPON_ORDER.map((id) => ({ id, name: WEAPONS[id].name, owned: !!p.owned[id], active: id === p.weapon }));
   h.hitMarker = S.hitMarker;
   h.headshot = S.headshot;
@@ -1165,6 +1242,7 @@ function buildHudState() {
   h.score = S.score;
   h.timeSec = S.runT;
   h.debugMode = S.debugMode;
+  h.buffs = Object.entries(S.buffs).filter(([, t]) => t > 0).map(([id, t]) => ({ id, t, max: BUFF_MAX[id] }));
   h.move = S.ui.move;
   h.look = S.ui.look;
   h.firing = S.ui.firing;
@@ -1207,17 +1285,26 @@ function animateWorld() {
 function animateViewmodel(dt) {
   const p = S.player;
   const { models, flashes, wroot } = R;
-  for (const id of WEAPON_ORDER) models[id].visible = id === p.weapon && (S.mode === 'play' || S.mode === 'intro');
+  const drinking = S.drink && R.drinkVms[S.drink.id];
+  for (const id of WEAPON_ORDER) models[id].visible = !drinking && id === p.weapon && (S.mode === 'play' || S.mode === 'intro');
+  for (const id of Object.keys(R.drinkVms)) R.drinkVms[id].group.visible = !!drinking && S.drink.id === id;
   const w = WEAPONS[p.weapon];
   const bobX = Math.cos(p.bobT * 0.5) * 0.012 * p.moveMag;
   const bobY = Math.abs(Math.sin(p.bobT * 0.5)) * 0.014 * p.moveMag;
-  const reloading = p.reloadT > 0 ? 1 - p.reloadT / w.reload : 0;
+  const reloading = p.reloadT > 0 ? 1 - p.reloadT / (p.reloadTotal || w.reload) : 0;
   const dip = Math.sin(reloading * Math.PI);
   const sw = p.switchT / 0.25;
   const baseX = p.weapon === 'launcher' ? 0.12 : 0.15;
   wroot.scale.setScalar(0.68);
-  wroot.position.set(baseX + bobX, -0.24 + bobY - dip * 0.22 - sw * 0.4, -0.62 + p.kick * 0.08);
-  wroot.rotation.set(0.03 + p.kick * 0.22 + dip * 0.7, 0.07 + dip * -0.25, dip * 0.2);
+  if (drinking) {
+    // the drink animation owns the pose; the root stays at the usual resting spot
+    wroot.position.set(0.15, -0.24, -0.62);
+    wroot.rotation.set(0, 0, 0);
+    R.drinkVms[S.drink.id].setPose(S.drink.t / S.drink.dur);
+  } else {
+    wroot.position.set(baseX + bobX, -0.24 + bobY - dip * 0.22 - sw * 0.4, -0.62 + p.kick * 0.08);
+    wroot.rotation.set(0.03 + p.kick * 0.22 + dip * 0.7, 0.07 + dip * -0.25, dip * 0.2);
+  }
   R.muzzleT = Math.max(0, R.muzzleT - dt);
   for (const id of WEAPON_ORDER) {
     flashes[id].visible = id === p.weapon && R.muzzleT > 0;
@@ -1337,9 +1424,13 @@ export function testHook(cmd, arg) {
       return undefined;
     case 'layout': return layoutFor(v);
     case 'hurt': hurtPlayer(arg, S.player.x, S.player.z + 5, false); return undefined;
+    case 'drink': startDrink(arg); return undefined;
     case 'stats': {
       const w = WEAPONS[S.player.weapon];
-      return { fireInterval: w.interval / mult().fire, damageMult: mult().damage, maxHealth: S.player.maxHealth, weapon: w.id, clip: S.player.ammo[w.id], reloading: S.player.reloadT > 0 };
+      return {
+        fireInterval: w.interval / mult().fire, damageMult: mult().damage, maxHealth: S.player.maxHealth, weapon: w.id, clip: S.player.ammo[w.id],
+        reloading: S.player.reloadT > 0, buffs: { ...S.buffs }, drinking: S.drink ? S.drink.id : null, health: S.player.health,
+      };
     }
     default: return undefined;
   }

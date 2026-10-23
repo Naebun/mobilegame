@@ -518,6 +518,32 @@ function drawHealth(ctx, view, h, top, t) {
   outlined(ctx, n.str, bx + bw + 7, y + 0.5, n.size, low ? '#ff8a8a' : '#ffffff', 'left', 800);
 }
 
+const BUFF_COLOURS = { speed: '#fb923c', guard: '#d6a45a', rapid: '#e879f9' };
+const BUFF_LABELS = { speed: 'FAST', guard: 'TOUGH', rapid: 'RAPID' };
+
+// Timed drink effects: small pills stacked above the move box, each draining as its effect runs out.
+function drawBuffs(ctx, L, buffs) {
+  const x = L.moveBox.x;
+  const w = L.moveBox.w;
+  let y = L.moveBox.y - 30;
+  for (const b of buffs) {
+    const colour = BUFF_COLOURS[b.id] || AMBER;
+    const f = clamp(num(b.t) / Math.max(0.001, num(b.max, 1)), 0, 1);
+    rrect(ctx, x, y, w, 20, 10);
+    ctx.fillStyle = 'rgba(4,2,8,0.62)';
+    ctx.fill();
+    if (f > 0.02) {
+      rrect(ctx, x + 2, y + 2, (w - 4) * f, 16, 8);
+      ctx.globalAlpha = f < 0.2 ? 0.45 + 0.35 * Math.sin(now() * 14) : 0.78;
+      ctx.fillStyle = colour;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+    outlined(ctx, `${BUFF_LABELS[b.id] || str(b.id).toUpperCase()}  ${Math.ceil(num(b.t))}s`, x + w / 2, y + 10.5, 10.5, '#ffffff', 'center', 800);
+    y -= 24;
+  }
+}
+
 function drawWeapons(ctx, view, ws, top) {
   const n = Math.min(ws.length, 6);
   if (!n) return;
@@ -799,6 +825,7 @@ export function drawPlayHud(ctx, view, h) {
   drawReload(ctx, L.reloadBtn, w, t);
   drawSwap(ctx, L.swapBtn);
   drawAmmo(ctx, view, L, w, t);
+  if (Array.isArray(h.buffs) && h.buffs.length) drawBuffs(ctx, L, h.buffs);
 
   if (h.banner) drawBanner(ctx, view, h.banner);
   ctx.restore();
