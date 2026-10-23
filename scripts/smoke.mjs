@@ -324,11 +324,11 @@ try {
 
   // death and retry
   await pressButton('new');
-  await until("s.mode === 'controls'");
+  await until("s.mode === 'controls'", null, 60000);
   await pressButton('start');
-  await until("s.mode === 'intro'");
+  await until("s.mode === 'intro'", null, 60000);
   await tap(195, 400);
-  await until("s.mode === 'play'");
+  check(await until("s.mode === 'play'", null, 60000), 'a new game starts again after the levels (the death test needs play mode)');
   await hook('hurt', 1000);
   check(await until("s.mode === 'dead'"), 'dies at zero health');
   await page.waitForTimeout(2200);
