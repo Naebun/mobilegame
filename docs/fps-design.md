@@ -15,7 +15,8 @@ a different effect. Ammo is unlimited but each clip is limited, so Freddie reloa
 with a button). Enemies are robots: "Dr Fizzbang" robots only fight in melee; "Bampot and Nephew" robots can shoot.
 
 Controls: two grey boxes on screen. Left box moves (virtual stick). Right box aims by dragging; while a thumb is down
-in the right box the weapon fires automatically. There is no aim assist: shots go where the crosshair points. A small
+in the right box the weapon fires automatically. A drag that starts anywhere outside both boxes (and their buttons)
+also aims, at the same sensitivity, but never fires. There is no aim assist: shots go where the crosshair points. A small
 RELOAD button sits under the right box and a small SWAP (next weapon) button under the left box.
 
 ## Stack and ground rules

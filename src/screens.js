@@ -150,7 +150,7 @@ export function drawTitle(ctx, view, state) {
     outlined(ctx, '2x fire rate, 2x damage, 2x health', cx, d.y + d.h + 18, 12, AMBER, 'center', 600);
     outlined(ctx, 'Scores are not recorded', cx, d.y + d.h + 36, 12, 'rgba(251,191,36,0.75)', 'center', 500);
   }
-  outlined(ctx, 'Left thumb moves. Right thumb aims and fires.', cx, view.h - num(safe(view).bottom) - 16, 12, 'rgba(255,255,255,0.6)', 'center', 500);
+  outlined(ctx, 'Left thumb moves. Right thumb aims and fires. Drag anywhere else to aim.', cx, view.h - num(safe(view).bottom) - 16, 12, 'rgba(255,255,255,0.6)', 'center', 500);
 }
 
 // ---- controls ----
@@ -355,7 +355,7 @@ function swapDiagram(ctx, cx, cy, w, t) {
 
 const CELLS = [
   { kind: 'move', sub: 'LEFT THUMB', head: 'MOVE', cap: 'Drag in the box to walk. Up is forwards.' },
-  { kind: 'look', sub: 'RIGHT THUMB', head: 'AIM AND FIRE', cap: 'Hold to fire. Drag to aim. There is no aim assist.' },
+  { kind: 'look', sub: 'RIGHT THUMB', head: 'AIM AND FIRE', cap: 'Hold to fire. Drag to aim. Dragging anywhere outside the boxes aims too, without firing. No aim assist.' },
   { kind: 'swap', sub: 'UNDER THE LEFT BOX', head: 'SWAP', cap: 'Walk over weapons to pick them up. SWAP cycles them.' },
   { kind: 'reload', sub: 'UNDER THE RIGHT BOX', head: 'RELOAD', cap: 'Reloads on its own when the clip is empty. Tap RELOAD to do it early. Ammo is unlimited, clips are not.' },
 ];

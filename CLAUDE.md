@@ -24,7 +24,8 @@ Level 1 only for now. Read `README.md` for the layout and `docs/fps-design.md` f
 - Content and tuning live in `src/data.js`. Enemies: "Dr Fizzbang" robots are melee only, "Bampot and Nephew" robots can
   shoot. The names are invented, in the spirit of a fizzy-drink brand and a family-firm spirits brand. Do not use real
   brand names, logos or packaging in names, text or models.
-- Controls: two grey boxes (move left, aim right). A thumb in the right box auto-fires. There is no aim assist.
+- Controls: two grey boxes (move left, aim right). A thumb in the right box auto-fires. A drag that starts anywhere
+  else (not in a box or on a button) aims only, no fire. There is no aim assist.
   Ammo is unlimited, clips are not; reload is automatic when empty or via RELOAD. Button taps are read from press
   events, not live touches, so they work at any frame rate. `hud.layout(view)` is the single source of truth for the
   box and button rectangles.
