@@ -50,6 +50,21 @@ Pin the tier for measuring: `?perf&q=high`, then `?perf&q=medium`, then `?perf&q
 and steps down on its own if frames stay under about 25 fps, and it remembers that choice in the browser for next time.
 If a phone looks like it is stuck on a low tier, that is why. Open it once with `?q=high` to see the real figure.
 
+What the readout showed on the build machine (software rendering, so only the counts mean anything, not the frame rate).
+Standing in the middle of an area and turning to the four compass points, triangles per frame at the tier named:
+
+| View | Portrait high | Portrait low | Landscape high | Landscape low |
+| --- | --- | --- | --- | --- |
+| Level 1 dance floor | 150k to 222k | 88k to 159k | 164k to 280k | 106k to 222k |
+| Level 2 Plague Cellar | 170k to 196k | 80k to 109k | 201k to 331k | 106k to 245k |
+
+Draw calls ran from about 35 to 276, and lights were 9 everywhere (four world lights, the torch spot, the camera fill, and
+three flat ambient lights). The level's own merged geometry is about 150k to 170k at high. In the one view we took apart
+(Plague Cellar, landscape), hiding the robots took off about 110k and hiding the pickups about 180k in a second view, so the
+robots and floor pickups in sight are as much of the load as the walls. We think this is because nothing is culled for
+being behind a wall, so anything inside the view cone is drawn. That explanation is untested. Landscape sees more of the
+room, so expect it to be the worse orientation.
+
 Our working targets are guesses, not requirements: 30 fps average or better, 1% low of 20 fps or better, on an
 iPhone 14 class device. Write down what you see even if it is better or worse.
 
