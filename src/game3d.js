@@ -7,6 +7,7 @@ import * as THREE from '../vendor/three.module.min.js';
 import * as audio from './audio.js';
 import { WALL_H, EYE, PLAYER_R, COLOURS } from './consts.js';
 import { buildWorld } from './world.js';
+import { loadBaked, bakedBytes } from './textures.js';
 import { createPipeline, TIERS, TIER_ORDER } from './gfx.js';
 import { makeEnvironment } from './gfx-env.js';
 import { createFx } from './fx.js';
@@ -175,10 +176,10 @@ export function init(view) {
   const saved = read(QUALITY_KEY);
   Q.fixed = !!TIERS[forced];
   Q.tier = TIERS[forced] ? forced : (TIERS[saved] ? saved : 'high');
-  world = buildWorld({ quality: Q.tier, level: S.level });
+  world = buildWorld({ quality: Q.tier, level: S.level, baked: bakedSets() });
   rememberDoors();
   flow = world.createFlowField();
-  if (typeof document !== 'undefined' && document.getElementById('gl')) initRender(view);
+  if (typeof document !== 'undefined' && document.getElementById('gl')) { initRender(view); startBaked(); }
   resetLevel();
   S.mode = 'title';
 }
@@ -204,7 +205,7 @@ function loadLevel(n) {
   S.best = bestFor(n);
   if (world && world.level === n) return;
   const old = world;
-  world = buildWorld({ quality: Q.tier, level: n });
+  world = buildWorld({ quality: Q.tier, level: n, baked: bakedSets() });
   rememberDoors();
   flow = world.createFlowField();
   if (R) {
@@ -214,9 +215,33 @@ function loadLevel(n) {
       o.geometry.dispose();
       for (const m of [].concat(o.material)) m.dispose();
     });
+    old.disposeTextures(); // generated textures only: the baked ones are shared with the next level
     applyAtmosphere();
     R.scene.add(world.group);
   }
+}
+
+// Baked textures (src/textures.js, made by scripts/blender/textures.py): medium and high tiers only, loaded in the background
+// from the title screen. The game never waits for them: it starts on the generated textures, which also stay if a file fails
+// or the tier is low. When the files arrive they are swapped in at the next moment nobody is playing (a texture upload is a
+// small stall), and every level built afterwards takes them directly. ?baked=0 turns them off, for before and after shots.
+const BAKED = { state: 'off', sets: null, bytes: 0 }; // off | loading | ready | applied | failed
+const bakedSets = () => (BAKED.state === 'ready' || BAKED.state === 'applied') && Q.tier !== 'low' ? BAKED.sets : null;
+function startBaked() {
+  if (Q.tier === 'low' || query.get('baked') === '0' || typeof Image === 'undefined') return;
+  BAKED.state = 'loading';
+  loadBaked().then((sets) => {
+    BAKED.sets = sets;
+    BAKED.bytes = bakedBytes(sets);
+    BAKED.state = Object.keys(sets).length ? 'ready' : 'failed';
+  });
+}
+function applyBaked() {
+  if (BAKED.state !== 'ready' || !R || Q.tier === 'low') return;
+  if (S.mode === 'play' && !query.has('test')) return; // wait for the next menu, death or level change
+  world.retexture(BAKED.sets);
+  for (const set of Object.values(BAKED.sets)) for (const t of [set.map, set.normal, set.rough]) R.renderer.initTexture(t); // upload now, not on the first frame that needs it
+  BAKED.state = 'applied';
 }
 
 // Fog, ambient, grade, the camera fill light and the gun torch's settings all come from the level.
@@ -2233,6 +2258,7 @@ export function update(dt, input, view) {
     loadLevel(S.level);
     resetLevel();
   }
+  if (BAKED.state === 'ready') applyBaked();
   world.update(dt, S.t);
   if (S.banner && (S.banner.t -= dt) <= 0) S.banner = null;
   if (S.toast && (S.toast.t -= dt) <= 0) S.toast = null;
@@ -2795,6 +2821,7 @@ export function testHook(cmd, arg) {
       else if (arg === 'dead') { resetLevel(); S.mode = 'play'; die(); }
       else if (arg === 'complete') { resetLevel(); S.mode = 'play'; completeLevel(); }
       return undefined;
+    case 'baked': return { state: BAKED.state, bytes: BAKED.bytes, names: [...world.bakedNames], loaded: BAKED.sets ? Object.keys(BAKED.sets) : [] }; // baked texture status, for tests
     case 'drink': startDrink(arg); return undefined;
     case 'torch': // { attached, on } to set; returns the torch state either way (headless tests and screenshots)
       if (arg && arg.attached !== undefined) { S.torch.attached = !!arg.attached; if (S.torch.attached) S.attach = null; }
