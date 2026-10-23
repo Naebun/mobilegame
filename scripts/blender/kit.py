@@ -18,6 +18,8 @@ SURF = {
   'paint': (0.5, 0.22, True), 'gloss': (0.3, 0.12, True), 'metal': (0.4, 0.88, False), 'chrome': (0.2, 1.0, False),
   'brass': (0.34, 1.0, False), 'rubber': (0.93, 0.0, False), 'plastic': (0.35, 0.0, False), 'paper': (0.92, 0.0, False),
   'leather': (0.5, 0.0, False),
+  # added for the weapons (appended: the ids above keep their index)
+  'wood': (0.78, 0.0, False), 'tape': (0.72, 0.0, False), 'cloth': (0.9, 0.0, False), 'skin': (0.55, 0.0, False),
 }
 SURF_IDS = list(SURF)
 WEAR_COL = (0.376, 0.347, 0.292)  # 0xa59f93 in linear light, as in models.js
@@ -159,16 +161,163 @@ def wrap(radius, front=0.0):
   return f
 
 
+def curve(pts, per=3, closed=False):
+  """Densify a polyline with a uniform Catmull-Rom spline (per extra points per span). Returns (points, params) where
+  each point's param is its index into the original list as a float, so sizes can be interpolated along the path."""
+  P = [Vector(p) for p in pts]
+  n = len(P)
+  out = []
+  spans = n if closed else n - 1
+  for i in range(spans):
+    p0, p1, p2, p3 = (P[(i + k) % n] if closed else P[min(max(i + k, 0), n - 1)] for k in (-1, 0, 1, 2))
+    for s in range(per):
+      t = s / per
+      q = 0.5 * ((2 * p1) + (p2 - p0) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t + (3 * p1 - p0 - 3 * p2 + p3) * t ** 3)
+      out.append((q, i + t))
+  if not closed:
+    out.append((P[-1], float(n - 1)))
+  return out
+
+
+def sweep(pts, sizes, per=3, closed=False):
+  """Stations for loft() along a spline through pts. sizes is one (w, h[, r]) per point, interpolated between them."""
+  out = []
+  for q, u in curve(pts, per, closed):
+    i = min(int(u), len(sizes) - 1)
+    j = (i + 1) % len(sizes) if closed else min(i + 1, len(sizes) - 1)
+    t = u - int(u)
+    a, b = sizes[i], sizes[j]
+    k = max(len(a), len(b))
+    a = tuple(a) + (0.0,) * (k - len(a))
+    b = tuple(b) + (0.0,) * (k - len(b))
+    out.append((q,) + tuple(a[m] + (b[m] - a[m]) * t for m in range(k)))
+  return out
+
+
+def _ring(w, h, r, n, seg, sub=0.0):
+  """One cross-section as (u, v) points, counter-clockwise. seg > 0 gives an ellipse of seg points; otherwise a
+  rounded rectangle whose corners have n segments each (n = 0 is a plain box). `sub` (a distance) puts two extra
+  points on each flat side, that far in from the corners, so a flat face keeps vertices of its own away from its
+  edges: wear and occlusion are baked per vertex, and without them a face with only edge vertices wears all over."""
+  hw, hh = w / 2, h / 2
+  if seg:
+    return [(hw * math.cos(2 * math.pi * i / seg), hh * math.sin(2 * math.pi * i / seg)) for i in range(seg)]
+  r = max(1e-5, min(r, hw - 1e-5, hh - 1e-5))
+  corners = []
+  for c, (su, sv) in enumerate(((1, 1), (-1, 1), (-1, -1), (1, -1))):
+    if n == 0:
+      corners.append([(su * hw, sv * hh)])
+      continue
+    corners.append([(su * (hw - r) + r * math.cos((c + k / n) * math.pi / 2), sv * (hh - r) + r * math.sin((c + k / n) * math.pi / 2))
+                    for k in range(n + 1)])
+  pts = []
+  for c in range(4):
+    pts += corners[c]
+    if sub > 0:
+      a, b = corners[c][-1], corners[(c + 1) % 4][0]
+      ln = math.hypot(b[0] - a[0], b[1] - a[1])
+      e = min(sub, ln / 3) / max(ln, 1e-9)
+      pts += [(a[0] + (b[0] - a[0]) * e, a[1] + (b[1] - a[1]) * e), (b[0] + (a[0] - b[0]) * e, b[1] + (a[1] - b[1]) * e)]
+  return pts
+
+
+def loft(sts, n=1, seg=0, up=(0, 0, 1), closed=False, bevel=0.0, bsteps=2, caps=True, sub=0.0, lsub=0):
+  """A solid swept along a path. Each station is (pos, w, h[, r]): w is the size across the path's side axis, h along
+  `up` (a reference direction; keep it perpendicular to the plane of a curling path so the section never flips),
+  r the corner radius of a rounded-rectangle section. seg > 0 swaps the section for a seg-point ellipse. `bevel`
+  rounds the two ends (bsteps rings each): a rounded fingertip, a chamfered slab. Built by hand, so the output is
+  stable from run to run. Closed paths (a trigger guard) join the last station back to the first. `sub` is the
+  distance for extra points along flat sides (see _ring) and also insets the end caps by that much, and `lsub` adds
+  rings along each span, for wear that has to vary along a big flat face."""
+  def build(bm):
+    S0 = [(Vector(s[0]), s[1], s[2], s[3] if len(s) > 3 else 0.0) for s in sts]
+    S = []
+    for i, a in enumerate(S0):
+      S.append(a)
+      if lsub and i < len(S0) - 1:
+        b = S0[i + 1]
+        for j in range(1, lsub + 1):
+          t = j / (lsub + 1)
+          S.append((a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t, a[3] + (b[3] - a[3]) * t))
+    m = len(S)
+    T = []
+    for i in range(m):
+      if closed:
+        d = S[(i + 1) % m][0] - S[i - 1][0]
+      else:
+        d = S[min(i + 1, m - 1)][0] - S[max(i - 1, 0)][0]
+      T.append(d.normalized())
+    rings = []  # (centre, tangent, w, h, r)
+    for i, (p, w, h, r) in enumerate(S):
+      d = bevel if (bevel > 0 and not closed and i in (0, m - 1)) else 0.0
+      if d:
+        d = min(d, 0.45 * min(w, h))
+        seq = range(0, bsteps + 1) if i == 0 else range(bsteps, -1, -1)
+        for k in seq:
+          ang = k / bsteps * math.pi / 2
+          shrink = d * (1 - math.sin(ang))
+          off = d * (1 - math.cos(ang)) * (1 if i == 0 else -1)
+          rings.append((p + T[i] * off, T[i], w - 2 * shrink, h - 2 * shrink, max(0.0, r - shrink)))
+        span = (S[1][0] - S[0][0]).length if i == 0 else (S[m - 1][0] - S[m - 2][0]).length
+        if sub > 0 and not seg and span > 2.2 * (d + sub):  # a ring just inside the bevel keeps wear in a band at the end edge
+          rings.insert(len(rings) if i == 0 else len(rings) - bsteps - 1,
+                       (p + T[i] * (d + sub) * (1 if i == 0 else -1), T[i], w, h, r))
+      else:
+        rings.append((p, T[i], w, h, r))
+    u = Vector(up)
+    rn = len(rings)
+    prev = [None]
+
+    def frame(t):
+      n1 = u - t * u.dot(t)
+      if n1.length < 1e-4:
+        n1 = prev[0] if prev[0] is not None else Vector((0, 1, 0))
+        n1 = n1 - t * n1.dot(t)
+      n1.normalize()
+      prev[0] = n1
+      return n1, t.cross(n1)
+
+    def make(p, n1, n2, w, h, r):
+      return [bm.verts.new(p + n2 * a + n1 * b) for a, b in _ring(w, h, r, n, seg, sub)]
+
+    frames, verts = [], []
+    for (p, t, w, h, r) in rings:
+      n1, n2 = frame(t)
+      frames.append((n1, n2))
+      verts.append(make(p, n1, n2, w, h, r))
+    cnt = len(verts[0])
+    for i in range(rn if closed else rn - 1):
+      a, b = verts[i], verts[(i + 1) % rn]
+      for j in range(cnt):
+        j2 = (j + 1) % cnt
+        bm.faces.new((a[j], a[j2], b[j2], b[j]))
+    if caps and not closed:
+      for idx, flip in ((0, False), (rn - 1, True)):
+        ring = verts[idx]
+        if sub > 0 and not seg:
+          p, t, w, h, r = rings[idx]
+          q = sub if min(w, h) > 4 * sub else min(w, h) * 0.2
+          inner = make(p, frames[idx][0], frames[idx][1], w - 2 * q, h - 2 * q, max(0.0, r - q))
+          for j in range(cnt):
+            j2 = (j + 1) % cnt
+            bm.faces.new((ring[j], ring[j2], inner[j2], inner[j]))
+          ring = inner
+        bm.faces.new(ring[::-1] if flip else ring)
+  return build
+
+
 # ---------------------------------------------------------------------------------------------
 # Parts
 # ---------------------------------------------------------------------------------------------
 
 class Part:
   """One mesh of a drink. kind: pbr (baked vertex colour and surface), glass, darkglass, liquid (gradient from
-  `grad`), glow (flat HDR colour from `glow`). `origin` is the part's pivot in the drink frame."""
+  `grad`), glow (flat HDR colour from `glow`). `origin` is the part's pivot in the drink frame. `smooth` is the angle
+  in degrees above which an edge is shaded hard."""
 
-  def __init__(self, name, kind='pbr', origin=(0, 0, 0), grad=None, glow=None):
+  def __init__(self, name, kind='pbr', origin=(0, 0, 0), grad=None, glow=None, smooth=38):
     self.name, self.kind, self.origin = name, kind, Vector(origin)
+    self.smooth = smooth  # edges turning more than this many degrees are shaded hard; coarse organic shapes raise it
     self.grad, self.glow = grad, glow
     self.bm = bmesh.new()
     self.l_rgb = self.bm.faces.layers.int.new('rgb')
@@ -214,7 +363,7 @@ def _finish(part):
   bm.normal_update()
   bm.verts.ensure_lookup_table()
   for e in bm.edges:
-    if len(e.link_faces) == 2 and e.calc_face_angle(0) > math.radians(38):
+    if len(e.link_faces) == 2 and e.calc_face_angle(0) > math.radians(part.smooth):
       e.smooth = False
   for f in bm.faces:
     f.smooth = True

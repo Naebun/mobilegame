@@ -216,8 +216,22 @@ ok(rs[0].muzzle && rs[0].muzzle.name === 'muzzle', 'bampot muzzle');
   }
 }
 
+// Weapons. The gun alone first (hands: false): muzzle, length, the record and the pump. Then Freddie's hands.
+const MAX_WEAPON_TRIS = 6000; // gun and hands together
+const nameCount = (o, name) => { let n = 0; o.traverse((c) => { if (c.name === name) n++; }); return n; };
+// triangles of a weapon without its record (the spinning disc is code, the same for every build of the vinyl)
+const triCount = (o) => {
+  let t = 0;
+  o.traverse((c) => {
+    if (!c.isMesh) return;
+    for (let p = c.parent; p; p = p.parent) if (p.name === 'record') return;
+    t += (c.geometry.index ? c.geometry.index.count : c.geometry.attributes.position.count) / 3;
+  });
+  return t;
+};
 for (const id of M.WEAPON_IDS) {
-  const w = M.makeWeaponModel(id);
+  const w = M.makeWeaponModel(id, { hands: false });
+  ok(nameCount(w, 'hands') === 0, `${id}: hands: false leaves the hands off`);
   const mz = w.getObjectByName('muzzle');
   ok(!!mz, `${id}: muzzle`);
   const bb = new THREE.Box3().setFromObject(w);
@@ -225,11 +239,15 @@ for (const id of M.WEAPON_IDS) {
   ok(len > 0.4 && len < 0.95, `${id}: length ${len.toFixed(2)}`);
   ok(mz.position.z < -0.3 && mz.position.z > bb.min.z - 0.05, `${id}: muzzle z ${mz.position.z}`);
   ok(bb.min.z > -0.7, `${id}: extends to ${bb.min.z.toFixed(2)}`);
+  const MUZZLE = { pistol: [0, 0.045, -0.4], shotgun: [0, 0.05, -0.6], smg: [0, 0.035, -0.53], launcher: [0, 0.03, -0.63], vinyl: [0, 0.19, -0.54] };
+  ok(mz.position.distanceTo(new THREE.Vector3(...MUZZLE[id])) < 0.05, `${id}: muzzle ${mz.position.toArray()} is within 0.05 of the old one`);
+  ok(!!w.getObjectByName('body') && !!w.getObjectByName('glow'), `${id}: body and lamp`);
   if (id === 'shotgun') ok(!!w.getObjectByName('pump'), 'shotgun pump');
   if (id === 'vinyl') {
     // the record: a named group that spins when userData.update(t) is called, with an HDR label
     const rec = w.getObjectByName('record');
     ok(!!rec && typeof w.userData.update === 'function', 'vinyl: record and userData.update');
+    ok(!!w.getObjectByName('cradle'), 'vinyl: cradle');
     w.userData.update(0);
     const r0 = rec.rotation.y;
     w.userData.update(0.5);
@@ -242,7 +260,13 @@ for (const id of M.WEAPON_IDS) {
     const rb = new THREE.Box3().setFromObject(rec);
     ok(rb.max.x - rb.min.x > 0.21 && rb.max.x - rb.min.x < 0.26, `vinyl: record diameter ${(rb.max.x - rb.min.x).toFixed(2)}`);
     const wb = new THREE.Box3().setFromObject(w);
-    ok(wb.max.x - wb.min.x < 0.36 && wb.max.y < 0.35 && wb.min.y > -0.3, `vinyl viewmodel bounds x ${(wb.max.x - wb.min.x).toFixed(2)} y ${wb.min.y.toFixed(2)}..${wb.max.y.toFixed(2)}`);
+    ok(wb.max.x - wb.min.x < 0.4 && wb.max.y < 0.35 && wb.min.y > -0.3, `vinyl viewmodel bounds x ${(wb.max.x - wb.min.x).toFixed(2)} y ${wb.min.y.toFixed(2)}..${wb.max.y.toFixed(2)}`);
+    // the record sits on the platter, not inside the deck or floating off it
+    const platter = w.getObjectByName('cradle').children.find((c) => c.isMesh);
+    let top = -Infinity; // the slipmat: the highest point within the record's radius
+    const pp = platter.geometry.attributes.position;
+    for (let i = 0; i < pp.count; i++) if (Math.hypot(pp.getX(i), pp.getZ(i)) < 0.1) top = Math.max(top, pp.getY(i));
+    ok(rec.position.y - 0.0069 > top - 0.002 && rec.position.y - 0.0069 - top < 0.012 && Math.abs(rec.position.x) + Math.abs(rec.position.z) < 0.01, `vinyl: the record sits on the platter (platter top ${top.toFixed(4)}, record base ${(rec.position.y - 0.0069).toFixed(4)})`);
     const pk = M.makeWeaponPickup('vinyl');
     ok(typeof pk.userData.update === 'function', 'vinyl pickup: update hook');
     const before = pk.getObjectByName('record').rotation.y;
@@ -254,9 +278,75 @@ for (const id of M.WEAPON_IDS) {
   const pb = new THREE.Box3().setFromObject(p);
   ok(Math.abs(pb.min.y) < 0.01, `${id} pickup floor ${pb.min.y}`);
   ok(pb.max.y > 0.9 && pb.max.y < 2.2, `${id} pickup top ${pb.max.y.toFixed(2)}`);
+  ok(nameCount(p, 'hands') === 0, `${id} pickup: no hands on a floor pickup`);
   finiteTransforms(p, `${id} pickup`);
-  console.log(`${id}: length ${len.toFixed(2)} muzzle ${mz.position.toArray().map((v) => v.toFixed(3)).join(',')} meshes ${st.meshes} tris ${st.tris} pickup top ${pb.max.y.toFixed(2)}`);
+
+  // Freddie's hands and forearms: present on the viewmodel, a gripping pose, nothing through the camera
+  const wh = M.makeWeaponModel(id);
+  const hs = [];
+  wh.traverse((c) => { if (c.name === 'hands') hs.push(c); });
+  ok(hs.length === (id === 'shotgun' ? 2 : 1) && hs.every((h) => h.isMesh), `${id}: hands meshes (${hs.length})`);
+  const tris = triCount(wh);
+  ok(tris <= MAX_WEAPON_TRIS && tris > 2500, `${id}: ${tris} triangles with hands (budget ${MAX_WEAPON_TRIS})`);
+  finiteTransforms(wh, `${id} with hands`);
+  for (const h of hs) {
+    const g = h.geometry;
+    const n = g.attributes.position.count;
+    ok(g.index.array.every((i) => i < n) && g.attributes.color.array.every((v) => v >= 0 && Number.isFinite(v)), `${id}: hands mesh data is clean`);
+    const col = g.attributes.color.array;
+    let skin = 0;
+    let sleeve = 0;
+    for (let i = 0; i < col.length; i += 3) {
+      if (col[i] > 0.25 && col[i] > col[i + 1] * 1.2 && col[i + 1] > col[i + 2] * 1.1) skin++;
+      if (col[i + 2] > col[i] * 2.2 && col[i + 2] > 0.04) sleeve++;
+    }
+    ok(skin > 20 && sleeve > 20, `${id}: hands are skin (${skin} verts) and a purple sleeve (${sleeve} verts)`);
+  }
+  wh.updateMatrixWorld(true);
+  const hb = new THREE.Box3();
+  hs.forEach((h) => hb.expandByObject(h));
+  const gunBox = new THREE.Box3().setFromObject(w);
+  ok(hb.intersectsBox(gunBox), `${id}: the hands are on the gun`);
+  ok(hb.max.z > gunBox.max.z && hb.min.y < gunBox.min.y + 0.1, `${id}: the forearms run back and down, off the screen`);
+  // the viewmodel pose from animateViewmodel (scale 0.68, resting spot, kick, reload dip): every hand vertex stays
+  // in front of the weapon camera's near plane (0.02) and the arms never reach across the screen
+  const m = new THREE.Matrix4();
+  const e = new THREE.Euler();
+  const v = new THREE.Vector3();
+  for (const x of [0.15, 0.4]) {
+    for (const [kick, dip, sw] of [[0, 0, 0], [1, 0, 0], [0, 1, 0], [0.5, 0.5, 1]]) {
+      e.set(0.03 + kick * 0.22 + dip * 0.7, 0.07 - dip * 0.25, dip * 0.2);
+      m.compose(new THREE.Vector3(x, -0.24 - dip * 0.22 - sw * 0.4, -0.62 + kick * 0.08), new THREE.Quaternion().setFromEuler(e), new THREE.Vector3(0.68, 0.68, 0.68));
+      let nearest = Infinity;
+      for (const h of hs) {
+        h.updateWorldMatrix(true, false);
+        const wm = new THREE.Matrix4().multiplyMatrices(m, h.matrixWorld);
+        const P = h.geometry.attributes.position;
+        for (let i = 0; i < P.count; i++) nearest = Math.min(nearest, -v.fromBufferAttribute(P, i).applyMatrix4(wm).z);
+      }
+      ok(nearest > 0.05, `${id}: hands stay ${nearest.toFixed(2)} m in front of the camera (x ${x} kick ${kick} dip ${dip})`);
+    }
+  }
+  if (id === 'shotgun') {
+    // the left hand is a child of the pump: it slides with it, the right hand stays put
+    const pump = wh.getObjectByName('pump');
+    const left = pump.getObjectByName('hands');
+    const right = hs.find((h) => h !== left);
+    ok(!!left && left.parent === pump && right.parent === wh, 'shotgun: the left hand is on the pump');
+    const at = (o) => { wh.updateMatrixWorld(true); return new THREE.Box3().setFromObject(o).getCenter(new THREE.Vector3()); };
+    const l0 = at(left);
+    const r0 = at(right);
+    pump.position.z = -0.06;
+    const l1 = at(left);
+    const r1 = at(right);
+    ok(Math.abs(l1.z - l0.z + 0.06) < 1e-6 && r1.distanceTo(r0) < 1e-6, 'shotgun: the pump slides the left hand and leaves the right hand');
+    pump.position.z = 0;
+  }
+  console.log(`${id}: length ${len.toFixed(2)} muzzle ${mz.position.toArray().map((v) => v.toFixed(3)).join(',')} meshes ${st.meshes} tris ${st.tris} (${tris} with hands) pickup top ${pb.max.y.toFixed(2)}`);
 }
+// A weapon missing from the Blender data falls back to the procedural model (no hands): exercised by the old parts
+// staying in models.js; a bogus id still throws.
+try { M.makeWeaponModel('nope'); ok(false, 'unknown weapon should throw'); } catch { /* expected */ }
 const h = M.makeHealthPickup();
 const hb = new THREE.Box3().setFromObject(h);
 ok(Math.abs(hb.min.y) < 0.01 && hb.max.y > 0.5, 'health pickup bounds');

@@ -5,6 +5,7 @@
 import * as THREE from '../vendor/three.module.min.js';
 import { COLOURS } from './consts.js';
 import { DRINK_MESHES } from './drink-meshes.js';
+import { WEAPON_MESHES } from './weapon-meshes.js';
 
 const cache = new Map();
 function once(key, make) {
@@ -2418,20 +2419,41 @@ const WEAPON_PARTS = {
   },
 };
 
-export function makeWeaponModel(id) {
-  const build = WEAPON_PARTS[id];
-  if (!build) throw new Error(`makeWeaponModel: unknown weapon "${id}"`);
-  const parts = once(`weapon:${id}`, () => {
-    const p = build();
-    const seed = WEAPON_IDS.indexOf(id) + 1;
-    return {
-      muzzle: p.muzzle,
-      lamp: p.lamp,
-      body: bake(p.body, { ...GW, seed }),
-      pump: p.pump ? bake(p.pump, { ...GW, seed }) : null,
-      cradle: p.cradle ? { at: p.cradleAt, tilt: p.cradleTilt, geo: bake(p.cradle, { ...GW, seed }) } : null,
-    };
-  });
+// The weapons are modelled in Blender (scripts/blender/weapons.py) and stored as packed arrays in weapon-meshes.js:
+// the body, the shotgun's pump, the vinyl's platter ('cradle') and Freddie's hands and forearms ('hands', plus
+// 'handsPump' for the left hand that rides on the pump). A weapon missing from the data falls back to the procedural
+// WEAPON_PARTS above, without hands.
+function weaponFromData(w) {
+  const geo = (name) => (w.parts[name] ? meshGeo(w.parts[name]) : null);
+  return {
+    muzzle: w.muzzle,
+    lamp: w.lamp,
+    body: geo('body'),
+    pump: geo('pump'),
+    hands: geo('hands'),
+    handsPump: geo('handsPump'),
+    cradle: w.parts.cradle ? { at: w.parts.cradle.pos, tilt: w.cradleTilt, geo: geo('cradle') } : null,
+  };
+}
+
+function weaponFromCode(id) {
+  const p = WEAPON_PARTS[id]();
+  const seed = WEAPON_IDS.indexOf(id) + 1;
+  return {
+    muzzle: p.muzzle,
+    lamp: p.lamp,
+    body: bake(p.body, { ...GW, seed }),
+    pump: p.pump ? bake(p.pump, { ...GW, seed }) : null,
+    hands: null,
+    handsPump: null,
+    cradle: p.cradle ? { at: p.cradleAt, tilt: p.cradleTilt, geo: bake(p.cradle, { ...GW, seed }) } : null,
+  };
+}
+
+// `hands: false` leaves Freddie's hands and forearms off (a floor pickup is just the gun).
+export function makeWeaponModel(id, { hands = true } = {}) {
+  if (!WEAPON_MESHES[id] && !WEAPON_PARTS[id]) throw new Error(`makeWeaponModel: unknown weapon "${id}"`);
+  const parts = once(`weapon:${id}`, () => (WEAPON_MESHES[id] ? weaponFromData(WEAPON_MESHES[id]) : weaponFromCode(id)));
   const g = new THREE.Group();
   g.name = `weapon-${id}`;
   const body = new THREE.Mesh(parts.body, pbrMat());
@@ -2442,8 +2464,18 @@ export function makeWeaponModel(id) {
   g.add(body, glow);
   if (parts.pump) {
     const pump = new THREE.Mesh(parts.pump, pbrMat());
-    pump.name = 'pump'; // slides along z for the pump action
+    pump.name = 'pump'; // slides along z for the pump action; the left hand is its child so it slides too
+    if (hands && parts.handsPump) {
+      const lh = new THREE.Mesh(parts.handsPump, pbrMat());
+      lh.name = 'hands';
+      pump.add(lh);
+    }
     g.add(pump);
+  }
+  if (hands && parts.hands) {
+    const h = new THREE.Mesh(parts.hands, pbrMat());
+    h.name = 'hands';
+    g.add(h);
   }
   if (parts.cradle) {
     // The record sits on the tilted platter. It spins when the integrator calls g.userData.update(t) with a clock in
@@ -2495,7 +2527,7 @@ export function makeWeaponPickup(id) {
   g.add(plinth(WEAPON_COLOUR[id] ?? COLOURS.cyan));
   const item = new THREE.Group();
   item.name = 'item';
-  const model = makeWeaponModel(id);
+  const model = makeWeaponModel(id, { hands: false });
   // Centre the model on its own bounding box so it spins about its middle.
   const bb = new THREE.Box3().setFromObject(model);
   const c = bb.getCenter(new THREE.Vector3());

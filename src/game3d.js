@@ -221,7 +221,7 @@ export function baseFov(aspect) {
 // so it stays at the edge of a much wider picture.
 function weaponX(aspect) {
   const halfW = Math.tan((35 * Math.PI) / 180) * aspect * 0.62; // half the visible width at the weapon's distance
-  return clamp(halfW * 0.4, 0.15, 0.4);
+  return clamp(halfW * 0.4, 0.08, 0.4);
 }
 
 export function resize(view) {
@@ -1840,8 +1840,14 @@ function animateViewmodel(dt) {
     wroot.rotation.set(0, 0, 0);
     R.drinkVms[S.drink.id].setPose(S.drink.t / S.drink.dur);
   } else {
-    wroot.position.set(baseX + bobX, -0.24 + bobY - dip * 0.22 - sw * 0.4, -0.62 + p.kick * 0.08);
+    wroot.position.set(baseX + bobX, (R.wcam.aspect < 1 ? -0.205 : -0.24) + bobY - dip * 0.22 - sw * 0.4, -0.62 + p.kick * 0.08);
     wroot.rotation.set(0.03 + p.kick * 0.22 + dip * 0.7, 0.07 + dip * -0.25, dip * 0.2);
+  }
+  // the shotgun's pump (and the left hand on it) slides back and forward in the gap between shots
+  const pump = models.shotgun.getObjectByName('pump');
+  if (pump) {
+    const k = p.weapon === 'shotgun' && p.fireT > 0 ? 1 - p.fireT / (WEAPONS.shotgun.interval / mult().fire) : 1;
+    pump.position.z = k > 0.15 && k < 0.85 ? Math.sin((Math.PI * (k - 0.15)) / 0.7) * 0.09 : 0;
   }
   R.muzzleT = Math.max(0, R.muzzleT - dt);
   for (const id of WEAPON_ORDER) {
