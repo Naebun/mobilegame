@@ -8,7 +8,7 @@ Written so the chat can be cleared and work resumed from a cold start. Read this
 - **The five approved enemy ideas are recorded in `ROADMAP.md` and are not built.** Approval is not a go-ahead to build.
 - **Never balance against debug mode.** Debug is 2x fire rate, 2x damage, 2x health. Debug runs do not write the best
   score.
-- **Nothing goes to `main` until the owner says so.** Squash-merge by PR when asked.
+- **Nothing goes to `main` until the owner says so.** Squash-merge by PR when asked. (Last go-ahead: "Merge all", PR #4.)
 - **Blender is installed but texture work has not started.** The owner said "don't start that". Wait to be told.
 - Robots are melee ("Dr Fizzbang") or ranged ("Bampot and Nephew"). Invented names, never real brands.
 - Controls: two grey boxes, left moves, right aims and auto-fires, no aim assist. Unlimited ammo, limited clips.
@@ -24,16 +24,12 @@ first-person drinking animation. Three.js r160 is vendored, plain ES modules, no
 hours, 8 to 10 levels, iOS from the last four years) is in `docs/full-game-plan.md`.
 
 ## Branches
-| Branch | State |
-| --- | --- |
-| `main` | First-person game (PR #3). Does not have the robot rename, the graphics pass, drinks or Last Orders |
-| `rename-robots` | Robot rename plus the full-game plan. **Unmerged. The owner has not answered whether to merge it** |
-| `graphics-pass` | Everything newer: graphics pipeline, new world, new models, drinks, Last Orders, third-person camera, Blender check. **Unmerged, not authorised to merge** |
-| `tune-levels` | Parked top-down tuning. Ignore |
+Everything is merged to `main` (PR #4, squash, with the owner's go-ahead: "Merge all"). That PR carried the robot
+rename, the full-game plan, the graphics pass, drinks and Last Orders. The branches `rename-robots` and
+`graphics-pass` are now redundant. `tune-levels` is parked top-down tuning; ignore it. Start new work on a new branch
+from `main`.
 
-`graphics-pass` was branched from the rename work, so merging it also carries the rename.
-
-## What exists on `graphics-pass`
+## What exists on `main`
 - **Render pipeline** (`src/gfx.js`): HDR target, bloom, ACES, grade, vignette, hurt tint, grain. Three tiers (high,
   medium, low), auto-drop when frames run slow, `?q=low|medium|high`, `?perf`, `?test`.
 - **World** (`src/world.js`): PBR brick, stone, timber and plaster from generated data textures, baked AO and light
@@ -46,7 +42,7 @@ hours, 8 to 10 levels, iOS from the last four years) is in `docs/full-game-plan.
 - Contracts between modules: `docs/fps-design.md`, `docs/graphics-pass.md`, `docs/drinks.md`.
 
 ## Status at handover (check against `git log`)
-Done and verified headless on `graphics-pass`: the models agent's work is integrated (robot `update` and pickup
+Done and verified headless (now on `main`): the models agent's work is integrated (robot `update` and pickup
 `userData.update` are now called from `game3d.js`), level exposure raised to 1.3, `world-check` 4368/4368,
 `models-check`, `drinks-check` and `ui-check` pass, the smoke test passes (38 checks), and the bot run beats the level
 (casual 100, good 100, sloppy 93 percent). The Claude Artifact was republished as version 7 and includes all of this.
@@ -88,7 +84,5 @@ under plain Node) and three.js textures are generated in code. Baked textures wo
 files or data embedded in the modules, which changes that rule. Raise it with the owner before starting.
 
 ## Open questions for the owner
-1. Merge `rename-robots` to `main`? (Asked, unanswered.)
-2. Merge `graphics-pass` to `main`, once it is reviewed?
-3. When to start Blender texture work, and whether image files may enter the repo.
-4. Playtest feedback on difficulty and look.
+1. When to start Blender texture work, and whether image files may enter the repo.
+2. Playtest feedback on difficulty and look.

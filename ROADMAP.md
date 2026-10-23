@@ -13,7 +13,7 @@ Verified by automated tests: the whole flow in a real headless browser (menus, b
 reload, swap, rockets, enemy bottles, areas and doors, death and retry, completion, debug mode); the level geometry and
 collision; a headless bot beats the level every time at three aim skills.
 
-## Graphics pass, drinks and Last Orders (branch `graphics-pass`, not merged to main)
+## Graphics pass, drinks and Last Orders (merged to main in PR #4)
 Added since the first-person rebuild: an HDR render pipeline with bloom and grading and three quality tiers, a PBR
 level with baked light, battered detailed robots, particles, five drinks with drinking animations, and the Last Orders
 laser with a third-person spin. Verified headless: world (4368 checks), models, drinks, UI, the full smoke test (38
