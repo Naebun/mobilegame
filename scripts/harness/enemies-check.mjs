@@ -894,6 +894,26 @@ function findBlock(W, wantFull) {
   const r = M.makeRobot('longshot');
   ok(r.pivot && r.pivot.up === 1.5 && r.pivot.fwd === 0.3 && typeof r.setLaser === 'function', 'Longshot: pivot and laser');
   ok(typeof M.makeRobot('nurse').setBeam === 'function' && typeof M.makeRobot('shaken').setBlast === 'function', 'Nurse: beam; Shaken: blast ring');
+  // the Mimic's lit parts (window, sign, display) are dim while it is dormant, so it does not stand out in a dark level, and come
+  // up as it unfolds
+  {
+    const mm = M.makeRobot('mimic');
+    const lit = (pose, k) => {
+      mm.setPose(pose, 0, k);
+      const out = [];
+      mm.group.traverseVisible((o) => { if (o.isMesh && o.material.isMeshBasicMaterial && o.material.side === THREE.DoubleSide) out.push(Math.max(o.material.color.r, o.material.color.g, o.material.color.b)); });
+      return out;
+    };
+    const dorm = lit('dormant', 0);
+    const peakOf = (a) => Math.max(...a);
+    ok(dorm.length === 3 && peakOf(dorm) <= 0.7, `Mimic dormant: window, sign and display are all dim (peak channel ${peakOf(dorm).toFixed(2)}, the display was 1.6)`);
+    const w0 = dorm[1];
+    const ramp = [0, 0.1, 0.2, 0.3, 0.4, 0.5].map((k) => lit('unfold', k)[1]);
+    ok(ramp.every((v, i) => i === 0 || v >= ramp[i - 1] - 1e-9) && ramp[5] > w0 * 2, `Mimic unfolding: the window comes up (${ramp.map((v) => v.toFixed(2)).join(', ')})`);
+    ok(lit('unfold', 0).every((v, i) => Math.abs(v - dorm[i]) < 1e-9), 'Mimic: unfold k 0 is the dormant light exactly (no pop when it wakes)');
+    ok(peakOf(lit('idle', 0)) > peakOf(dorm) * 2, 'Mimic awake: lit properly');
+    for (const [pose, k] of [['dead', 0.5], ['hurt', 0.2], ['walk', 0.5]]) ok(lit(pose, k).every(Number.isFinite), `Mimic ${pose}: lights are finite`);
+  }
   for (const f of ['rattle', 'hiss', 'fizz', 'snipeCharge', 'lock', 'snipe', 'reviveStart', 'reviveDone', 'unfold']) {
     ok(typeof audio[f] === 'function', `audio.${f} exists`);
     audio[f]();
