@@ -13,7 +13,7 @@ Verified by automated tests: the whole flow in a real headless browser (menus, b
 reload, swap, rockets, enemy bottles, areas and doors, death and retry, completion, debug mode); the level geometry and
 collision; a headless bot beats the level every time at three aim skills.
 
-## Graphics pass, drinks and Last Orders (branch `graphics-pass`, not merged to main)
+## Graphics pass, drinks and Last Orders (merged to main in PR #4)
 Added since the first-person rebuild: an HDR render pipeline with bloom and grading and three quality tiers, a PBR
 level with baked light, battered detailed robots, particles, five drinks with drinking animations, and the Last Orders
 laser with a third-person spin. Verified headless: world (4368 checks), models, drinks, UI, the full smoke test (38
@@ -26,8 +26,10 @@ Known and unmeasured:
   is about 118k triangles and a full robot roster is up to about 150k if all were in view. If phones struggle, trim the
   robots first (the models agent offered to), then the level.
 - **The drinking animations and the Freddie spin** have not been reviewed frame by frame in screenshots by the owner.
-- **Blender** is installed in the build container but not used by the game. Texture work has not started and needs the
-  owner's go-ahead, plus a decision on whether image files may enter a repo that is procedural-only today.
+- **Blender** now makes the five drink models (`scripts/blender/drinks.py` writes `src/drink-meshes.js`). Geometry and
+  baked vertex colour only. Texture work has not started and needs the owner's go-ahead, plus a decision on whether
+  image files may enter a repo that is procedural-only today. Robots, weapons, Freddie and the level are still
+  procedural code, not Blender.
 
 ## Not verified: needs a human playing on a phone
 - **Difficulty.** Bots aim far better than a thumb in a small box. A sloppy bot still wins every time, losing about

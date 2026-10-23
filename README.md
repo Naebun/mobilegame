@@ -86,7 +86,9 @@ node scripts/harness/models-check.mjs    # every robot pose, every model
 node scripts/harness/ui-check.mjs        # HUD and screens at extreme inputs and view sizes
 node scripts/harness/drinks-check.mjs    # every drink, Last Orders rules, pickups
 node scripts/harness/tier-fps.mjs        # software frame rate per quality tier (relative only)
-scripts/setup-blender.sh                 # installs Blender (bpy) into a venv; not used by the game yet
+scripts/setup-blender.sh                 # installs Blender (bpy) into a venv (about a minute, 1 GB)
+~/.venvs/blender/bin/python scripts/blender/drinks.py                    # rebuilds src/drink-meshes.js from the Blender models
+~/.venvs/blender/bin/python scripts/blender/drinks.py --preview sheet.png   # also a Cycles contact sheet (about a minute)
 node scripts/shot.mjs <page> <out.png>   # screenshot any page with WebGL, for visual checks
 ```
 

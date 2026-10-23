@@ -146,6 +146,33 @@ for (const id of M.DRINK_IDS) {
   console.log(`${id}: duration ${vm.duration}s viewmodel meshes ${st.meshes} tris ${st.tris}; pickup top ${pb.max.y.toFixed(2)}`);
 }
 
+// The drink meshes are modelled in Blender (scripts/blender/drinks.py, data in src/drink-meshes.js): every part the
+// animation code drives is there, indices are in range, nothing is NaN, and each drink stays inside a triangle budget.
+const DRINK_PARTS = {
+  dram: ['glass', 'liquid'],
+  orange: ['glass', 'liquid', 'label', 'cap', 'fizz'],
+  heavy: ['glass', 'liquid', 'foam'],
+  energy: ['can', 'stripeM', 'stripeC', 'tab', 'puff'],
+  lastorders: ['glass', 'liquid', 'foil', 'label', 'halo'],
+};
+for (const id of M.DRINK_IDS) {
+  const found = new Map();
+  M.makeDrinkViewmodel(id).group.traverse((o) => { if (o.isMesh && DRINK_PARTS[id].includes(o.name)) found.set(o.name, o); });
+  ok(DRINK_PARTS[id].every((n) => found.has(n)), `${id} has its parts (${[...found.keys()].join(', ')})`);
+  let tris = 0;
+  let bad = 0;
+  for (const m of found.values()) {
+    const g = m.geometry;
+    const n = g.attributes.position.count;
+    tris += g.index ? g.index.count / 3 : n / 3;
+    if (g.index && g.index.array.some((i) => i >= n)) bad++;
+    for (const a of Object.values(g.attributes)) if (a.array.some((v) => !Number.isFinite(v))) bad++;
+    if (g.attributes.color && g.attributes.color.array.some((v) => v < 0)) bad++;
+  }
+  ok(bad === 0, `${id} mesh data is clean`);
+  ok(tris > 500 && tris < 8000, `${id} drink triangles ${tris}`);
+}
+
 // Freddie.
 {
   const f = M.makeFreddie();

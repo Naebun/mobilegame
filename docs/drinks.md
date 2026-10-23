@@ -28,6 +28,12 @@ what it did. Freddie cannot fire during the animation (it is short), but can sti
 
 ## For the models agent (`src/models.js`)
 
+**Update:** the drink geometry is no longer hand-coded in `models.js`. It is modelled in Blender
+(`scripts/blender/drinks.py`), generated into `src/drink-meshes.js` and decoded by `drinkRecipe()`. Part names (`glass`,
+`liquid`, `foam`, `label`, `cap`, `can`, `stripeM`, `stripeC`, `tab`, `foil`), their pivots and the sizes in the
+`DRINK` table are the contract with the animation code below; keep them when reworking a drink. The soft fizz, puff
+and halo discs stay in code. The rest of this section is the original brief.
+
 New exports (keep everything else as it is):
 
 ```js
