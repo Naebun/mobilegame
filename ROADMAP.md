@@ -26,8 +26,10 @@ Known and unmeasured:
   is about 118k triangles and a full robot roster is up to about 150k if all were in view. If phones struggle, trim the
   robots first (the models agent offered to), then the level.
 - **The drinking animations and the Freddie spin** have not been reviewed frame by frame in screenshots by the owner.
-- **Blender** is installed in the build container but not used by the game. Texture work has not started and needs the
-  owner's go-ahead, plus a decision on whether image files may enter a repo that is procedural-only today.
+- **Blender** now makes the five drink models (`scripts/blender/drinks.py` writes `src/drink-meshes.js`). Geometry and
+  baked vertex colour only. Texture work has not started and needs the owner's go-ahead, plus a decision on whether
+  image files may enter a repo that is procedural-only today. Robots, weapons, Freddie and the level are still
+  procedural code, not Blender.
 
 ## Not verified: needs a human playing on a phone
 - **Difficulty.** Bots aim far better than a thumb in a small box. A sloppy bot still wins every time, losing about

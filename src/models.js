@@ -4,6 +4,7 @@
 // module-level caches and are shared. Glowing parts use HDR colours (above 1) so the post pass blooms them.
 import * as THREE from '../vendor/three.module.min.js';
 import { COLOURS } from './consts.js';
+import { DRINK_MESHES } from './drink-meshes.js';
 
 const cache = new Map();
 function once(key, make) {
@@ -1367,89 +1368,100 @@ const darkGlassMat = () => once('drinkGlassDark', () => new THREE.MeshStandardMa
 }));
 const liquidMat = () => once('liquidVC', () => new THREE.MeshBasicMaterial({ vertexColors: true }));
 
-// A lathe of liquid or foam with an HDR gradient from c0 (bottom) to c1 (top); y runs 0..h.
-function liquidGeo(profile, c0, c1, k0, k1) {
-  const g = lathe(profile, 26);
-  const h = profile.reduce((m, p) => Math.max(m, p[1]), 0);
-  const P = g.attributes.position;
-  const col = new Float32Array(P.count * 3);
-  const a = new THREE.Color(c0).multiplyScalar(k0);
-  const b = new THREE.Color(c1).multiplyScalar(k1);
-  for (let i = 0; i < P.count; i++) {
-    _c.copy(a).lerp(b, clamp(P.getY(i) / h, 0, 1));
-    col[i * 3] = _c.r;
-    col[i * 3 + 1] = _c.g;
-    col[i * 3 + 2] = _c.b;
+// The drink meshes are modelled in Blender (scripts/blender/drinks.py) and stored as packed arrays in
+// drink-meshes.js, so this file stays free of images and DOM. Decoding is a few thousand vertices, once per drink.
+function bytes(s, Type) {
+  const bin = atob(s);
+  const u = new Uint8Array(bin.length);
+  for (let i = 0; i < u.length; i++) u[i] = bin.charCodeAt(i);
+  return new Type(u.buffer);
+}
+
+const SRGB_LIN = Float32Array.from({ length: 256 }, (_, i) => {
+  const c = i / 255;
+  return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+});
+
+function meshGeo(m) {
+  const g = new THREE.BufferGeometry();
+  const p = bytes(m.p, Int16Array);
+  const pos = new Float32Array(p.length);
+  for (let i = 0; i < p.length; i++) pos[i] = p[i] * m.sc;
+  const n = bytes(m.nrm, Int8Array);
+  const nor = new Float32Array(n.length);
+  for (let i = 0; i < n.length; i++) nor[i] = n[i] / 127;
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+  g.setIndex(new THREE.BufferAttribute(bytes(m.idx, Uint16Array), 1));
+  if (m.kind === 'pbr') {
+    const c = bytes(m.col, Uint8Array);
+    const col = new Float32Array(c.length);
+    for (let i = 0; i < c.length; i++) col[i] = SRGB_LIN[c[i]];
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    const sf = bytes(m.sf, Uint8Array);
+    const surf = new Float32Array(sf.length);
+    for (let i = 0; i < sf.length; i++) surf[i] = sf[i] / 255;
+    g.setAttribute('surf', new THREE.BufferAttribute(surf, 2));
+  } else if (m.grad) {
+    // a liquid: HDR gradient from the bottom colour to the top colour, by height
+    const [h0, h1, k0, k1] = m.grad;
+    const a = new THREE.Color(h0).multiplyScalar(k0);
+    const b = new THREE.Color(h1).multiplyScalar(k1);
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (let i = 0; i < pos.length; i += 3) {
+      lo = Math.min(lo, pos[i + 1]);
+      hi = Math.max(hi, pos[i + 1]);
+    }
+    const col = new Float32Array(pos.length);
+    for (let i = 0; i < pos.length; i += 3) {
+      _c.copy(a).lerp(b, clamp((pos[i + 1] - lo) / (hi - lo), 0, 1));
+      col[i] = _c.r;
+      col[i + 1] = _c.g;
+      col[i + 2] = _c.b;
+    }
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
   }
-  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  g.computeBoundingSphere();
+  g.computeBoundingBox();
   return g;
 }
 
-// Cheap glints and puffs: a few small additive balls in a fixed cluster.
-const cluster = (n, spread, size, seed) => bake(Array.from({ length: n }, (_, i) => {
-  const a = hash3(i, seed, 1) * Math.PI * 2;
-  const r = hash3(i, seed, 2) * spread;
-  return P(ball(size * (0.6 + hash3(i, seed, 3) * 0.8), 6, 4), 0xffffff, 'plastic', [Math.cos(a) * r, hash3(i, seed, 4) * spread * 1.4, Math.sin(a) * r]);
-}), GW);
-
 const softMat = () => once('softAdd', () => new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false }));
+
+// Soft effect discs that are not part of the modelled drink: the fizz and the puff of gas hide until their moment
+// in the animation, the halo glows round the Last Orders bottle.
+const DRINK_FX = {
+  orange: { fizz: { geo: () => radialDisc(0.05, 0xfff0d8, 0.45), mat: softMat, pos: [0, 0.27, 0.03], hidden: true } },
+  energy: { puff: { geo: () => radialDisc(0.06, 0xdde8ff, 0.4), mat: softMat, pos: [0, 0.14, 0.03], hidden: true } },
+  lastorders: {
+    halo: {
+      geo: () => radialDisc(0.16, 0xffb030, 0.8),
+      mat: () => new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false }),
+      pos: [0, 0.06, 0.07],
+      scale: [1, 2.2, 1],
+    },
+  },
+};
 
 // Each recipe returns named meshes: geometry, material and position in the drink's own frame
 // (origin at the grip centre, axis along y, rim at +y).
-const DRINK_BUILD = {
-  dram() {
-    const outer = [[0, -0.075], [0.045, -0.075], [0.05, -0.07], [0.0525, -0.05], [0.058, 0], [0.066, 0.07], [0.067, 0.075]];
-    const inner = [[0.062, 0.075], [0.0605, 0.07], [0.054, 0], [0.048, -0.035], [0, -0.035]];
-    return {
-      glass: { geo: lathe([...outer, ...inner], 28), mat: glassMat(), pos: [0, 0, 0], order: 2 },
-      liquid: { geo: liquidGeo([[0, 0], [0.047, 0], [0.0595, 0.085], [0, 0.085]], 0x6a2c06, 0xf08a14, 0.8, 1.0), mat: liquidMat(), pos: [0, -0.035, 0] },
-    };
-  },
-  orange() {
-    const outer = [[0, -0.12], [0.04, -0.12], [0.05, -0.11], [0.054, -0.09], [0.054, 0.08], [0.05, 0.12], [0.036, 0.15], [0.022, 0.18], [0.02, 0.24], [0.024, 0.255], [0.024, 0.265]];
-    const inner = [[0.0175, 0.265], [0.0165, 0.24], [0.016, 0.19], [0.032, 0.15], [0.045, 0.12], [0.05, 0.08], [0.05, -0.09], [0.04, -0.11], [0, -0.11]];
-    const knurl = Array.from({ length: 16 }, (_, i) => {
-      const a = (i / 16) * Math.PI * 2;
-      return P(rbox(0.005, 0.028, 0.007, 0.0015), 0xb85a10, 'metal', [Math.sin(a) * 0.0268, 0, Math.cos(a) * 0.0268], [0, a, 0]);
-    });
-    return {
-      glass: { geo: lathe([...outer, ...inner], 28), mat: glassMat(), pos: [0, 0, 0], order: 2 },
-      liquid: { geo: liquidGeo([[0, 0], [0.0485, 0], [0.0495, 0.19], [0.043, 0.217], [0, 0.217]], 0xb83000, 0xff7a0a, 0.8, 1.0), mat: liquidMat(), pos: [0, -0.105, 0] },
-      label: { geo: bake([P(rcyl(0.0548, 0.0548, 0.1, 0.003, 24), 0xf0e8d0, 'paper'), P(rcyl(0.0553, 0.0553, 0.03, 0.002, 24), 0xe86a10, 'gloss', [0, 0.02, 0]), P(rcyl(0.0553, 0.0553, 0.012, 0.002, 24), 0x1a1a1a, 'gloss', [0, -0.03, 0])], { ...GW, seed: 2 }), mat: pbrMat(), pos: [0, -0.02, 0] },
-      cap: { geo: bake([P(rcyl(0.0265, 0.0265, 0.032, 0.006, 18), 0xd9701a, 'gloss'), ...knurl], { ...GW, seed: 4 }), mat: pbrMat(), pos: [0, 0.281, 0] },
-      fizz: { geo: radialDisc(0.05, 0xfff0d8, 0.45), mat: softMat(), pos: [0, 0.27, 0.03], hidden: true },
-    };
-  },
-  heavy() {
-    const outer = [[0, -0.13], [0.038, -0.13], [0.042, -0.125], [0.045, -0.1], [0.052, 0.02], [0.057, 0.1], [0.0625, 0.125], [0.0635, 0.13]];
-    const inner = [[0.0585, 0.13], [0.0575, 0.1], [0.0525, 0.02], [0.047, 0.02 - 0.08], [0.041, -0.1], [0.037, -0.115], [0, -0.115]];
-    return {
-      glass: { geo: lathe([...outer, ...inner], 28), mat: glassMat(), pos: [0, 0, 0], order: 2 },
-      liquid: { geo: liquidGeo([[0, 0], [0.038, 0], [0.0545, 0.2], [0, 0.2]], 0x120802, 0x4a2008, 0.9, 1.0), mat: liquidMat(), pos: [0, -0.113, 0] },
-      foam: { geo: liquidGeo([[0, 0], [0.0545, 0], [0.0568, 0.012], [0.053, 0.03], [0.03, 0.042], [0, 0.046]], 0xcdb888, 0xefe2bc, 0.9, 1.05), mat: liquidMat(), pos: [0, 0.087, 0] },
-    };
-  },
-  energy() {
-    const body = lathe([[0, -0.135], [0.026, -0.135], [0.031, -0.128], [0.0345, -0.115], [0.0355, -0.1], [0.0355, 0.1], [0.0345, 0.118], [0.028, 0.128], [0.0265, 0.132], [0, 0.132]], 24);
-    return {
-      can: { geo: bake([P(body, 0x5a5a6a, 'metal', [0, 0, 0], [0, 0, 0], [1, 1, 1], { rust: 0.05 }), P(rcyl(0.0275, 0.0275, 0.008, 0.002, 20), C.chrome, 'chrome', [0, 0.133, 0]), P(rcyl(0.0285, 0.0285, 0.01, 0.003, 20), C.chrome, 'chrome', [0, -0.132, 0]), P(rcyl(0.0135, 0.0135, 0.002, 0.0005, 12), 0x050505, 'plastic', [0, 0.1375, -0.008])], { ...GW, seed: 6 }), mat: pbrMat(), pos: [0, 0, 0] },
-      stripeM: { geo: lathe([[0.0372, -0.008], [0.0372, 0.008]], 28), mat: glowBasic(COLOURS.magenta, 1.8, false), pos: [0, 0.045, 0] },
-      stripeC: { geo: lathe([[0.0372, -0.008], [0.0372, 0.008]], 28), mat: glowBasic(COLOURS.cyan, 1.8, false), pos: [0, 0.018, 0] },
-      tab: { geo: bake([P(torus(0.011, 0.003, 12, 4), C.chrome, 'chrome', [0, 0, 0.012], [HALF, 0, 0]), P(rbox(0.014, 0.003, 0.03, 0.001), C.chrome, 'chrome', [0, 0, -0.004])], GW), mat: pbrMat(), pos: [0, 0.138, 0.012] },
-      puff: { geo: radialDisc(0.06, 0xdde8ff, 0.4), mat: softMat(), pos: [0, 0.14, 0.03], hidden: true },
-    };
-  },
-  lastorders() {
-    const outer = [[0, -0.16], [0.045, -0.16], [0.057, -0.15], [0.062, -0.12], [0.062, 0.07], [0.058, 0.1], [0.045, 0.13], [0.03, 0.16], [0.024, 0.19], [0.023, 0.26], [0.026, 0.275], [0.026, 0.29], [0, 0.29]];
-    return {
-      glass: { geo: lathe(outer, 30), mat: darkGlassMat(), pos: [0, 0, 0], order: 2 },
-      liquid: { geo: liquidGeo([[0, 0], [0.0575, 0], [0.0585, 0.2], [0.05, 0.23], [0.032, 0.255], [0, 0.255]], 0x9a5a00, 0xffc030, 0.9, 1.5), mat: liquidMat(), pos: [0, -0.15, 0] },
-      foil: { geo: bake([P(rcyl(0.027, 0.036, 0.1, 0.004, 22), 0xd4a52a, 'brass', [0, 0.165, 0]), P(rcyl(0.0265, 0.0265, 0.13, 0.004, 22), 0xd4a52a, 'brass', [0, 0.225, 0]), P(rcyl(0.031, 0.031, 0.014, 0.003, 22), 0xe6bc40, 'brass', [0, 0.285, 0]), P(torus(0.0275, 0.003, 20, 4), 0xb88a20, 'brass', [0, 0.11, 0], [HALF, 0, 0])], { ...GW, seed: 8 }), mat: pbrMat(), pos: [0, 0, 0] },
-      label: { geo: bake([P(rcyl(0.0628, 0.0628, 0.12, 0.004, 26), 0xd4a52a, 'gloss', [0, 0, 0], [0, 0, 0], [1, 1, 1], { rust: 0.08 }), P(rcyl(0.0634, 0.0634, 0.026, 0.002, 26), 0x1a1208, 'gloss', [0, -0.03, 0]), P(rcyl(0.0634, 0.0634, 0.01, 0.002, 26), 0x1a1208, 'gloss', [0, 0.04, 0]), P(rbox(0.045, 0.045, 0.006, 0.002), 0x1a1208, 'metal', [0, 0.0, 0.0638], [0, 0, 0.785]), P(rbox(0.03, 0.03, 0.007, 0.002), 0xe6bc40, 'brass', [0, 0.0, 0.0645], [0, 0, 0.785])], { ...GW, seed: 9 }), mat: pbrMat(), pos: [0, -0.03, 0] },
-      halo: { geo: radialDisc(0.16, 0xffb030, 0.8), mat: new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false }), pos: [0, 0.06, 0.07], scale: [1, 2.2, 1] },
-    };
-  },
-};
+function drinkRecipe(id) {
+  const recipe = {};
+  for (const [name, m] of Object.entries(DRINK_MESHES[id])) {
+    const glass = m.kind === 'glass' || m.kind === 'darkglass';
+    const mat = {
+      pbr: pbrMat,
+      glass: glassMat,
+      darkglass: darkGlassMat,
+      liquid: liquidMat,
+      glow: () => glowBasic(m.glow?.[0], m.glow?.[1], false),
+    }[m.kind]();
+    recipe[name] = { geo: meshGeo(m), mat, pos: m.pos, order: glass ? 2 : 0 };
+  }
+  for (const [name, fx] of Object.entries(DRINK_FX[id] || {})) recipe[name] = { ...fx, geo: fx.geo(), mat: fx.mat() };
+  return recipe;
+}
 
 // Per-drink numbers. R and gy are the grip radius and height; rim is how far the rim sits from the origin;
 // tilt is the peak tilt in radians; `out` is where the tilt starts to come back.
@@ -1462,7 +1474,7 @@ const DRINK = {
 };
 
 function buildDrink(id) {
-  const recipe = once(`drink:${id}`, () => DRINK_BUILD[id]());
+  const recipe = once(`drink:${id}`, () => drinkRecipe(id));
   const group = new THREE.Group();
   const parts = {};
   for (const [name, r] of Object.entries(recipe)) {

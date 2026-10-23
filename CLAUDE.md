@@ -13,6 +13,9 @@ Level 1 only for now. Read `README.md` for the layout and `docs/fps-design.md` f
 - Match the surrounding code: 2-space indent, single quotes, semicolons, short comments that say why. British English.
 - `world.js` and `models.js` are procedural only: geometry, flat colours and generated `THREE.DataTexture`s. No image
   files, no canvas textures, no DOM access, so they run under plain Node (used by the headless tests).
+- The five drink meshes are modelled in Blender (`scripts/blender/drinks.py`) and generated into `src/drink-meshes.js`,
+  which `models.js` decodes. That file is data, not hand-written: change the script and rerun it, never edit the output.
+  Geometry and vertex colour only, still no image files. Texture work has not started.
 - Look of the 3D world: gritty and real. Exposed brick, stone, timber, plaster, iron, warm tungsten light. Not
   sci-fi: no neon trim strips, no glowing panels. Neon is limited to a couple of classic bar signs. The 2D UI keeps
   its neon pink and cyan.

@@ -9,7 +9,7 @@ Written so the chat can be cleared and work resumed from a cold start. Read this
 - **Never balance against debug mode.** Debug is 2x fire rate, 2x damage, 2x health. Debug runs do not write the best
   score.
 - **Nothing goes to `main` until the owner says so.** Squash-merge by PR when asked. (Last go-ahead: "Merge all", PR #4.)
-- **Blender is installed but texture work has not started.** The owner said "don't start that". Wait to be told.
+- **Blender makes the drink models; texture work has not started.** The owner said "don't start that" about textures. Wait to be told.
 - Robots are melee ("Dr Fizzbang") or ranged ("Bampot and Nephew"). Invented names, never real brands.
 - Controls: two grey boxes, left moves, right aims and auto-fires, no aim assist. Unlimited ammo, limited clips.
 - Last Orders (the super drink) never triggers in the boss room, does not stop time, and switches to a third-person
@@ -79,10 +79,20 @@ about 1 GB). It creates a venv at `~/.venvs/blender`, installs `bpy` (5.2.3 at t
 Verified: Cycles on CPU renders, a 16x16 bake works, the glTF exporter is present. EEVEE is not usable headless. The
 GPU library warnings on start-up only mean there is no GPU.
 
-Not decided: how Blender output reaches the game. `world.js` and `models.js` are procedural only (no image files, run
-under plain Node) and three.js textures are generated in code. Baked textures would need either committed image
-files or data embedded in the modules, which changes that rule. Raise it with the owner before starting.
+**Drinks.** `scripts/blender/drinks.py` (with `kit.py`, `preview.py`) models the five drinks and writes
+`src/drink-meshes.js`: packed int16 positions, int8 normals, uint16 indices, and for painted parts sRGB vertex colour
+with ambient occlusion and edge wear baked in, plus roughness and metalness. `models.js` decodes it into the same part
+names and pivots the animation already used, so `makeDrinkPickup` and `makeDrinkViewmodel` did not change. The
+output is byte-for-byte reproducible (three runs compared); keep it that way, which is why the script avoids bmesh
+extrude, bevel and primitive operators (they order output by pointer hash). The fizz, puff and halo discs and the hand
+are still code. About 19k triangles for all five drinks and 370 KB of source; trim segment counts in `drinks.py` first
+if load time matters.
+
+Still not decided: how Blender *textures* would reach the game. `world.js` and `models.js` are procedural only (no
+image files, run under plain Node). Baked textures would need either committed image files or more data embedded in
+modules, which changes that rule. Raise it with the owner before starting.
 
 ## Open questions for the owner
-1. When to start Blender texture work, and whether image files may enter the repo.
+1. When to start Blender texture work, and whether image files may enter the repo. (Models are done for the drinks;
+   say if the robots, weapons or Freddie should move to Blender too.)
 2. Playtest feedback on difficulty and look.
