@@ -4,7 +4,8 @@
 import * as THREE from '../../vendor/three.module.min.js';
 import { buildWorld, LEVEL_DEFS } from '../../src/world.js';
 import { ENEMY_DEFS } from '../../src/data.js';
-import { TILE } from '../../src/consts.js';
+import { TILE, WALL_H } from '../../src/consts.js';
+import { PROP_MESHES } from '../../src/prop-meshes.js';
 
 let failures = 0;
 let checks = 0;
@@ -27,6 +28,51 @@ function clearance(w, x, z, reach = 4) {
     }
   }
   return best;
+}
+
+// ---- the Blender prop kit (scripts/blender/props.py -> src/prop-meshes.js) ----
+// Every part must decode cleanly, name a mesher the level builder has, and keep inside the tile it stands in, so
+// collision (which is by map tile) still describes what is on screen. Wall props stay within 0.5 of the wall plane.
+const MESHERS = ['props', 'metal', 'wood', 'polish', 'stone', 'brick', 'glass', 'hang', 'glow', 'gPend', 'gBar', 'gA', 'gB', 'paint'];
+const WALL_PROPS = ['torch'];
+const HANGING = ['pendant', 'brazier'];
+function checkPropData() {
+  console.log('\n== prop kit ==');
+  const names = Object.keys(PROP_MESHES);
+  ok(names.length >= 20, `the kit has ${names.length} props`);
+  let tris = 0;
+  for (const name of names) {
+    const prop = PROP_MESHES[name];
+    ok(prop.parts.length >= 1 && prop.h > 0.1 && prop.h <= WALL_H + 0.001, `${name}: ${prop.parts.length} parts, height ${prop.h} within the room`);
+    let ext = { x: 0, z: 0, y0: 1e9, y1: -1e9 };
+    let bad = 0;
+    for (const m of prop.parts) {
+      const b = (str, T) => { const buf = Buffer.from(str, 'base64'); return new T(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.length)); };
+      const p = b(m.p, Int16Array);
+      const nrm = b(m.nrm, Int8Array);
+      const idx = b(m.idx, Uint16Array);
+      if (!MESHERS.includes(m.m)) bad++;
+      if (p.length !== m.n * 3 || nrm.length !== m.n * 3 || idx.length % 3 !== 0) bad++;
+      if (m.col ? b(m.col, Uint8Array).length !== m.n * 3 : !(m.glow && m.glow.length === 2)) bad++;
+      if (m.uv && b(m.uv, Int16Array).length !== m.n * 2) bad++;
+      if (!(m.sc > 0 && Number.isFinite(m.sc))) bad++;
+      for (let i = 0; i < idx.length; i++) if (idx[i] >= m.n) { bad++; break; }
+      for (let i = 0; i < m.n; i++) {
+        const x = p[i * 3] * m.sc;
+        const y = p[i * 3 + 1] * m.sc;
+        const z = p[i * 3 + 2] * m.sc;
+        ext = { x: Math.max(ext.x, Math.abs(x)), z: Math.max(ext.z, WALL_PROPS.includes(name) ? -z : Math.abs(z)), y0: Math.min(ext.y0, y), y1: Math.max(ext.y1, y) };
+        for (let k = 0; k < 3; k++) if (nrm[i * 3 + k] < -127) bad++;
+      }
+      tris += idx.length / 3;
+    }
+    ok(bad === 0, `${name}: parts decode, indices in range, a known mesher each`);
+    if (WALL_PROPS.includes(name)) ok(ext.z <= 0.5 && ext.x <= 0.2, `${name}: sticks out ${ext.z.toFixed(2)} from its wall`);
+    else if (HANGING.includes(name)) ok(ext.x <= 0.5 && ext.z <= 0.5, `${name}: hangs inside a 1 metre box (${ext.x.toFixed(2)}, ${ext.z.toFixed(2)})`);
+    else ok(ext.x <= 1.0 + 1e-3 && ext.z <= 1.0 + 1e-3, `${name}: footprint within its 2 x 2 tile (${ext.x.toFixed(2)}, ${ext.z.toFixed(2)})`);
+    if (!WALL_PROPS.includes(name) && !HANGING.includes(name)) ok(ext.y0 >= -1e-3, `${name}: stands on the floor (lowest ${ext.y0.toFixed(3)})`);
+  }
+  console.log(`  ${names.length} props, ${tris} triangles in the whole kit`);
 }
 
 function checkLevel(n) {
@@ -105,6 +151,15 @@ function checkLevel(n) {
   // each area's unlock list opens the door out of it, in order
   w.areas.forEach((a, i) => { if (i < w.areas.length) ok(a.unlocks.length <= 1, `${a.id} unlocks at most one door`); });
 
+  // ---- props: every prop tile gets a Blender model at the medium and high tiers; the low tier keeps the procedural props ----
+  const propChars = [...new Set(((def.cover || 'bjvxro') + 'PS').split(''))].filter((ch) => ch !== 'j');
+  const propTiles = def.map.reduce((sum, row) => sum + [...row].filter((ch) => propChars.includes(ch)).length, 0);
+  const NOT_TILE = ['pendant', 'torch', 'brazier'];
+  const placedAt = (quality) => Object.entries(buildWorld({ level: n, quality }).propsPlaced).reduce((a, [k, v]) => (NOT_TILE.includes(k) ? a : a + v), 0);
+  ok(placedAt('high') === propTiles, `high: every prop tile has a Blender model (${placedAt('high')} of ${propTiles})`);
+  ok(placedAt('medium') === propTiles, `medium: every prop tile has a Blender model`);
+  ok(placedAt('low') === 0, 'low: procedural props only');
+
   // ---- geometry and budgets ----
   for (const quality of ['low', 'medium', 'high']) {
     const t0 = Date.now();
@@ -141,6 +196,7 @@ function checkLevel(n) {
 }
 
 const want = process.argv.slice(2).map(Number).filter(Boolean);
+checkPropData();
 for (const n of want.length ? want : Object.keys(LEVEL_DEFS).map(Number)) checkLevel(n);
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) process.exit(1);

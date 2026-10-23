@@ -75,6 +75,10 @@ person and plays better than a thumb in a small box with no aim assist. Last run
 | casual | 97 percent | 106 (44) | Plague Cellar 1 |
 | good | 90 percent | 90 (26) | Plague Cellar 2, Tour Guide 1 |
 
+A later re-run on the same map with no balance change (the Blender weapons shifted the bot's seeded random sequence)
+gave sloppy 67, casual 90 and good 93 percent. So 30 runs is good for about plus or minus 15 points, and the Plague
+Cellar is where the bot dies in both runs.
+
 So level 2 is meant to be clearly harder than level 1, which every bot beats every time. "Good" scoring below "casual"
 is run-to-run noise at 30 runs, or the good bot's fast turning catching on columns; we have not dug into which. Two
 tuning passes were needed: the first build (34 robots, 5 Bampots in the Plague Cellar, a 520 hp boss) beat the sloppy bot

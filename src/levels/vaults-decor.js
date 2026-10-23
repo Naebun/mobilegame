@@ -137,6 +137,11 @@ export function makeVaultsDecor(lv, env) {
   // torch bracket with a flame on a wall face
   function torch(f, i) {
     const { M, obox, C } = k;
+    if (k.placeProp('torch', f.cx, f.cz, { yaw: Math.atan2(f.n[0], f.n[2]) })) { // the Blender bracket; the flame sits on its rag
+      const p = f.p(0, 1.75, 0.24);
+      flame(p[0], 1.9, p[2], 1.25);
+      return;
+    }
     obox(M.metal, f, -0.04, 0.04, 1.5, 1.75, 0, 0.05, C.iron, { bottom: false });
     const p = f.p(0, 1.75, 0.24);
     M.metal.tube(f.p(0, 1.55, 0.03), [p[0], 1.62, p[2]], 0.02, C.iron, 4);
@@ -336,6 +341,17 @@ export function makeVaultsDecor(lv, env) {
     const cx = (c + 0.5) * T;
     const cz = (r + 0.5) * T;
     const h = hash(c, r, 17);
+    // Blender props first (scripts/blender/props.py); the procedural versions below stay as the fallback
+    const turn = (n) => ((h >>> 5) % n) * (Math.PI * 2 / n);
+    if (ch === 'P' && k.placeProp('column_a', cx, cz, { yaw: turn(4) })) return;
+    if (ch === 'S' && k.placeProp('cask_stack', cx, cz, { yaw: turn(2) })) return;
+    if (ch === 'o' && k.placeProp(`barrel_${'abb'[h % 3]}`, cx, cz, { yaw: ((h >>> 4) % 628) / 100, s: [1, 0.96 + (h % 5) * 0.025, 1] })) {
+      if (h % 5 === 0) M.glass.frustum(cx + 0.7, cz + 0.65, 0.34, 0.34, 0, 0.025, 10, [0.02, 0.025, 0.03]); // a spill
+      return;
+    }
+    if (ch === 'x' && k.placeProp(h % 3 ? 'chest_a' : 'chest_b', cx, cz, { yaw: turn(4) })) return;
+    if (ch === 'c' && k.placeProp(areaOfTile(c, r) === areas.length - 1 ? 'tomb_c' : h % 3 === 0 ? 'tomb_b' : 'tomb_a', cx, cz, { yaw: turn(2) })) return;
+    if (ch === 'n' && k.placeProp(h % 3 === 0 ? 'cart_b' : 'cart_a', cx, cz, { yaw: (h % 2 ? Math.PI / 2 : 0) + ((h >>> 3) % 2) * Math.PI })) return;
     if (ch === 'P') {
       const seg = Q.detail ? 12 : 8;
       M.stone.frustum(cx, cz, 0.56, 0.5, 0.3, WALL_H - 0.3, seg, [0.78, 0.76, 0.72], false);
@@ -452,6 +468,11 @@ export function makeVaultsDecor(lv, env) {
     const { M, C } = k;
     const y = 2.3;
     const top = WALL_H;
+    if (k.placeProp('brazier', x, z, { y })) {
+      flame(x, y + 0.2, z, 2.2);
+      flame(x + 0.12, y + 0.2, z - 0.1, 1.5);
+      return;
+    }
     for (const a of [0, Math.PI * 0.67, Math.PI * 1.33]) {
       const px = x + Math.cos(a) * 0.3;
       const pz = z + Math.sin(a) * 0.3;

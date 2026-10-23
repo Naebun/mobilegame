@@ -20,6 +20,9 @@ Two levels so far. Read `README.md` for the layout and `docs/fps-design.md` for 
 - The five weapons and Freddie's hands and forearms are modelled in Blender too (`scripts/blender/weapons.py` generates
   `src/weapon-meshes.js`; same rules: change the script, never the output). The procedural `WEAPON_PARTS` in `models.js` stay as
   the fallback.
+- Level props (barrels, casks, columns, speakers, bar, booths, tombs, carts and more) are modelled in Blender too
+  (`scripts/blender/props.py` generates `src/prop-meshes.js`; see `docs/props.md`). `world.js` places them with `placeProp`
+  and keeps the procedural props as the fallback and for the low tier. Change the script, never the output.
 - Look of the 3D world: gritty and real. Exposed brick, stone, timber, plaster, iron, warm tungsten light. Not
   sci-fi: no neon trim strips, no glowing panels. Neon is limited to a couple of classic bar signs. The 2D UI keeps
   its neon pink and cyan.

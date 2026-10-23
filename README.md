@@ -114,6 +114,8 @@ node scripts/harness/drinks-check.mjs    # every drink, Last Orders rules, picku
 node scripts/harness/tier-fps.mjs        # software frame rate per quality tier (relative only)
 scripts/setup-blender.sh                 # installs Blender (bpy) into a venv (about a minute, 1 GB)
 ~/.venvs/blender/bin/python scripts/blender/drinks.py                    # rebuilds src/drink-meshes.js from the Blender models
+~/.venvs/blender/bin/python scripts/blender/weapons.py                   # rebuilds src/weapon-meshes.js (weapons and Freddie's hands)
+~/.venvs/blender/bin/python scripts/blender/props.py                     # rebuilds src/prop-meshes.js (level props, see docs/props.md)
 ~/.venvs/blender/bin/python scripts/blender/drinks.py --preview sheet.png   # also a Cycles contact sheet (about a minute)
 ~/.venvs/blender/bin/python scripts/blender/weapons.py                   # rebuilds src/weapon-meshes.js: the five weapons and Freddie's hands
 ~/.venvs/blender/bin/python scripts/blender/weapons.py --preview smg --view fp --png smg.png   # one weapon as the game frames it (also iso, side, top, rear)

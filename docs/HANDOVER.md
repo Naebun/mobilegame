@@ -132,3 +132,12 @@ engine lets go in the menus. Tested headless by `combat-check` (aim, fire, wheel
 smoke test (cookie written, reload offers CONTINUE, settings, reset). Not tested: a real mouse and real pointer lock (the
 tests inject input), Safari's cookie expiry rules (it may drop script-set cookies after about a week without a visit; local
 storage has the same limit for sites not added to the home screen, which is why both are written).
+
+## Blender assets (weapons, hands, props)
+Drinks, weapons plus Freddie's hands, and 27 level props are modelled in Blender and generated into data modules
+(`src/drink-meshes.js`, `src/weapon-meshes.js`, `src/prop-meshes.js`) by `scripts/blender/{drinks,weapons,props}.py`. Never
+edit the output; each is reproducible (run twice and `cmp`). `models.js` decodes weapons and falls back to the older procedural
+models; `world.js` places props with `placeProp` and falls back to procedural props (the low tier uses them, to stay inside
+its triangle cap). Details and the prop ranking: `docs/props.md`. Known: level 2 high is close to the 150k triangle limit
+(about 145k); the weapons' left forearms read as plain purple tubes in portrait; the Vaults are dark enough that old and new
+props are hard to tell apart; nothing has been seen on a phone. The textures question is open: `docs/texture-options.md`.

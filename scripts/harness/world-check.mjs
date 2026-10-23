@@ -499,5 +499,31 @@ section('10. render budget, per quality tier');
   console.log(`  flow field update: ${((performance.now() - t1) / 20).toFixed(2)} ms each`);
 }
 
+// ---------------------------------------------------------------- 11 Blender props in level 1
+section('11. Blender props in the Cowgate');
+{
+  const hi = buildWorld({ quality: 'high' });
+  const lo = buildWorld({ quality: 'low' });
+  const placed = hi.propsPlaced;
+  const kinds = (re) => Object.entries(placed).filter(([k]) => re.test(k)).reduce((a, [, v]) => a + v, 0);
+  // the map decides these numbers: 10 P, 16 S, 4 o, 10 r, 20 b, 13 v, 15 x (7 flight cases, 5 crates, 3 kegs), 18 pendant lamps
+  const want = [['pillar', /^pillar$/, 10], ['speaker', /^speaker$/, 16], ['table', /^table$/, 4], ['rail', /^rail_/, 10], ['bar', /^bar$/, 20],
+    ['booth', /^booth$/, 13], ['flight case', /^flight_/, 7], ['crate', /^crate_/, 5], ['keg', /^barrel_/, 3], ['pendant', /^pendant$/, 18]];
+  for (const [what, re, n] of want) ok(kinds(re) === n, `high: ${n} ${what}(s) placed (${kinds(re)})`);
+  ok(Object.keys(lo.propsPlaced).length === 0, 'low: procedural props only, so the cheapest tier is unchanged');
+  // props never change what the player can walk through or shoot through
+  let diff = 0;
+  for (let r = 0; r < hi.size.rows; r++) for (let c = 0; c < hi.size.cols; c++) if (hi.tileSolid(c, r) !== lo.tileSolid(c, r) || hi.tileBlocksShots(c, r) !== lo.tileBlocksShots(c, r)) diff++;
+  ok(diff === 0, `props (high) and procedural (low) block movement and shots on the same tiles (${diff} differ)`);
+  // every vertex the props add carries finite colour and normals of unit length
+  let badN = 0;
+  hi.group.traverse((o) => {
+    if (!o.isMesh || !o.geometry.attributes.normal) return;
+    const nr = o.geometry.attributes.normal.array;
+    for (let i = 0; i < nr.length; i += 3) { const l = Math.hypot(nr[i], nr[i + 1], nr[i + 2]); if (!(l > 0.97 && l < 1.03)) { badN++; break; } }
+  });
+  ok(badN === 0, `high: every mesh has unit normals (${badN} meshes do not)`);
+}
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 process.exit(failures ? 1 : 0);
