@@ -114,7 +114,7 @@ function checkLevel(n) {
       ok(!w.isSolidAt(s.x, s.z), `${a.id}: ${s.kind} spawn on walkable tile`);
       ok(w.areaAt(s.x, s.z) === a, `${a.id}: ${s.kind} spawn lies in its own area`);
       ok(Number.isFinite(s.yaw), `${a.id}: spawn yaw finite`);
-      const need = ENEMY_DEFS[s.kind].boss ? 2.2 : 1.2;
+      const need = ENEMY_DEFS[s.kind].boss ? 2.2 : ENEMY_DEFS[s.kind].dormant ? 1.0 : 1.2; // a Mimic stands against a wall
       ok(clearance(w, s.x, s.z) >= need, `${a.id}: ${s.kind} at ${s.x},${s.z} clearance ${clearance(w, s.x, s.z).toFixed(2)} >= ${need}`);
       if (ENEMY_DEFS[s.kind].boss && !bossAreas.includes(a)) bossAreas.push(a);
     }

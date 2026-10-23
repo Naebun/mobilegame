@@ -2,7 +2,7 @@
 //   node scripts/harness/arsenal-check.mjs
 // The Feedback Beam's damage ramp and meter, the Bass-Drop Grenade's fuse, bounce, radius and stun (bosses less), the
 // Airhorn's cone, the SMG's alt-fire and its gating by the upgrade, the clip and reload upgrades, the record pickup and the
-// save (round trip, old saves, junk), the HUD strip, and that no level places any of it. Normal mode only.
+// save (round trip, old saves, junk), the HUD strip, and where the two levels place them. Normal mode only.
 import * as game from '../../src/game3d.js';
 import * as store from '../../src/save.js';
 import * as M from '../../src/models.js';
@@ -93,28 +93,104 @@ const give = (S, w) => { game.testHook('give', w); S.player.weapon = w; S.player
   ok(seen.join() === 'shotgun,smg,launcher,vinyl,beam,grenade,airhorn,pistol', `Q cycles through all eight in order (${seen})`);
 }
 
-// ---- no level places any of it ----
+// ---- where the levels place them (docs/placement.md) ----
+// The intended placement. Changing a map means changing this table. Weapons, upgrades and records are per level and per
+// run: Naebun starts every level with the pistol, no upgrade and (in the run) no record, as before.
+const PLACED = {
+  1: { weapon: ['airhorn'], upgrade: ['clip', 'reload'], record: ['haar', 'bypass', 'gala', 'pipes', 'wee'] },
+  2: { weapon: ['beam', 'grenade'], upgrade: ['altfire', 'clip', 'reload'], record: ['supper', 'tram', 'hold', 'foot', 'refund'] },
+};
 {
-  const prepared = new Set([...PREPARED_WEAPONS, ...Object.keys(UPGRADES), ...RECORDS.map((r) => r.id)]);
+  const normal = new Set(['shotgun', 'smg', 'launcher', 'vinyl']); // the weapons the levels always had
+  const all = [];
   let levels = 0;
   for (const [n, def] of Object.entries(LEVEL_DEFS)) {
     levels++;
+    const want = PLACED[n];
     for (const [letter, [kind, item]] of Object.entries(def.picks)) {
-      ok(kind === 'weapon' || kind === 'drink', `level ${n}: pickup letter ${letter} has a kind that exists (${kind})`);
-      ok(!prepared.has(item), `level ${n}: pickup letter ${letter} is not a prepared item (${item})`);
-    }
-    for (const row of def.map) for (const ch of row) {
-      const pk = def.picks[ch];
-      if (pk) ok(!prepared.has(pk[1]) && (pk[0] === 'weapon' || pk[0] === 'drink'), `level ${n}: map letter ${ch} places a normal pickup`);
+      ok(['weapon', 'drink', 'upgrade', 'record'].includes(kind), `level ${n}: pickup letter ${letter} has a kind that exists (${kind})`);
+      ok(kind === 'weapon' ? !!WEAPONS[item] : kind === 'drink' ? ['dram', 'orange', 'heavy', 'energy', 'lastorders'].includes(item) : kind === 'upgrade' ? !!UPGRADES[item] : RECORDS.some((r) => r.id === item), `level ${n}: letter ${letter} names a real ${kind} (${item})`);
     }
     const w = buildWorld({ level: Number(n), quality: 'low' });
-    ok(w.pickups.length > 0 && w.pickups.every((q) => (q.kind === 'weapon' || q.kind === 'drink') && !prepared.has(q.item)), `level ${n}: ${w.pickups.length} built pickups, none of them prepared`);
-    for (const a of w.areas) for (const sp of a.spawns) ok(ENEMY_DEFS[sp.kind], `level ${n}: spawn kind ${sp.kind} exists`);
+    const of = (kind) => w.pickups.filter((q) => q.kind === kind).map((q) => q.item).sort();
+    ok(JSON.stringify(of('weapon').filter((i) => !normal.has(i))) === JSON.stringify(want.weapon), `level ${n}: new weapons ${of('weapon').filter((i) => !normal.has(i))} (want ${want.weapon})`);
+    ok(of('weapon').filter((i) => normal.has(i)).length === (n === '1' ? 3 : 4), `level ${n}: the older floor weapons are all still there`);
+    ok(JSON.stringify(of('upgrade')) === JSON.stringify([...want.upgrade].sort()), `level ${n}: upgrades ${of('upgrade')} (want ${want.upgrade})`);
+    ok(JSON.stringify(of('record')) === JSON.stringify([...want.record].sort()), `level ${n}: ${of('record').length} records ${of('record')}`);
+    ok(of('drink').length === (n === '1' ? 11 : 17), `level ${n}: its drinks are untouched (${of('drink').length})`);
+    all.push(...of('record'));
+    // every one is on the floor in an area, reachable once the doors up to its area are open and not before (door 1 starts open)
+    const bossIdx = w.areas.findIndex((a) => a.spawns.some((s) => ENEMY_DEFS[s.kind].boss));
+    const doorsNeeded = (pk) => {
+      for (let k = 1; k <= w.doors.length; k++) {
+        const w2 = buildWorld({ level: Number(n), quality: 'low' });
+        for (let j = 1; j <= k; j++) w2.setDoorOpen(`d${j}`, true);
+        w2.update(2, 0);
+        const f2 = w2.createFlowField();
+        f2.update(w2.start.x, w2.start.z);
+        if (Number.isFinite(f2.distAt(pk.x, pk.z))) return k;
+      }
+      return Infinity;
+    };
+    for (const pk of w.pickups.filter((q) => q.kind !== 'drink' && !normal.has(q.item))) {
+      const idx = w.areas.indexOf(w.areaAt(pk.x, pk.z));
+      const k = doorsNeeded(pk);
+      // a record in the boss area is in the exit alcove: it needs the last door too, so it cannot be fetched during the fight
+      if (idx === bossIdx) ok(pk.kind === 'record' && k === w.doors.length, `level ${n}: ${pk.id} in the boss area lies behind the exit door (needs ${k} doors, the level has ${w.doors.length})`);
+      else ok(k === Math.max(1, idx), `level ${n}: ${pk.id} (area ${idx + 1}) is reachable with exactly the doors up to its area (${k})`);
+    }
+    // the running game: the pickups are in S.pickups with meshes, Naebun has none of it, a debug-free run
     const g = fresh(Number(n));
-    ok(g.S.pickups.every((q) => q.def.kind === 'weapon' || q.def.kind === 'drink'), `level ${n}: no upgrade or record pickup in the game`);
-    ok(!g.p.owned.beam && !g.p.owned.grenade && !g.p.owned.airhorn && g.p.upgrades.clip === 0 && g.p.upgrades.altfire === 0, `level ${n}: Naebun starts with none of it`);
+    ok(g.S.pickups.filter((q) => q.def.kind === 'record').length === 5 && g.S.pickups.every((q) => q.mesh), `level ${n}: five record pickups with meshes in the game`);
+    ok(g.S.pickups.filter((q) => q.def.kind === 'upgrade').length === want.upgrade.length, `level ${n}: ${want.upgrade.length} upgrade pickups in the game`);
+    ok(!g.p.owned.beam && !g.p.owned.grenade && !g.p.owned.airhorn && g.p.upgrades.clip === 0 && g.p.upgrades.altfire === 0 && g.S.runRecords.length === 0, `level ${n}: Naebun starts with none of it`);
+    for (const a of w.areas) for (const sp of a.spawns) ok(ENEMY_DEFS[sp.kind], `level ${n}: spawn kind ${sp.kind} exists`);
   }
   ok(levels >= 2, `checked every level in LEVEL_DEFS (${levels})`);
+  ok(JSON.stringify([...all].sort()) === JSON.stringify(RECORDS.map((r) => r.id).sort()), `all ten records are placed, each once (${all.length})`);
+}
+
+// ---- each placed thing can be picked up, and does what it should ----
+{
+  for (const n of [1, 2]) {
+    const { S, W, p, ARS } = fresh(n);
+    S.player.health = S.player.maxHealth = 1e6;
+    const take = (pk) => {
+      place(pk.def.x, pk.def.z, 0);
+      run(S, 0.25);
+    };
+    // records: found, kept for the run, saved once, banner and joke shown
+    for (const pk of S.pickups.filter((q) => q.def.kind === 'record')) {
+      const before = S.save.records.length;
+      take(pk);
+      ok(pk.taken && !pk.mesh.visible, `level ${n}: ${pk.def.id} is picked up by walking onto it`);
+      ok(S.runRecords.includes(pk.def.item) && S.save.records.includes(pk.def.item) && S.save.records.length === before + 1, `level ${n}: ${pk.def.item} is found and saved`);
+    }
+    ok(S.save.records.length === 5 && S.banner && S.banner.title === RECORDS.find((r) => r.id === S.runRecords[S.runRecords.length - 1]).title, `level ${n}: five found, the last one's title on the banner`);
+    const round = store.clean(JSON.parse(JSON.stringify(S.save)));
+    ok(round.records.length === 5, `level ${n}: the five survive a save round trip`);
+    // upgrades
+    for (const pk of S.pickups.filter((q) => q.def.kind === 'upgrade')) {
+      const tier = p.upgrades[pk.def.item];
+      take(pk);
+      ok(pk.taken && p.upgrades[pk.def.item] === tier + 1, `level ${n}: the ${pk.def.item} upgrade is taken (tier ${tier + 1})`);
+    }
+    ok(p.ammo.pistol === ARS.clipOf(WEAPONS.pistol), `level ${n}: the clip upgrade grew the pistol's clip (${p.ammo.pistol})`);
+    // new weapons: picked up, selected, fired
+    for (const pk of S.pickups.filter((q) => q.def.kind === 'weapon' && PREPARED_WEAPONS.includes(q.def.item))) {
+      take(pk);
+      ok(pk.taken && p.owned[pk.def.item] && p.weapon === pk.def.item, `level ${n}: the ${pk.def.item} is picked up and in hand`);
+      p.switchT = 0;
+      p.fireT = 0;
+      const shots = S.shots;
+      const ammo = p.ammo[pk.def.item];
+      const inp = input();
+      inp.keys.add(' ');
+      run(S, 0.4, inp);
+      ok(S.shots > shots || p.ammo[pk.def.item] < ammo, `level ${n}: the ${pk.def.item} fires (${ammo} to ${p.ammo[pk.def.item]})`);
+    }
+    void W;
+  }
 }
 
 // ---- the Feedback Beam ----

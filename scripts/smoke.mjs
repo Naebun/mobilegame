@@ -7,7 +7,7 @@ import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
 
-const port = 8099;
+const port = Number(process.env.PORT || 8099);
 const outDir = process.argv[2] || '.';
 const server = spawn('node', ['scripts/serve.mjs', String(port)], { stdio: 'ignore' });
 await new Promise((r) => setTimeout(r, 500));
@@ -98,6 +98,15 @@ try {
   const s0 = await state();
   check(s0.weapon === 'pistol' && s0.clip === 12 && s0.owned.length === 1, 'Naebun starts with a full Bass Pistol clip and nothing else');
   check(s0.total >= 12 && s0.alive === s0.total, `enemies are pre-placed in the level (${s0.total}) and all alive`);
+  // the placement (docs/placement.md): one Mimic, Shaken, Longshot and Nurse in the Cowgate, all asleep, the Mimic disguised
+  const placed1 = await page.evaluate(() => {
+    const S = window.__game.getState();
+    const by = {};
+    for (const e of S.enemies) by[e.kind] = (by[e.kind] || 0) + 1;
+    return { by, asleep: S.enemies.every((e) => e.state === 'idle'), mimicDisguised: S.enemies.filter((e) => e.kind === 'mimic').every((e) => e.fixed && e.h < 2.0) };
+  });
+  check(placed1.by.mimic === 1 && placed1.by.shaken === 1 && placed1.by.longshot === 1 && placed1.by.nurse === 1 && s0.total === 21, `level 1 holds one of each newer robot (${JSON.stringify(placed1.by)})`);
+  check(placed1.asleep && placed1.mimicDisguised, 'they are all asleep, and the Mimic is a drinks machine from the start');
   await page.waitForTimeout(1000);
   await shot('play-start');
 
@@ -173,6 +182,35 @@ try {
   check(await until("s.projectiles.some((p) => p.owner === 'enemy')", null, 30000), 'a Bampot and Nephew bot throws bottles when it sees Naebun');
   await shot('bottles');
 
+  // the placed arsenal (docs/placement.md): a new weapon, an upgrade and a record, picked up by walking onto them
+  await hook('play');
+  const onto = (kind, item) => page.evaluate(([kind, item]) => {
+    const g = window.__game;
+    const pk = g.getState().pickups.find((p) => p.def.kind === kind && p.def.item === item);
+    g.testHook('teleport', { x: pk.def.x, z: pk.def.z });
+    return !!pk;
+  }, [kind, item]);
+  const stock = await page.evaluate(() => {
+    const S = window.__game.getState();
+    const n = (k) => S.pickups.filter((p) => p.def.kind === k).length;
+    return { upgrades: n('upgrade'), records: n('record'), airhorn: S.pickups.some((p) => p.def.item === 'airhorn') };
+  });
+  check(stock.airhorn && stock.upgrades === 2 && stock.records === 5, `level 1 has the Airhorn, two upgrades and five records on the floor (${JSON.stringify(stock)})`);
+  await onto('weapon', 'airhorn');
+  check(await until("s.player.owned.airhorn && s.player.weapon === 'airhorn'"), 'walking onto the Airhorn picks it up and puts it in hand');
+  await page.evaluate(() => { const p = window.__game.getState().player; p.switchT = 0; });
+  const ah0 = (await state()).shots;
+  await ptr('pointerdown', 2, lx, ly);
+  check(await until('s.shots > a && s.player.ammo.airhorn < 4', ah0), 'a thumb in the look box blows the Airhorn');
+  await ptr('pointerup', 2, lx, ly);
+  await onto('upgrade', 'clip');
+  check(await until('s.player.upgrades.clip === 1'), 'walking onto the clip upgrade fits it');
+  await onto('record', 'haar');
+  check(await until("s.runRecords.includes('haar') && s.save.records.includes('haar') && s.banner && s.banner.title === 'HAAR ON THE WATER'"), 'walking onto a record finds it: the banner shows its title');
+  const stored = await page.evaluate(() => { try { return JSON.parse(localStorage.getItem('mobilegame.save')).records; } catch { return null; } });
+  check(Array.isArray(stored) && stored.includes('haar'), `the record is saved (${JSON.stringify(stored)})`);
+  await shot('record-found');
+
   // Last Orders: drink, switch to third person, spin with the laser, clear the room, return to first person
   await hook('play');
   await page.evaluate(() => {
@@ -237,12 +275,14 @@ try {
   const v = await page.evaluate(() => {
     const w = window.__game.getWorld();
     const S = window.__game.getState();
-    return { id: w.id, level: w.level, kinds: [...new Set(S.enemies.map((e) => e.kind))].sort(), weapons: S.pickups.filter((p) => p.def.kind === 'weapon').map((p) => p.def.item), areas: S.areas.map((a) => a.def.id) };
+    return { id: w.id, level: w.level, total: S.enemies.length, kinds: [...new Set(S.enemies.map((e) => e.kind))].sort(), weapons: S.pickups.filter((p) => p.def.kind === 'weapon').map((p) => p.def.item), areas: S.areas.map((a) => a.def.id) };
   });
   check(v.id === 'vaults' && v.level === 2, 'the world is now the Vaults');
   check(v0.weapon === 'pistol' && v0.owned.length === 1 && v0.health === v0.maxHealth, 'Naebun starts level 2 with the pistol only and full health');
   check(v.kinds.includes('shielded') && v.kinds.includes('tourguide') && v.kinds.includes('fizzbang') && v.kinds.includes('bampot'), `level 2 has its robots (${v.kinds.join(', ')})`);
   check(v.weapons.includes('vinyl') && v.weapons.includes('launcher'), `the Vinyl Disc and the launcher lie on the floor (${v.weapons.join(', ')})`);
+  check(['shaken', 'longshot', 'nurse', 'mimic'].every((k) => v.kinds.includes(k)), `level 2 also holds the newer robots (${v.kinds.join(', ')})`);
+  check(v.weapons.includes('beam') && v.weapons.includes('grenade') && v.total === 27, `the Feedback Beam and the Bass-Drop Grenade lie on the floor, 27 robots in all (${v.weapons.join(', ')}, ${v.total})`);
   const fitting = await hook('torch');
   check(fitting.dark && fitting.attach && !fitting.attached && !fitting.on, 'level 2 is dark and starts with the torch still to be fitted to the pistol');
   check(await until('s.attach && s.attach.k > 0.4', null, 60000), 'the fitting sequence runs');
@@ -386,7 +426,7 @@ try {
   await page.waitForFunction(() => window.__game && window.__game.getState().player, null, { timeout: 60000 });
   await page.waitForTimeout(1200);
   const tb = await hook('buttons');
-  check(tb.map((b) => b.id).join() === 'resume,new,settings,debug' && tb[0].label === 'CONTINUE: LEVEL 2', `after a reload the title offers ${tb.map((b) => b.label).join(' | ')}`);
+  check(tb.map((b) => b.id).join() === 'resume,new,settings,setlist,debug' && tb[0].label === 'CONTINUE: LEVEL 2', `after a reload the title offers ${tb.map((b) => b.label).join(' | ')} (SETLIST because a record was found)`);
   await shot('title-continue');
   await pressButton('resume');
   check(await until("s.mode === 'voicemail' && s.level === 2"), 'CONTINUE goes to level 2 behind its voicemail');

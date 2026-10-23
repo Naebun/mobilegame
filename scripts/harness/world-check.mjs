@@ -43,22 +43,23 @@ section('1. spawn clearance');
   const w = buildWorld();
   ok(w.areas.length === 6, 'six areas');
   ok(clearance(w, w.start.x, w.start.z) >= 1.2, 'start has 1.2 clearance');
-  const want = { stairwell: 0, cloakroom: 2, dancefloor: 5, bar: 5, vip: 4, backstage: 3 };
+  const want = { stairwell: 0, cloakroom: 3, dancefloor: 5, bar: 6, vip: 4, backstage: 3 }; // with the placed Mimic, Shaken, Longshot and Nurse (docs/placement.md)
   for (const a of w.areas) {
     ok(a.spawns.length === want[a.id], `${a.id} spawn count ${a.spawns.length}`);
     for (const s of a.spawns) {
       ok(!w.isSolidAt(s.x, s.z), `${a.id} spawn on walkable tile`);
       ok(w.areaAt(s.x, s.z) === a, `${a.id} spawn lies in its own area`);
       const cl = clearance(w, s.x, s.z);
-      ok(cl >= 1.2, `${a.id} ${s.kind} at ${s.x},${s.z} clearance ${cl.toFixed(2)} >= 1.2`);
+      const need = s.kind === 'mimic' ? 1.0 : 1.2; // a Mimic stands against a wall
+      ok(cl >= need, `${a.id} ${s.kind} at ${s.x},${s.z} clearance ${cl.toFixed(2)} >= ${need}`);
       ok(Number.isFinite(s.yaw), `${a.id} spawn yaw finite`);
     }
   }
   const kinds = (id) => w.areas.find((a) => a.id === id).spawns.reduce((m, s) => ((m[s.kind] = (m[s.kind] || 0) + 1), m), {});
   const eq = (a, b) => JSON.stringify(Object.entries(a).sort()) === JSON.stringify(Object.entries(b).sort());
-  ok(eq(kinds('cloakroom'), { fizzbang: 2 }), 'cloakroom: 2 fizzbang');
-  ok(eq(kinds('dancefloor'), { fizzbang: 4, bampot: 1 }), 'dancefloor: 4 fizzbang 1 bampot');
-  ok(eq(kinds('bar'), { bampot: 2, fizzbang: 3 }), 'bar: 2 bampot 3 fizzbang');
+  ok(eq(kinds('cloakroom'), { fizzbang: 2, mimic: 1 }), 'cloakroom: 2 fizzbang and a dormant mimic');
+  ok(eq(kinds('dancefloor'), { fizzbang: 3, shaken: 1, longshot: 1 }), 'dancefloor: 3 fizzbang, 1 shaken, 1 longshot');
+  ok(eq(kinds('bar'), { bampot: 2, fizzbang: 3, nurse: 1 }), 'bar: 2 bampot 3 fizzbang and a nurse');
   ok(eq(kinds('vip'), { fizzbang: 2, bampot: 2 }), 'vip: 2 fizzbang 2 bampot');
   ok(eq(kinds('backstage'), { bouncer: 1, fizzbang: 2 }), 'backstage: bouncer + 2 fizzbang');
   // the bouncer needs room: clearance bigger than its radius
@@ -315,7 +316,7 @@ section('7. pickups and exit');
   const w = buildWorld();
   openAll(w);
   const items = w.pickups.map((p) => `${p.kind}:${p.item}`).sort().join(',');
-  const want = ['drink:dram', 'drink:dram', 'drink:dram', 'drink:dram', 'drink:energy', 'drink:energy', 'drink:heavy', 'drink:heavy', 'drink:lastorders', 'drink:lastorders', 'drink:orange', 'weapon:launcher', 'weapon:shotgun', 'weapon:smg'].sort().join(',');
+  const want = ['drink:dram', 'drink:dram', 'drink:dram', 'drink:dram', 'drink:energy', 'drink:energy', 'drink:heavy', 'drink:heavy', 'drink:lastorders', 'drink:lastorders', 'drink:orange', 'weapon:launcher', 'weapon:shotgun', 'weapon:smg', 'weapon:airhorn', 'upgrade:clip', 'upgrade:reload', 'record:haar', 'record:bypass', 'record:gala', 'record:pipes', 'record:wee'].sort().join(',');
   ok(items === want, `pickup set ${items}`);
   ok(w.pickups.every((p) => p.kind !== 'health' && p.item !== 'medkit'), 'no medkits any more');
   ok(w.pickups.filter((p) => p.kind === 'drink').length === 11, 'eleven drinks in the level (nine power-ups and two last orders)');
@@ -340,6 +341,12 @@ section('7. pickups and exit');
   ok(inArea('shotgun-1') === 'cloakroom', 'shotgun in the cloakroom');
   ok(inArea('smg-1') === 'dancefloor', 'smg on the dancefloor');
   ok(inArea('launcher-1') === 'vip', 'launcher in the vip corridor');
+  // the placed arsenal (docs/placement.md): one weapon, two upgrades and five records
+  ok(inArea('airhorn-1') === 'bar', 'airhorn in the bar');
+  ok(inArea('clip-1') === 'cloakroom' && inArea('reload-1') === 'vip', 'clip upgrade in the cloakroom, reload upgrade in the vip corridor');
+  for (const [id, area] of [['haar', 'stairwell'], ['bypass', 'dancefloor'], ['gala', 'bar'], ['pipes', 'vip'], ['wee', 'backstage']]) ok(inArea(`${id}-1`) === area, `record ${id} in the ${area}`);
+  const wee = w.pickups.find((p) => p.item === 'wee');
+  ok(Math.hypot(wee.x - w.exit.x, wee.z - w.exit.z) > w.exit.r + 1, 'the backstage record lies beside the exit, outside its circle (finding it does not end the level)');
   const drinksIn = (area) => w.pickups.filter((p) => p.kind === 'drink' && w.areaAt(p.x, p.z).id === area).map((p) => p.item).sort().join(',');
   ok(drinksIn('stairwell') === '', 'no drinks in the stairwell');
   ok(drinksIn('cloakroom') === 'orange', `cloakroom drinks: ${drinksIn('cloakroom')}`);
