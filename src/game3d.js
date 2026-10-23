@@ -147,7 +147,7 @@ const makeDrinkMesh = (id) => {
 const buffOn = (name) => S.buffs[name] > 0;
 
 // The prepared arsenal (src/arsenal-play.js, docs/arsenal.md): the Feedback Beam, Bass-Drop Grenade and Airhorn, stun, the SMG's
-// alt-fire, upgrades and collectible records. No level places any of it yet; the hooks below are all it needs from here.
+// alt-fire, upgrades and collectible records. Levels 1 and 2 place it (docs/placement.md); the hooks below are all it needs from here.
 const ARS = createArsenalPlay({
   S, M, audio, store, getWorld: () => world, getR: () => R, castRay, damageEnemy, alertNear, forward3, spark, fxHit, toast, mult, bounceOff,
   inputMode: () => inputMode(),
@@ -967,8 +967,8 @@ function fireBottle(e, off = 0) {
   audio.spit();
 }
 
-// >>> PREPARED ENEMIES BEGIN (game logic for the four approved enemies that are not placed in any level)
-// ---- Prepared enemies (docs/enemies-next.md): built and tested, not placed in any level ----
+// >>> PREPARED ENEMIES BEGIN (game logic for the four newer enemies, placed in levels 1 and 2: docs/placement.md)
+// ---- The four newer enemies (docs/enemies-next.md): built and tested ahead of time, now placed in levels 1 and 2 ----
 // Four kinds have an `ai` in their ENEMY_DEFS entry. updateEnemy() hands them to updateSpecial(), which returns true when it
 // has done the whole update (movement, turning and pose) and false to leave the usual code to it (a sleeping robot, a
 // Mimic that has finished unfolding). Models: src/models.js, between the PREPARED ENEMIES markers.

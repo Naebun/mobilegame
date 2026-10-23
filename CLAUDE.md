@@ -21,7 +21,11 @@ Two levels so far. Read `README.md` for the layout and `docs/fps-design.md` for 
   levels are dark enough to need it (level 2 now, 2 or 3 of the 10 in all); Naebun fits the pistol's torch at the start of
   the first dark level, and every other gun already has one fitted.
 - **Prepared objects:** the roadmap's enemies, weapons, upgrades and collectibles may be built and tested ahead of time, but
-  they stay unplaced: no level map uses them until the owner says to put them in a level.
+  they stay unplaced until the owner says to put them in a level. The owner has said so for levels 1 and 2: the four newer
+  robots (Fizzbang Shaken, Bampot Longshot, Bampot Nurse, Vending Mimic), the Airhorn, Bass-Drop Grenade and Feedback Beam,
+  the clip, reload and altfire upgrades and the ten records are placed in the two existing maps. What is where, and why, is in
+  `docs/placement.md` (any item can be vetoed by name). Anything still prepared and unplaced stays unplaced, and no
+  placement means building level 3.
 - Match the surrounding code: 2-space indent, single quotes, semicolons, short comments that say why. British English.
 - `world.js` and `models.js` are procedural only: geometry, flat colours and generated `THREE.DataTexture`s. No image
   files, no canvas textures, no DOM access, so they run under plain Node (used by the headless tests).

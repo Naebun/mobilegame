@@ -1,17 +1,17 @@
 # The four prepared enemies
 
-Built ahead of time at the owner's request, for when levels need them. They are complete (model, definition, AI, sounds,
-headless checks, screenshots) but **not placed**: no level map contains them, and the game plays exactly as before.
-`scripts/harness/enemies-check.mjs` asserts that on every level in `LEVEL_DEFS`. Placing them means editing level data,
-which needs the owner's go-ahead for that level (see `CLAUDE.md`). Nothing here has been played by a person, heard, or seen
-on a phone.
+Built ahead of time at the owner's request, for when levels need them (model, definition, AI, sounds, headless checks,
+screenshots). The owner has since said to put them in the two levels that exist, so **they are placed**: where, and why, is in
+`docs/placement.md`, and `scripts/harness/enemies-check.mjs` asserts that placement area by area (`PLACED` in that file).
+Placing them in any further level needs the owner's go-ahead for that level (see `CLAUDE.md`). Nothing here has been played by
+a person, heard, or seen on a phone.
 
 All numbers are normal mode (`ENEMY_DEFS` in `src/data.js`, comments there say what each does). Debug mode multiplies
 Naebun's damage, fire rate and health only; the enemies' own damage is not scaled and nothing was tuned against it.
 
-## Map letters reserved
+## Map letters
 
-Not in any level's `KINDS` table. Set aside so a level author does not use them for something else:
+Set aside for them before they were placed, and now used by both levels' `KINDS` tables (`src/levels/*.js`):
 
 | Letter | Robot | Kind in `ENEMY_DEFS` |
 | --- | --- | --- |
@@ -20,12 +20,13 @@ Not in any level's `KINDS` table. Set aside so a level author does not use them 
 | `u` | Bampot Nurse | `nurse` |
 | `m` | Vending Mimic | `mimic` |
 
-Neither existing map uses any of these four letters (checked by `enemies-check`). Adding one to a level is a one-line entry in
+`enemies-check` counts each letter on each map against the placement table. Adding one to another level is a one-line entry in
 that level's `KINDS`, plus the map letter. The spawn faces the area's entry door, as every robot does. A Mimic wants a wall
-behind it and its front towards the room, so put it in an alcove or against a wall the entry door faces.
+behind it and its front towards the room, so put it against a wall (the level checks allow a Mimic one tile from a wall, 1.0 m
+of clearance, where every other robot needs 1.2) on the side the entry door faces.
 
 `testHook('spawn', { kind, x, z, yaw, area? })` (only through `window.__game` with `?test`, or in Node) adds a robot of any kind
-to the running game. Nothing in the game uses it.
+to the running game. The game itself does not use it: the placed robots come from the map letters.
 
 ## 1. Fizzbang Shaken (Dr Fizzbang camp, melee, exploder)
 
@@ -125,7 +126,7 @@ toothed mouth. 100 hp, 3.1 m/s, melee reach 2.0, 22 damage (windup 0.6 s, swing 
 | `src/models.js` | Between the `PREPARED ENEMIES` markers: `makeShaken`, `makeLongshot`, `makeNurse`, `makeMimic`, reached through `makeRobot(kind)`; `PREPARED_KINDS` |
 | `src/audio.js` | `rattle`, `hiss`, `fizz`, `snipeCharge`, `lock`, `snipe`, `reviveStart`, `reviveDone`, `unfold` (synthesised, like the rest) |
 | `src/fx.js` | `foam()`, the Shaken's burst of foam and bubbles |
-| `scripts/harness/enemies-check.mjs` | The rules above, in plain Node against the real game logic: 157 checks |
+| `scripts/harness/enemies-check.mjs` | The rules above, in plain Node against the real game logic: 237 checks, the placement among them |
 | `scripts/harness/models-check.mjs` | Poses at k of -1, 0, 0.5, 1, 2 and NaN, finite transforms, budgets, silhouettes, each model's extras |
 | `scripts/harness/models-enemies.html` | The model viewer for the four (a copy of `models-l2.html` with `pre` and `post` calls, e.g. `setLaser`, `setBeam`) |
 | `scripts/harness/enemy-views.mjs` | Real-game screenshots of each, lit and dark, in the states that matter (`OUT=<dir> node scripts/harness/enemy-views.mjs`) |
@@ -141,7 +142,8 @@ muzzle flash, beam, glow and ring pieces are switched off most of the time.
 
 `enemies-check` 157 of 157, `models-check`, `combat-check` 59 of 59, `ui-check`, `drinks-check`, `world-check` 4381 of 4381,
 `level-check` 586 of 586, `npm run smoke`, and `npm run sim` on both levels (level 1: 100 percent for all three bots; level 2:
-90, 100, 100 percent over 10 runs, in line with `docs/level-2.md` given the sample size). The sims do not contain any of the four.
+90, 100, 100 percent over 10 runs, in line with `docs/level-2.md` given the sample size). Those runs were before the placement,
+so the sims did not contain any of the four; the placed numbers are in `docs/placement.md`.
 
 ## Not verified
 
@@ -150,8 +152,10 @@ muzzle flash, beam, glow and ring pieces are switched off most of the time.
 - **Sound.** Everything new is synthesised and has never been heard. The rattle in particular needs a listen: it is meant to
   rise audibly, but 26 ticks a second of a square wave could be tiresome, and several Shakens at once are throttled to one tick
   per 30 ms in total.
-- **A bot that can handle them.** The headless bots do not dodge a laser, run from a Shaken or hunt a Nurse. Before one of these
-  goes into a level, `sim3d.mjs` needs teaching (or the level needs a human playtest) or its win rate says nothing.
+- **How well the bots handle them.** `scripts/sim3d.mjs` now dodges a laser after the lock, walks away from a Shaken and does not
+  shoot it inside its blast, shoots a Nurse first (the good bot) or once she has a body (the casual one), and shoots a Mimic
+  from range (good and casual) or walks up to it (sloppy). Those are guesses at how a person of each skill plays and have
+  never been compared with a person. The sim numbers for the placed levels are in `docs/placement.md`.
 - **Performance on a phone.** Only software WebGL. A Longshot's laser and a Shaken's ring are additive overdraw; a crowd of
   Shakens bursting uses the foam particles from the shared pool (36 smoke and 30 spark particles each, from pools of 160 and 280).
 - **The Longshot's warning arc** reuses the HUD's damage arcs, which can read as "I was hit". There is a `shot.warn` flag to

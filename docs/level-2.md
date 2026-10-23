@@ -29,6 +29,11 @@ level 1. The numbers are what the bot saw, not a promise for people.
 
 24 robots including the boss, against 19 in level 1.
 
+**Since the placement** (`docs/placement.md`) the Vaults hold 27: a Bampot Nurse in the Long Vault, a Fizzbang Shaken in the Cask
+Cellar, a Vending Mimic in the Close and a Bampot Longshot in the Plague Cellar (replacing its Bampot), plus the Grenade, the
+Beam, three upgrades and five records on the floor. The table above and the balance section below describe the level before
+that; the numbers after it are in `docs/placement.md`.
+
 ## New things
 
 **Shielded Fizzbang** (melee, Dr Fizzbang camp). It carries a vending-machine door. A hit from inside 63 degrees of the

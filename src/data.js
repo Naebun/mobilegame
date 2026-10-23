@@ -64,7 +64,7 @@ ENEMY_DEFS.tourguide = {
   enrage: { at: 0.5, volley: 4, volleySpread: 0.17, shotInterval: [1.0, 1.5], speed: 1.25, line: 'Right. That is it. No refunds.' },
 };
 
-// Prepared enemies (docs/enemies-next.md): built and tested, NOT placed in any level. `ai` picks the behaviour in
+// The four newer enemies (docs/enemies-next.md), placed in levels 1 and 2 (docs/placement.md). `ai` picks the behaviour in
 // game3d.js (updateSpecial). Normal-mode numbers only, like everything here.
 // Fizzbang Shaken (Dr Fizzbang camp, so melee only): a can that rattles faster as it nears (`rattle`, in Hz, between `far`
 // and `near` metres), primes inside `prime.range` (a lunge at `prime.speed`, steering at `prime.steer` rad/s) and bursts
@@ -205,8 +205,8 @@ DRINKS.lastorders = {
 export const DRINK_ORDER = ['dram', 'orange', 'heavy', 'energy', 'lastorders'];
 
 // ---------------------------------------------------------------------------------------------
-// The prepared arsenal (docs/arsenal.md). Built and tested ahead of the levels that will use them, and not placed in any
-// level yet. `prepared: true` keeps a weapon off the HUD strip until Naebun owns it and out of giveWeapons' default.
+// The prepared arsenal (docs/arsenal.md). Built and tested ahead of the levels, now placed in levels 1 and 2 (docs/placement.md).
+// `prepared: true` keeps a weapon off the HUD strip until Naebun owns it and out of giveWeapons' default.
 // kind 'beam' is a held-trigger hitscan, 'grenade' a thrown bouncing projectile, 'cone' an instant shockwave in front.
 // Every number here is for normal mode (debug mode only multiplies damage and fire rate, as for the other weapons).
 // ---------------------------------------------------------------------------------------------

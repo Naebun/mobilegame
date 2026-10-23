@@ -147,6 +147,13 @@ function checkLevel(n) {
   }
   ff.update(w.start.x, w.start.z);
   ok(Number.isFinite(ff.distAt(w.exit.x, w.exit.z)), 'the exit is reachable once every door is open');
+  // every pickup, the newer ones too (upgrades, records, the Airhorn, Grenade and Beam), can be walked to once every door is open
+  for (const p of w.pickups) ok(Number.isFinite(ff.distAt(p.x, p.z)), `${p.id} (${p.kind}) is reachable`);
+  const kinds = new Set(w.pickups.map((p) => p.kind));
+  ok([...kinds].every((k) => ['weapon', 'drink', 'upgrade', 'record'].includes(k)), `pickup kinds are all known (${[...kinds]})`);
+  ok(w.pickups.filter((p) => p.kind === 'record').length === 5, `five records in the level (${w.pickups.filter((p) => p.kind === 'record').length})`);
+  const robotKinds = new Set(w.areas.flatMap((a) => a.spawns.map((s) => s.kind)));
+  for (const k of ['shaken', 'longshot', 'nurse', 'mimic']) ok(robotKinds.has(k), `the level holds a ${k}`);
   ok(w.areaAt(w.exit.x, w.exit.z) === w.areas[w.areas.length - 1], 'the exit is in the last area');
   // each area's unlock list opens the door out of it, in order
   w.areas.forEach((a, i) => { if (i < w.areas.length) ok(a.unlocks.length <= 1, `${a.id} unlocks at most one door`); });

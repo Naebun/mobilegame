@@ -1,13 +1,14 @@
 # The prepared arsenal
 
-Weapons, upgrades and collectibles from the full-game plan, built and tested ahead of the levels that will use them. **None
-of it is placed**: no level map contains any of it, nobody can pick any of it up in levels 1 and 2, and those levels play as
-before. `scripts/harness/arsenal-check.mjs` asserts that on every level in `LEVEL_DEFS`. Nothing here has been played by a
-person or seen on a phone.
+Weapons, upgrades and collectibles from the full-game plan, built and tested ahead of the levels that will use them. The owner
+has since said to put them in the two levels that exist, so **they are placed**: the Airhorn, Grenade, Beam, the three upgrades
+and all ten records are on the floors of levels 1 and 2. What is where, and why, is in `docs/placement.md`, and
+`scripts/harness/arsenal-check.mjs` asserts it (`PLACED` in that file). They stay per level and per run, as built: Naebun
+starts each level with the pistol and no upgrade. Nothing here has been played by a person or seen on a phone.
 
 ## What exists
 
-| Item | Id | Plan says | Where the numbers are |
+| Item | Id | Plan says (before they were placed) | Where the numbers are |
 | --- | --- | --- | --- |
 | Feedback Beam | `beam` | level 4 | `WEAPONS.beam` in `src/data.js` |
 | Bass-Drop Grenade | `grenade` | level 6 | `WEAPONS.grenade` |
@@ -86,32 +87,34 @@ record id: it is what the save stores.
 - `engine.js` reads the right mouse button (`input.mouse.alt`, consumed once per update).
 - `sw.js` lists the three new files for offline use.
 
-## Placing them in a level later (not done; needs the owner's go-ahead)
+## How a level places them (done for levels 1 and 2; for any later level it needs the owner's go-ahead)
 
-1. Pick a free letter on the map and add it to the level's `PICKS` in `src/levels/*.js`: `Z: ['weapon', 'beam']`,
-   `k: ['upgrade', 'clip']`, `q: ['record', 'haar']`. `world.js` already passes `kind` and `item` through. Floor pickups
-   take a whole tile, away from walls, not in a boss room.
+1. Pick a free letter on the map and add it to the level's `PICKS` in `src/levels/*.js`. Levels 1 and 2 use capitals for weapons
+   and upgrades (`W` airhorn, `Z` grenade, `F` beam, `C` clip, `R` reload, `A` altfire) and the lower-case `q y z a p` for the
+   five records each level holds. `world.js` already passes `kind` and `item` through, and was not changed. Floor pickups take
+   a whole tile, away from walls, not in a boss room.
 2. `game3d.js` already makes the right mesh and handles the pickup for kinds `weapon`, `upgrade` and `record`.
-3. A record needs one letter per record because `PICKS` maps a letter to one item; for ten records either spend ten letters or
-   teach `world.js` an `extraPickups` list on the level definition (a small change, not made).
-4. To keep upgrades between levels, copy `p.upgrades` in `nextLevel()`: today they reset with the player, like weapons.
-5. Remove `prepared: true` from a weapon's data only if it should always show on the strip; leaving it keeps the strip tidy
-   until the weapon is owned, and that is the intended behaviour.
-6. Level checks: `arsenal-check.mjs` asserts that no level places a prepared item. Update that assertion when one does.
+3. A record needs one letter per record because `PICKS` maps a letter to one item. Each level only holds five, so five
+   lower-case letters do for both (the same letters name different records in each level's own table). No change to `world.js`
+   was needed.
+4. Upgrades reset with the player at the start of each level, like weapons (`resetLevel`), so each level places its own.
+5. `prepared: true` stays on the three new weapons: the HUD strip shows them only once owned, which is the intended behaviour.
+6. Level checks: `arsenal-check.mjs` asserts the placement table (`PLACED`); update it with the map.
 
 ## Checks
 
-`node scripts/harness/arsenal-check.mjs` (392 checks: damage ramp, meter, range and walls, grenade fuse, bounce, radius, stun
+`node scripts/harness/arsenal-check.mjs` (464 checks: damage ramp, meter, range and walls, grenade fuse, bounce, radius, stun
 and bosses, shield and cone for the airhorn, alt-fire gating and cooldown, clip and reload upgrades, pickups, the record save
-round trip, old and junk saves, setlist buttons, the HUD strip, and no prepared item in any level); `models-check.mjs` (finite
+round trip, old and junk saves, setlist buttons, the HUD strip, and the placement: what each level holds, that it is reachable, that each placed thing can be picked up and used); `models-check.mjs` (finite
 models, 3k to 6k triangles per held weapon with hands and torch, the torch API, the effects); `ui-check.mjs` (ALT button
 rectangle in twelve view sizes with safe-area insets, the setlist and the title row in portrait and landscape).
 `node scripts/harness/arsenal-views.mjs <dir> [scenes]` screenshots it all in the real pipeline, portrait and landscape.
 
 ## Not verified
 
-- Feel and balance. The beam, grenade and airhorn numbers are first guesses, checked only by the headless rules; no level was
-  tuned and no bot plays with them. Whether 5 s of beam, a 3.5 s stun or a 7 m cone is right needs a person.
+- Feel and balance. The beam, grenade and airhorn numbers are first guesses, checked only by the headless rules. The sim bots now
+  use them in a simple way (`scripts/sim3d.mjs`) and the two levels were tuned against those bots only. Whether 5 s of beam, a
+  3.5 s stun or a 7 m cone is right needs a person.
 - Real devices: frame rate with the extra effects (additive rings and the beam), touch reach of the ALT button, safe-area
   behaviour on a real notch, audio (all new sounds are synthesised and unheard).
 - The viewmodels were seen in software-rendered screenshots only. The beam, grenade and airhorn sit a little under the aim box on a
