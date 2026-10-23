@@ -5,7 +5,9 @@
 // Legend. Solid: # wall, P stone column, S stacked casks (blocks shots), T stairs. Low cover (blocks walking, not
 // bullets): o barrel, x chest, c stone tomb, n hand cart. 1-6 door tiles (two per door), . floor.
 // Markers that sit on floor: @ start, E exit (four tiles), d fizzbang, w bampot, s shielded fizzbang, g the Tour Guide,
-// G shotgun, M smg, L launcher, V vinyl disc; drinks H dram, O orange, B heavy, N energy, X last orders.
+// k shaken, l longshot, u nurse, m mimic, G shotgun, M smg, L launcher, V vinyl disc, Z grenade, F beam; drinks H dram,
+// O orange, B heavy, N energy, X last orders; upgrades C clip, R reload, A altfire; records q y z a p (one letter each).
+// Why each new thing is where it is: docs/placement.md.
 export const MAP = [
   '############################################',
   '############################################',
@@ -20,10 +22,10 @@ export const MAP = [
   '####.H........cH...H..c..........B.#########',
   '####...............................#########',
   '################55##########################',
-  '##................................##########',
+  '##................F..............p##########',
   '##.H............................B.##########',
   '##...c............................##########',
-  '##......P.....P..o..P.....w.......##########',
+  '##......P.....P..o..P.....l.......##########',
   '##............................o...##########',
   '##....d....c...........c..........##########',
   '##...............X................##########',
@@ -32,30 +34,30 @@ export const MAP = [
   '##........s......c......d....c....##########',
   '##..O.............................##########',
   '##......P.....P.d...P.....P.......##########',
-  '##.........c...................c..##########',
+  '##.Z.......c...................c..##########',
   '##..............................H.##########',
   '######44####################################',
-  '#####.......nn..................n..........#',
+  '#####....R..nn........m.........n..........#',
   '#####...........s.......d...........d......#',
-  '#####....o..w.......o.....N.o.s............#',
+  '#####a...o..w.......o.....N.o.s............#',
   '#####.....d...........w............o.......#',
   '#####.H...........n.....nn....H.........L..#',
   '########################################33##',
-  '##############################.............#',
+  '##############################z............#',
   '##############################..w..........#',
   '##############################.B.SS..d..o.O#',
   '##############################........S....#',
   '##############################........S...o#',
-  '##############################..o..........#',
+  '##############################..o.......k..#',
   '##############################......o...d.H#',
-  '##############################....S....o...#',
+  '##############################.A..S....o...#',
   '##############################.............#',
   '##############################.o.d..s....S.#',
   '##############################.M...o......V#',
   '##############################.............#',
   '########################################22##',
-  '#TTT......#.o........................o.....#',
-  '#TTT...xx.#.......d........................#',
+  '#TTTq.....#.o.................C......o....y#',
+  '#TTT...xx.#.......d...............u........#',
   '#.........1....P.....P.....P.....P.....P.w.#',
   '#.........1..G......................d......#',
   '#...@.....#.......o.........o.............H#',
@@ -93,10 +95,13 @@ export const WALL_STYLE = {
 export const FLOOR_STYLE = { steps: 'flag', longvault: 'flag', casks: 'flag', close: 'flag', plague: 'flag', tour: 'flag' };
 export const FLOOR_TINT = { steps: [0.9, 0.92, 1.0], longvault: [0.8, 0.84, 0.88], casks: [0.86, 0.78, 0.7], close: [0.8, 0.78, 0.72], plague: [0.72, 0.84, 0.8], tour: [0.84, 0.74, 0.7] };
 
-export const KINDS = { d: 'fizzbang', w: 'bampot', s: 'shielded', g: 'tourguide' };
+export const KINDS = { d: 'fizzbang', w: 'bampot', s: 'shielded', g: 'tourguide', k: 'shaken', l: 'longshot', u: 'nurse', m: 'mimic' };
 export const PICKS = {
-  G: ['weapon', 'shotgun'], M: ['weapon', 'smg'], L: ['weapon', 'launcher'], V: ['weapon', 'vinyl'],
+  G: ['weapon', 'shotgun'], M: ['weapon', 'smg'], L: ['weapon', 'launcher'], V: ['weapon', 'vinyl'], Z: ['weapon', 'grenade'], F: ['weapon', 'beam'],
   H: ['drink', 'dram'], O: ['drink', 'orange'], B: ['drink', 'heavy'], N: ['drink', 'energy'], X: ['drink', 'lastorders'],
+  C: ['upgrade', 'clip'], R: ['upgrade', 'reload'], A: ['upgrade', 'altfire'],
+  // records, one letter each (PICKS maps a letter to one item)
+  q: ['record', 'supper'], y: ['record', 'tram'], z: ['record', 'hold'], a: ['record', 'foot'], p: ['record', 'refund'],
 };
 
 export const LEVEL_DEF = {

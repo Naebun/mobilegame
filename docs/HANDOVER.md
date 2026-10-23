@@ -157,14 +157,16 @@ its triangle cap). Details and the prop ranking: `docs/props.md`. Known: level 2
 (about 145k); the weapons' left forearms read as plain purple tubes in portrait; the Vaults are dark enough that old and new
 props are hard to tell apart; nothing has been seen on a phone. Textures: see the Textures section and `docs/textures.md`.
 
-## Prepared objects (built, not placed)
-At the owner's request the roadmap's enemies, weapons, upgrades and collectibles are built and tested ahead of their levels.
-No level map uses any of them. Enemies (Fizzbang Shaken, Bampot Longshot, Bampot Nurse, Vending Mimic): `docs/enemies-next.md`,
+## Prepared objects (built ahead of time, now placed in levels 1 and 2)
+At the owner's request the roadmap's enemies, weapons, upgrades and collectibles were built and tested ahead of their levels,
+and the owner has since said to put them in the two existing levels. What is where, and why, is in `docs/placement.md` (every
+item can be vetoed by name there). Enemies (Fizzbang Shaken, Bampot Longshot, Bampot Nurse, Vending Mimic): `docs/enemies-next.md`,
 `scripts/harness/enemies-check.mjs`. Arsenal (Feedback Beam, Bass-Drop Grenade, Airhorn, the SMG alt-fire, clip and reload
 upgrades, ten collectible records and the SETLIST screen): `docs/arsenal.md`, `scripts/blender/arsenal.py` (writes
 `src/arsenal-meshes.js`), `src/arsenal.js`, `src/arsenal-play.js`, `scripts/harness/arsenal-check.mjs`. Every number is a first
-guess; nothing has been played by a person or heard. The sim bots cannot dodge a laser, run from a Shaken, hunt a Nurse or
-use the new weapons, so they need teaching before these go into a level. Level 3 and later are still not to be built.
+guess; nothing has been played by a person or heard. The sim bots (`scripts/sim3d.mjs`) can now dodge a laser, run from a
+Shaken, hunt a Nurse and use the new weapons in a simple way, and both levels were tuned against them; that is a proxy, not
+a playtest. Level 3 and later are still not to be built.
 
 ## The owner's test devices
 An iPhone 16 Pro and a MacBook Air M4. Both are much faster than the plan's floor (an A15, so an iPhone 14), which means a
