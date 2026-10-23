@@ -130,7 +130,7 @@ for (const id of M.DRINK_IDS) {
   const p = M.makeDrinkPickup(id);
   const pb = new THREE.Box3().setFromObject(p);
   ok(Math.abs(pb.min.y) < 0.01, `${id} drink pickup floor ${pb.min.y}`);
-  ok(pb.max.y > 0.9 && pb.max.y < 1.8, `${id} drink pickup top ${pb.max.y.toFixed(2)}`);
+  ok(pb.max.y > 0.9 && pb.max.y < 1.9, `${id} drink pickup top ${pb.max.y.toFixed(2)}`);
   finiteTransforms(p, `${id} drink pickup`);
   if (p.userData.update) { p.userData.update(0); p.userData.update(3.3); finiteTransforms(p, `${id} pickup embers`); }
   const vm = M.makeDrinkViewmodel(id);

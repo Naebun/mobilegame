@@ -38,7 +38,7 @@ const sstep = (a, b, x) => smooth(clamp((x - a) / (b - a), 0, 1));
 // `fine` adds extra rings across each bevel for the hero parts.
 function rbox(w, h, d, r = 0.03, fine = false) {
   const a = [w / 2, h / 2, d / 2];
-  const sharp = r < 0.006 || Math.min(a[0], a[1], a[2]) < 0.03; // thin parts are plain boxes: 12 triangles
+  const sharp = r < 0.006 || (Math.min(a[0], a[1], a[2]) < 0.03 && r < 0.02); // thin parts are plain boxes: 12 triangles
   r = sharp ? 0 : Math.min(r, Math.min(a[0], a[1], a[2]) * 0.98);
   const ticks = a.map((x) => (sharp ? [-x, x] : fine ? [-x, -x + r * 0.4, -x + r, x - r, x - r * 0.4, x] : [-x, -x + r, x - r, x]));
   const pos = [];
@@ -1454,10 +1454,10 @@ const DRINK_BUILD = {
 // Per-drink numbers. R and gy are the grip radius and height; rim is how far the rim sits from the origin;
 // tilt is the peak tilt in radians; `out` is where the tilt starts to come back.
 const DRINK = {
-  dram: { name: 'Wee Dram', duration: 1.2, tilt: 1.3, rim: 0.075, R: 0.056, gy: -0.01, ring: 0xffb030, scale: 3.4, bottom: -0.075, out: 0.66 },
-  orange: { name: 'Bruiser Orange', duration: 1.6, tilt: 1.75, rim: 0.265, R: 0.054, gy: -0.04, ring: 0xff7a1a, scale: 1.7, bottom: -0.12, out: 0.68 },
-  heavy: { name: 'Pint of Heavy', duration: 2.0, tilt: 1.15, rim: 0.13, R: 0.05, gy: -0.03, ring: 0xd89a4a, scale: 2.4, bottom: -0.13, out: 0.7 },
-  energy: { name: 'Bassline Energy', duration: 1.7, tilt: 1.7, rim: 0.135, R: 0.0356, gy: 0, ring: COLOURS.magenta, ring2: COLOURS.cyan, scale: 2.5, bottom: -0.135, out: 0.66 },
+  dram: { name: 'Wee Dram', duration: 1.2, tilt: 1.3, rim: 0.075, R: 0.056, gy: -0.01, ring: 0xffb030, scale: 4.2, bottom: -0.075, out: 0.66 },
+  orange: { name: 'Bruiser Orange', duration: 1.6, tilt: 1.75, rim: 0.265, R: 0.054, gy: -0.04, ring: 0xff7a1a, scale: 2.1, bottom: -0.12, out: 0.68 },
+  heavy: { name: 'Pint of Heavy', duration: 2.0, tilt: 1.15, rim: 0.13, R: 0.05, gy: -0.03, ring: 0xd89a4a, scale: 3.0, bottom: -0.13, out: 0.7 },
+  energy: { name: 'Bassline Energy', duration: 1.7, tilt: 1.7, rim: 0.135, R: 0.0356, gy: 0, ring: COLOURS.magenta, ring2: COLOURS.cyan, scale: 3.0, bottom: -0.135, out: 0.66 },
   lastorders: { name: 'Last Orders', duration: 2.2, tilt: 1.95, rim: 0.29, R: 0.062, gy: -0.05, ring: 0xffc030, scale: 2.2, bottom: -0.16, out: 0.6 },
 };
 
@@ -1510,7 +1510,7 @@ export function makeDrinkPickup(id) {
     place(0);
     g.userData.update = place;
     // a faint gold column of light above the ring
-    const col = new THREE.Mesh(once('ember:col', () => new THREE.CylinderGeometry(0.22, 0.34, 1.5, 18, 1, true)), addHdr(0xffa820, 1.6, 0.07));
+    const col = new THREE.Mesh(once('ember:col', () => new THREE.CylinderGeometry(0.22, 0.34, 1.5, 18, 1, true)), addHdr(0xffa820, 1.2, 0.04));
     col.position.y = 0.78;
     g.add(col);
   }
@@ -1728,7 +1728,7 @@ export function makeDrinkViewmodel(id) {
       th += 0.03 * (Math.sin(g1 * Math.PI) + Math.sin(g2 * Math.PI) + Math.sin(g3 * Math.PI));
       const m = sstep(0.7, 0.76, k) * (1 - sstep(0.84, 0.95, k));
       moustache.visible = m > 0.01;
-      moustache.scale.set(0.2 + 0.8 * m, 0.4 + 0.6 * m, 1);
+      moustache.scale.set(0.12 + 0.5 * m, 0.25 + 0.4 * m, 1);
       moustache.position.x = -0.22 - 0.5 * sstep(0.84, 0.95, k);
       roll += Math.sin(sec * 8) * 0.01 * sstep(0.74, 0.8, k) * (1 - sstep(0.86, 0.92, k));
     } else if (id === 'energy') {
