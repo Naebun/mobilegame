@@ -4,8 +4,8 @@ Written so the chat can be cleared and work resumed from a cold start. Read this
 `README.md`. The status section is the part most likely to be stale, so check it against `git log` first.
 
 ## Standing rules from the owner
-- **Level 1 only.** Never build a later level without explicit permission. Features are built and tested on level 1.
-- **The five approved enemy ideas are recorded in `ROADMAP.md` and are not built.** Approval is not a go-ahead to build.
+- **Levels 1 and 2 exist.** Level 2 was built with explicit permission (branch `level-2`, not merged). Never build level 3 or later without explicit permission.
+- **Of the five approved enemy ideas in `ROADMAP.md`, only the Shielded Fizzbang is built (level 2).** Approval is not a go-ahead to build the rest.
 - **Never balance against debug mode.** Debug is 2x fire rate, 2x damage, 2x health. Debug runs do not write the best
   score.
 - **Nothing goes to `main` until the owner says so.** Squash-merge by PR when asked. (Last go-ahead: "Merge all", PR #4.)
@@ -22,6 +22,13 @@ comedy, light Scottish voice. Six linear areas, pre-placed sleeping robots that 
 open when an area is clear, four floor-pickup weapons, a Bouncer boss. Drinks are the power-ups, each with a
 first-person drinking animation. Three.js r160 is vendored, plain ES modules, no backend. Full-game plan (about two
 hours, 8 to 10 levels, iOS from the last four years) is in `docs/full-game-plan.md`.
+
+## Level 2 (branch `level-2`)
+Read `docs/level-2.md`. In short: `buildWorld({ level })` takes a definition from `src/levels/`; `vaults-decor.js` dresses
+level 2 through hooks in `world.js`; level 1's dressing is still inline in `world.js` behind `COW`. `game3d.js` has
+`loadLevel` and a deferred swap (the world is rebuilt after a frame showing the new screen has drawn). New tests:
+`level-check.mjs`, `combat-check.mjs`, `game-views.mjs` (screenshots in the real pipeline), `world-views.mjs`. Open: a human
+playtest of level 2 (difficulty, the dark, touch), a phone frame-rate check, and merging when the owner says so.
 
 ## Branches
 Everything is merged to `main` (PR #4, squash, with the owner's go-ahead: "Merge all"). That PR carried the robot

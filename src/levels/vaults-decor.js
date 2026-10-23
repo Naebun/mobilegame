@@ -511,7 +511,7 @@ export function makeVaultsDecor(lv, env) {
       M.glow.quad([ex.x + Math.cos(a0) * 1.15, 0.03, ex.z + Math.sin(a0) * 1.15], [ex.x + Math.cos(a0) * 1.35, 0.03, ex.z + Math.sin(a0) * 1.35],
         [ex.x + Math.cos(a1) * 1.35, 0.03, ex.z + Math.sin(a1) * 1.35], [ex.x + Math.cos(a1) * 1.15, 0.03, ex.z + Math.sin(a1) * 1.15], glowc(0x8ab8ff, 1.8), [0, 1, 0]);
     }
-    const fe = frame(2.02, 11, 1, 0);
+    const fe = frame(2.02, 12, 1, 0);
     M.glow.grid(fe.p(-1.0, 0, 0.0), fe.p(1.0, 0, 0.0), fe.p(-1.0, 2.6, 0.0), [0, 1], [0, 0.5, 1], (i, j) => glowc(0xb8d0f0, 1.0 + 1.2 * j * 0.5), fe.n);
     obox(M.glow, fe, -0.5, 0.5, 2.9, 3.15, 0, 0.02, glowc(0x8ab8ff, 3.2), { bottom: false });
     const bits = (frame2) => frame2; // keeps the helper list explicit for readers

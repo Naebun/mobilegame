@@ -9,21 +9,22 @@ window.layout = (cfg = {}) => {
   const only = cfg.only || 'pickups';
   const items = only === 'fx' ? [] : [...M.WEAPON_IDS.map((id) => M.makeWeaponPickup(id)), M.makeHealthPickup()];
   items.forEach((it, i) => {
-    it.position.set((i - 2) * 1.4, 0, 0);
+    it.position.set((i - (items.length - 1) / 2) * 1.4, 0, 0);
+    if (it.userData.update) it.userData.update(cfg.t ?? 1);
     it.rotation.y = spin + i * 0.4;
     S.content.add(it);
   });
-  const fx = only === 'pickups' ? [] : [M.makeProjectile('bottle'), M.makeProjectile('rocket'), M.makeMuzzleFlash(), M.makeImpact()];
+  const fx = only === 'pickups' ? [] : [M.makeProjectile('bottle'), M.makeProjectile('rocket'), M.makeProjectile('disc'), M.makeMuzzleFlash(), M.makeImpact()];
   fx.forEach((o, i) => {
-    o.position.set((i - 1.5) * 1.4, 0.7, 0);
+    o.position.set((i - (fx.length - 1) / 2) * (only === 'fx' ? 2.1 : 1.4), 0.7, 0);
     o.scale.setScalar(only === 'fx' ? 3 : 1);
     if (i === 1) o.rotation.y = -0.6;
     if (i === 0) o.rotation.x = 0.5;
-    if (i === 2) o.rotation.y = 0.6;
-    if (i === 3) o.rotation.y = 0.5;
+    if (i === 3) o.rotation.y = 0.6;
+    if (i === 4) o.rotation.y = 0.5;
     S.content.add(o);
   });
-  if (only === 'fx') frame(S.camera, 6.2, 1.8, 1.0, 0); else frame(S.camera, 7.4, 3.2, 1.0, 0.8);
+  if (only === 'fx') frame(S.camera, fx.length * 2.1 + 0.4, 1.8, 1.0, 0); else frame(S.camera, items.length * 1.4 + 0.4, 3.2, 1.0, 0.8);
   S.camera.position.z += 0;
   S.render();
 };

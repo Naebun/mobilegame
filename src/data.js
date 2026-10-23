@@ -53,15 +53,15 @@ export const ENEMY_DEFS = {
 // a player who keeps moving can get behind it. The Tour Guide is the boss: a Bampot-camp robot, so it shoots, but it
 // also swings its lantern pole at anyone who gets close. At half health it enrages: bigger volleys, faster.
 ENEMY_DEFS.shielded = {
-  name: 'SHIELDED FIZZBANG BOT', hp: 85, speed: 2.7, ranged: false, reach: 1.9, windup: 0.7, swing: 0.45, cooldown: 1.3,
+  name: 'SHIELDED FIZZBANG BOT', hp: 70, speed: 2.7, ranged: false, reach: 1.9, windup: 0.7, swing: 0.45, cooldown: 1.3,
   damage: 16, score: 200, wakeRange: 16, turn: 1.9, shield: { arc: 1.1, mult: 0.12, closeMult: 0.5 },
 };
 ENEMY_DEFS.tourguide = {
-  name: 'THE TOUR GUIDE', boss: true, hp: 520, speed: 2.9, ranged: true, damage: 12, score: 1200, wakeRange: 24,
-  shotInterval: [1.6, 2.3], aim: 0.5, shoot: 0.35, projSpeed: 12, keepMin: 6, keepMax: 12, range: 28,
+  name: 'THE TOUR GUIDE', boss: true, hp: 360, speed: 2.9, ranged: true, damage: 10, score: 1200, wakeRange: 24,
+  shotInterval: [1.9, 2.6], aim: 0.5, shoot: 0.35, projSpeed: 12, keepMin: 6, keepMax: 12, range: 28,
   volley: 3, volleySpread: 0.2, quote: 'Please keep up. And do not touch the exhibits.',
-  slam: { reach: 2.9, windup: 0.7, swing: 0.45, cooldown: 2.4, damage: 24 },
-  enrage: { at: 0.5, volley: 5, volleySpread: 0.17, shotInterval: [1.0, 1.5], speed: 1.25, line: 'Right. That is it. No refunds.' },
+  slam: { reach: 2.4, windup: 0.7, swing: 0.45, cooldown: 2.4, damage: 20 },
+  enrage: { at: 0.5, volley: 4, volleySpread: 0.17, shotInterval: [1.0, 1.5], speed: 1.25, line: 'Right. That is it. No refunds.' },
 };
 
 export const PLAYER = {
@@ -104,9 +104,9 @@ export const LEVELS = [
     hints: {
       steps: 'Pistol only. The torch is not optional.',
       longvault: 'Dark between the torches. Stay out of it.',
-      casks: 'Shielded bots: go round the back, or bring something loud.',
+      casks: 'Shields stop shots from the front. Go round the back.',
       close: 'Tight corners. Check them before you turn them.',
-      plague: 'Vinyl Disc bounces. Use the walls.',
+      plague: 'The Vinyl Disc bounces. Use the walls.',
       tour: 'The last tour of the night.',
     },
     doneTitle: 'TOUR OVER.',

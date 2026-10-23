@@ -112,7 +112,7 @@ function setEnemy(S, e, x, z, yaw) { e.x = x; e.z = z; e.yaw = yaw; e.kx = e.kz 
     if (pr) {
       if (!seen) { seen = pr; inp.keys.delete(' '); }
       zMin = Math.min(zMin, pr.z);
-      if (pr.vz > 0 && zMin < 94) backAgain = true;
+      if (pr.vz > 0 && zMin < 96) backAgain = true; // the wall's face is at z = 94
       if (seen.bounces < WEAPONS.vinyl.bounces - bounces) { bounces = WEAPONS.vinyl.bounces - seen.bounces; wallHits.push([pr.x.toFixed(1), pr.z.toFixed(1)]); }
     }
   });
@@ -129,14 +129,14 @@ function setEnemy(S, e, x, z, yaw) { e.x = x; e.z = z; e.yaw = yaw; e.kx = e.kz 
   S.enemies.forEach((q) => { q.dead = true; q.state = 'dead'; q.robot.group.visible = false; });
   const e = S.enemies.find((q) => q.kind === 'fizzbang');
   e.dead = false; e.state = 'idle'; e.hp = e.maxHp; e.robot.group.visible = true;
-  setEnemy(S, e, 13.5 * 2 + 10, 49.5 * 2, 0);
+  setEnemy(S, e, 13.5 * 2 + 10, 48.5 * 2, 0); // the lane, clear of the column row
   const p = S.player;
   game.testHook('giveWeapons');
   p.weapon = 'vinyl';
   p.owned.vinyl = true;
   p.ammo.vinyl = WEAPONS.vinyl.clip;
   p.switchT = 0;
-  place(S, 13.5 * 2, 49.5 * 2, -Math.PI / 2); // facing east along the lane
+  place(S, 13.5 * 2, 48.5 * 2, -Math.PI / 2); // facing east along the lane
   p.pitch = 0;
   const inp = input();
   inp.keys.add(' ');
@@ -172,9 +172,9 @@ function setEnemy(S, e, x, z, yaw) { e.x = x; e.z = z; e.yaw = yaw; e.kx = e.kz 
   ok(maxBottles >= def.volley, `a volley throws ${def.volley} bottles at once (saw ${maxBottles})`);
   // enrage at half health
   ok(!e.enraged && e.speedMult === 1, 'not enraged at full health');
-  game.testHook('hitEnemy', { i, amount: e.maxHp * 0.52, fx: e.x, fz: e.z + 9 });
-  ok(!e.enraged, 'not enraged at 48 percent... of damage dealt');
-  game.testHook('hitEnemy', { i, amount: e.maxHp * 0.02, fx: e.x, fz: e.z + 9 });
+  game.testHook('hitEnemy', { i, amount: e.maxHp * 0.45, fx: e.x, fz: e.z + 9 });
+  ok(!e.enraged, 'not enraged at 55 percent health');
+  game.testHook('hitEnemy', { i, amount: e.maxHp * 0.06, fx: e.x, fz: e.z + 9 });
   ok(e.enraged && near(e.speedMult, def.enrage.speed), 'enraged at half health, and faster');
   S.projectiles.length = 0;
   e.state = 'chase'; e.cool = 0; e.stateT = 1;

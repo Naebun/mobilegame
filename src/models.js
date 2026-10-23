@@ -37,11 +37,19 @@ const sstep = (a, b, x) => smooth(clamp((x - a) / (b - a), 0, 1));
 
 // Rounded box: a cube grid whose vertices are pushed onto a rounded shape, with smooth normals.
 // `fine` adds extra rings across each bevel for the hero parts.
-function rbox(w, h, d, r = 0.03, fine = false) {
+function rbox(w, h, d, r = 0.03, fine = false, grid = null) {
   const a = [w / 2, h / 2, d / 2];
   const sharp = r < 0.006 || (Math.min(a[0], a[1], a[2]) < 0.03 && r < 0.02); // thin parts are plain boxes: 12 triangles
   r = sharp ? 0 : Math.min(r, Math.min(a[0], a[1], a[2]) * 0.98);
-  const ticks = a.map((x) => (sharp ? [-x, x] : fine ? [-x, -x + r * 0.4, -x + r, x - r, x - r * 0.4, x] : [-x, -x + r, x - r, x]));
+  const ticks = a.map((x, ax) => {
+    if (sharp) return [-x, x];
+    if (grid && grid[ax] > 1) {
+      // extra rings between the bevels, so big flat panels can take dents
+      const n = grid[ax];
+      return [-x, -x + r, ...Array.from({ length: n - 1 }, (_, i) => -x + r + ((2 * (x - r)) * (i + 1)) / n), x - r, x];
+    }
+    return fine ? [-x, -x + r * 0.4, -x + r, x - r, x - r * 0.4, x] : [-x, -x + r, x - r, x];
+  });
   const pos = [];
   const nor = [];
   const edge = [];
@@ -143,7 +151,7 @@ const tube = (pts, radius, segs = 24, rad = 6) => new THREE.TubeGeometry(new THR
 
 // Push a dent into a part (local space): vertices move against their normal near `c`, normals are rebuilt
 // by position so lathe seams stay smooth, and the dent is darkened a little in the 'ao' attribute.
-function dent(g, dents) {
+function dent(g, dents, dir = null) {
   const P = g.attributes.position;
   const N = g.attributes.normal;
   const ao = g.attributes.ao ? g.attributes.ao.array : new Float32Array(P.count).fill(1);
@@ -152,7 +160,9 @@ function dent(g, dents) {
       const d = Math.hypot(P.getX(i) - cx, P.getY(i) - cy, P.getZ(i) - cz);
       if (d >= rad) continue;
       const f = Math.pow(Math.cos((d / rad) * HALF), 2);
-      P.setXYZ(i, P.getX(i) - N.getX(i) * depth * f, P.getY(i) - N.getY(i) * depth * f, P.getZ(i) - N.getZ(i) * depth * f);
+      // `dir` pushes the whole sheet one way (a dent in a panel), otherwise each vertex moves against its normal
+      if (dir) P.setXYZ(i, P.getX(i) + dir[0] * depth * f, P.getY(i) + dir[1] * depth * f, P.getZ(i) + dir[2] * depth * f);
+      else P.setXYZ(i, P.getX(i) - N.getX(i) * depth * f, P.getY(i) - N.getY(i) * depth * f, P.getZ(i) - N.getZ(i) * depth * f);
       ao[i] = Math.min(ao[i], 1 - 0.35 * f);
     }
   }
@@ -269,6 +279,7 @@ function bake(parts, { base = [0, 0, 0], originY = base[1], seed = 0, tint = 0 }
     const Na = g.attributes.normal;
     const Ea = g.attributes.edge;
     const Aa = g.attributes.ao;
+    const Va = g.attributes.vcol; // optional flat colour per vertex (tartan), replaces the part colour
     const c0 = new THREE.Color(o.hex);
     if (sd.paint && tint) c0.offsetHSL(0.004 * seed, 0, tint);
     for (let i = 0; i < Pa.count; i++) {
@@ -280,7 +291,7 @@ function bake(parts, { base = [0, 0, 0], originY = base[1], seed = 0, tint = 0 }
       const n1 = vnoise(_vv.x * 5.3 + seed * 13.1, wy * 5.3, _vv.z * 5.3);
       const n2 = vnoise(_vv.x * 23 + seed * 7.7, wy * 23, _vv.z * 23);
       const st = vnoise(_vv.x * 9, wy * 1.7 + seed, _vv.z * 9);
-      _c.copy(c0).multiplyScalar(0.84 + 0.3 * n2);
+      (Va ? _c.setRGB(Va.getX(i), Va.getY(i), Va.getZ(i)) : _c.copy(c0)).multiplyScalar(0.84 + 0.3 * n2);
       const yy = clamp(wy / 1.3, 0, 1);
       _c.multiplyScalar(0.72 + 0.28 * smooth(yy));
       _c.lerp(GRIME, (1 - yy) * 0.16);
@@ -637,6 +648,8 @@ let robotCount = 0;
 const variantCount = {};
 
 export function makeRobot(kind) {
+  if (kind === 'shielded') return makeShielded();
+  if (kind === 'tourguide') return makeTourGuide();
   const spec = SPEC[kind];
   if (!spec) throw new Error(`makeRobot: unknown kind "${kind}"`);
   const variant = (variantCount[kind] = (variantCount[kind] ?? -1) + 1) % VARIANTS;
@@ -1000,13 +1013,1140 @@ export function makeRobot(kind) {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Level 2 robots: the Shielded Fizzbang and the Tour Guide. Same rig conventions as makeRobot (feet at the origin,
+// facing -z, setPose(state, t, k) resets and poses every call), with extras listed on each builder.
+// ---------------------------------------------------------------------------------------------
+
+const wallNow = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+
+// Eye flicker and indicator pulse, the same as makeRobot's update(), plus a way to recolour the eyes (enrage) that
+// keeps the flicker ratio consistent.
+function flickerRig(phase, eyeMat, lampMat) {
+  let clock = 0;
+  let lastEye = 1;
+  let lastLamp = 1;
+  return {
+    update(dt) {
+      clock += clamp(num(dt, 0), 0, 0.1);
+      const h = (Math.sin(Math.floor(clock * 6) * 12.9898 + phase) * 43758.5453) % 1;
+      const blink = (h + 1) % 1 > 0.95 ? 0.45 : 1;
+      const f = (1 + 0.14 * Math.sin(clock * 37 + phase) * Math.sin(clock * 9 + phase * 0.7)) * blink;
+      eyeMat.color.multiplyScalar(f / lastEye);
+      lastEye = f;
+      if (lampMat) {
+        const l = Math.sin(clock * 2.2 + phase) > -0.2 ? 1 : 0.2;
+        lampMat.color.multiplyScalar(l / lastLamp);
+        lastLamp = l;
+      }
+    },
+    tintEyes(hex, k) {
+      eyeMat.color.copy(hdr(hex, k)).multiplyScalar(lastEye);
+    },
+  };
+}
+
+// Two-bone arm solve (shoulder S to grip G, elbow pulled towards `pole`). Fills `elbow` and returns the stretch the
+// bones need if G is further than they reach (a telescoping piston arm, so the hand never lets go of the shield).
+const _tb = { d: new THREE.Vector3(), dir: new THREE.Vector3(), pp: new THREE.Vector3() };
+function twoBone(S, G, pole, L1, L2, elbow) {
+  const { d, dir, pp } = _tb;
+  d.copy(G).sub(S);
+  const len = d.length() || 1;
+  dir.copy(d).divideScalar(len);
+  const stretch = Math.max(1, len / ((L1 + L2) * 0.97));
+  const l1 = L1 * stretch;
+  const l2 = L2 * stretch;
+  const dist = Math.max(0.05, len);
+  const a = (l1 * l1 - l2 * l2 + dist * dist) / (2 * dist);
+  const h = Math.sqrt(Math.max(0, l1 * l1 - a * a));
+  pp.copy(pole).addScaledVector(dir, -pole.dot(dir)).normalize();
+  elbow.copy(S).addScaledVector(dir, a).addScaledVector(pp, h);
+  return stretch;
+}
+
+const SHIELD = { w: 1.3, h: 1.7, d: 0.1, cy: 1.03, z: -0.9, grip: [0.4, 0.2, 0.12] };
+
+function lightning(w, h) {
+  const s = new THREE.Shape();
+  [[0.1, 1], [-0.55, -0.05], [-0.08, -0.05], [-0.3, -1], [0.55, 0.1], [0.08, 0.1], [0.4, 1]].forEach(([x, y], i) => (i ? s.lineTo(x * w, y * h) : s.moveTo(x * w, y * h)));
+  s.closePath();
+  return new THREE.ShapeGeometry(s);
+}
+
+function shieldedGeo(v) {
+  const HIP = 0.45;
+  const NECK = 1.7;
+  const o = { seed: v + 4, tint: [0, 0.05, -0.04][v] };
+  const fz = once(`robot:fizzbang:${v}`, () => fizzbangGeo(v));
+  const GREEN = 0x3f5f4a;
+  const BLUE = 0x6f8f9c;
+  const can = dent(rcyl(0.48, 0.48, 1.14, 0.06, 22, 5), [[0.22, 0.1, 0.45, 0.26, 0.05], [-0.47, -0.2, 0.1, 0.22, 0.045], [0.45, 0.3, -0.15, 0.2, 0.04], [0, -0.3, 0.48, 0.2, 0.04]]);
+  const slat = once('fz:slat', () => rbox(0.05, 0.025, 0.22, 0.01));
+  const pipe = (r, h, x, y, z, hex, surf = 'metal', rust = 0.35) => P(rcyl(r, r, h, 0.015, 12), hex, surf, [x, y, z], [0, 0, 0], [1, 1, 1], { rust });
+  const ring = (r, x, y, z) => P(rcyl(r + 0.017, r + 0.017, 0.05, 0.01, 12), C.brass, 'brass', [x, y, z]);
+
+  // the door: a dented vending-machine front, built round its own centre, front face towards -z
+  const slab = dent(rbox(SHIELD.w, SHIELD.h, SHIELD.d, 0.035, false, [12, 15, 1]), [
+    [0.12, -0.12, -0.025, 0.3, 0.075], [-0.5, -0.2, -0.025, 0.22, 0.055], [0.5, 0.78, -0.025, 0.2, 0.05], [-0.1, 0.8, -0.025, 0.16, 0.04],
+  ], [0, 0, 1]);
+  const f = -0.052; // front face z
+  const rivet = once('sh:rivet', () => withEdge(new THREE.CylinderGeometry(0.017, 0.017, 0.014, 5, 1)));
+  const tin = once('sh:tin', () => withEdge(new THREE.CylinderGeometry(0.04, 0.04, 0.12, 8, 1)));
+  const tins = [];
+  [[0.5, 0], [0.28, 1]].forEach(([sy, row]) => {
+    for (let i = 0; i < 6; i++) {
+      if ((i + row * 2) % 5 === 3) continue; // a few sold out
+      tins.push(P(tin, [0x9a3a2a, 0x3a6a8a, 0xc9a23a, 0x4a7a52, 0x7a2430, 0x8a7a60][(i + row * 3) % 6], 'gloss', [-0.46 + i * 0.12 + row * 0.02, sy + 0.08, f - 0.002], [0, 0, i === 4 && row === 1 ? 0.5 : 0]));
+    }
+  });
+  const shield = bake([
+    P(slab, BLUE, 'paint', [0, 0, 0], [0, 0, 0], [1, 1, 1], { rust: 0.2 }),
+    // product window: dark backing, shelves, a few tins, cracks
+    P(rbox(0.8, 0.68, 0.03, 0.012), 0x07090b, 'glass', [-0.16, 0.4, f]),
+    P(rbox(0.86, 0.74, 0.02, 0.012), 0x3a3f44, 'metal', [-0.16, 0.4, f + 0.012], [0, 0, 0], [1, 1, 1], { rust: 0.45 }),
+    ...[0.28, 0.5].map((y) => P(rbox(0.74, 0.022, 0.05, 0.006), C.steel, 'metal', [-0.16, y, f - 0.012])),
+    ...tins,
+    ...[[-0.3, 0.55, 0.9, 0.2], [-0.3, 0.55, -0.4, 0.22], [-0.3, 0.55, 2.3, 0.16], [-0.3, 0.55, 0.1, 0.12]].map(([cx, cy, a, l]) => P(rbox(l, 0.006, 0.006, 0.002), 0xb4bcbe, 'glass', [cx + Math.cos(a) * l * 0.5, cy + Math.sin(a) * l * 0.5, f - 0.032], [0, 0, a])),
+    // coin slot and keypad
+    P(rbox(0.3, 0.6, 0.025, 0.01), 0x8a8d8f, 'metal', [0.43, 0.22, f], [0, 0, 0], [1, 1, 1], { rust: 0.4 }),
+    P(rbox(0.12, 0.13, 0.02, 0.008), 0x1a1b1d, 'plastic', [0.43, 0.41, f - 0.014]),
+    P(rbox(0.065, 0.014, 0.02, 0.004), 0x000000, 'plastic', [0.43, 0.43, f - 0.026]),
+    P(rbox(0.014, 0.05, 0.02, 0.004), C.brass, 'brass', [0.43, 0.37, f - 0.026]),
+    ...[0, 1, 2].flatMap((i) => [0, 1].map((j) => P(rcyl(0.025, 0.025, 0.018, 0.006, 10), [0xa02a22, 0xc9a23a, 0x4a7a52][(i + j) % 3], 'plastic', [0.35 + i * 0.075, 0.24 - j * 0.07, f - 0.014], [HALF, 0, 0]))),
+    P(torus(0.045, 0.012, 14, 5), C.chrome, 'chrome', [0.43, 0.04, f - 0.014]),
+    P(rcyl(0.032, 0.032, 0.01, 0.004, 12), 0x050505, 'plastic', [0.43, 0.04, f - 0.012], [HALF, 0, 0]),
+    // the delivery flap, pushed in
+    P(rbox(0.54, 0.2, 0.04, 0.012), 0x2a2c2f, 'paint', [-0.12, -0.52, f], [0, 0, 0.04], [1, 1, 1], { rust: 0.5 }),
+    P(rbox(0.5, 0.025, 0.03, 0.008), C.chrome, 'chrome', [-0.12, -0.42, f - 0.022], [0, 0, 0.04]),
+    ...[-0.34, 0.1].map((x) => P(ball(0.016, 6, 4), C.steelD, 'metal', [x, -0.41, f - 0.03])),
+    // faded stickers, shapes only: a washed-out starburst, a lightning bolt, a peeling corner
+    P(rcyl(0.15, 0.15, 0.006, 0.002, 20), 0xd2bd7a, 'paper', [0.4, -0.5, f - 0.001], [HALF, 0, 0]),
+    P(starShape(8, 0.12, 0.065), 0xa8402a, 'paper', [0.4, -0.5, f - 0.006], [0, Math.PI, 0.2]),
+    P(lightning(0.07, 0.11), 0xd8b02a, 'paper', [0.4, -0.5, f - 0.008], [0, Math.PI, 0]),
+    P(rbox(0.2, 0.16, 0.005, 0.002), 0xc9b68a, 'paper', [-0.45, 0.75, f - 0.003], [0, 0, 0.12]),
+    P(rbox(0.07, 0.07, 0.006, 0.002), 0x9a8a62, 'paper', [-0.375, 0.7, f - 0.006], [0, 0, 0.9]),
+    // rust runs down from the window sill and the coin panel
+    ...[[-0.5, 0.03, 0.3], [-0.25, 0.03, 0.17], [0.0, 0.03, 0.34], [0.2, 0.03, 0.22], [0.38, -0.08, 0.26], [0.5, -0.08, 0.14], [-0.57, -0.3, 0.3]]
+      .map(([x, y, l], i) => P(rbox(i % 3 ? 0.014 : 0.026, l, 0.004, 0.0015), i % 2 ? 0x4e2c1a : 0x5d3a1f, 'paint', [x, y - l / 2, f - 0.0015], [0, 0, 0], [1, 1, 1], { wear: 0 })),
+    // hazard chevrons along the foot, and rivets round the rim
+    ...Array.from({ length: 13 }, (_, i) => P(rbox(0.05, 0.11, 0.01, 0.003), i % 2 ? 0x15151a : 0xb89a2a, 'paint', [-0.6 + i * 0.1, -0.78, f - 0.002], [0, 0, 0.6])),
+    ...Array.from({ length: 8 }, (_, i) => [-1, 1].map((s) => P(rivet, C.steelD, 'metal', [s * 0.62, -0.62 + i * 0.18, f - 0.002], [HALF, 0, 0]))).flat(),
+    ...Array.from({ length: 5 }, (_, i) => P(rivet, C.steelD, 'metal', [-0.4 + i * 0.2, 0.82, f - 0.002], [HALF, 0, 0])),
+    // the back: grip bar, braces, a ripped-out cable
+    P(rcyl(0.03, 0.03, 0.46, 0.01, 12), C.steel, 'metal', [SHIELD.grip[0], SHIELD.grip[1], SHIELD.grip[2]]),
+    ...[-0.2, 0.2].map((dy) => P(rbox(0.05, 0.05, 0.08, 0.012), C.steelD, 'metal', [SHIELD.grip[0], SHIELD.grip[1] + dy, 0.09])),
+    P(rbox(1.1, 0.07, 0.05, 0.012), C.steelD, 'metal', [0, -0.3, 0.075], [0, 0, 0], [1, 1, 1], { rust: 0.5 }),
+    P(rbox(0.07, 1.4, 0.05, 0.012), C.steelD, 'metal', [-0.4, 0, 0.075], [0, 0, 0], [1, 1, 1], { rust: 0.5 }),
+    P(tube([[-0.1, 0.5, 0.07], [0.0, 0.3, 0.14], [-0.2, 0.1, 0.16], [-0.15, -0.1, 0.1]], 0.016, 14, 5), C.rubber, 'rubber'),
+  ], { originY: SHIELD.cy, ...o, seed: v + 9 });
+
+  return {
+    leg: fz.leg,
+    eye: fz.eye,
+    arm: fz.arm,
+    lamp: ball(0.034, 10, 7),
+    shield,
+    torso: bake([
+      P(rcyl(0.34, 0.4, 0.16, 0.04, 18), C.dark, 'paint', [0, 0.46, 0], [0, 0, 0], [1, 1, 1], { rust: 0.4 }),
+      P(can, GREEN, 'paint', [0, 1.03, 0], [0, 0, 0], [1, 1, 1], { rust: 0.42 }),
+      P(rcyl(0.51, 0.51, 0.09, 0.035, 26), C.chrome, 'chrome', [0, 0.53, 0], [0, 0, 0], [1, 1, 1], { rust: 0.35 }),
+      P(rcyl(0.51, 0.51, 0.1, 0.035, 26), C.chrome, 'chrome', [0, 1.57, 0], [0, 0, 0], [1, 1, 1], { rust: 0.3 }),
+      P(rcyl(0.4, 0.5, 0.08, 0.03, 26), C.chrome, 'chrome', [0, 1.65, 0], [0, 0, 0], [1, 1, 1], { rust: 0.2 }),
+      P(rcyl(0.5, 0.5, 0.2, 0.02, 26), 0xb5a57a, 'paint', [0, 1.0, 0], [0, 0, 0], [1, 1, 1], { rust: 0.5 }),
+      P(rcyl(0.17, 0.2, 0.1, 0.03, 16), C.rubber, 'rubber', [0, 1.7, 0]),
+      ...[-1, 1].flatMap((s) => [1.2, 1.26, 1.32, 1.38].map((y) => P(slat, 0x1c1c1e, 'metal', [s * 0.487, y, 0.0]))),
+      ...bolts(8, 0.515, 0.54, C.steelD, 0.02),
+      ...bolts(8, 0.515, 1.57, C.steelD, 0.02),
+      P(torus(0.5, 0.035, 28, 6), C.rubber, 'rubber', [0, 0.68, 0], [HALF, 0, 0]),
+      // the back is bare: a service hatch with the door ripped off, pipes, a gauge and a gas bottle
+      P(rbox(0.6, 0.82, 0.06, 0.02), 0x1d1816, 'paint', [0, 1.02, 0.47], [0, 0, 0], [1, 1, 1], { rust: 0.6 }),
+      P(rbox(0.66, 0.05, 0.05, 0.012), 0x4a3a30, 'metal', [0, 1.45, 0.5], [0, 0, 0.03], [1, 1, 1], { rust: 0.8 }),
+      P(rbox(0.05, 0.86, 0.05, 0.012), 0x4a3a30, 'metal', [0.32, 1.02, 0.5], [0, 0, -0.02], [1, 1, 1], { rust: 0.8 }),
+      P(rbox(0.05, 0.4, 0.05, 0.012), 0x4a3a30, 'metal', [-0.32, 1.2, 0.5], [0, 0, 0.05], [1, 1, 1], { rust: 0.8 }),
+      pipe(0.06, 0.95, -0.17, 1.0, 0.58, 0x9a5c38),
+      pipe(0.045, 0.95, 0.0, 1.0, 0.57, 0x6a6e74),
+      pipe(0.07, 0.9, 0.17, 0.98, 0.58, 0x3d5a63, 'paint', 0.5),
+      ...[0.75, 1.0, 1.25].flatMap((y) => [ring(0.06, -0.17, y, 0.58), ring(0.07, 0.17, y - 0.02, 0.58)]),
+      P(rcyl(0.05, 0.05, 0.62, 0.012, 12), C.steel, 'metal', [0, 1.4, 0.64], [0, 0, HALF], [1, 1, 1], { rust: 0.3 }),
+      P(torus(0.06, 0.013, 14, 5), 0xb02a22, 'paint', [0.17, 1.4, 0.7]),
+      ...[0, 1, 2].map((i) => P(rbox(0.1, 0.012, 0.012, 0.003), 0xb02a22, 'paint', [0.17, 1.4, 0.7], [0, 0, (i * Math.PI) / 3])),
+      P(torus(0.075, 0.015, 16, 5), C.chrome, 'chrome', [-0.17, 1.28, 0.68]),
+      P(rcyl(0.07, 0.07, 0.02, 0.006, 16), 0xd7cfb8, 'paper', [-0.17, 1.28, 0.665], [HALF, 0, 0]),
+      P(rbox(0.012, 0.055, 0.01, 0.003), 0x9a1c1c, 'plastic', [-0.17 + 0.01, 1.3, 0.678], [0, 0, 0.6]),
+      P(rcyl(0.09, 0.09, 0.56, 0.035, 14), 0x6a6e4a, 'paint', [0, 0.74, 0.66], [0, 0, HALF], [1, 1, 1], { rust: 0.6 }),
+      P(rcyl(0.025, 0.025, 0.06, 0.008, 10), C.brass, 'brass', [0.3, 0.74, 0.66], [0, 0, HALF]),
+      P(torus(0.07, 0.012, 14, 5), C.steelD, 'metal', [-0.12, 0.74, 0.66], [0, HALF, 0]),
+      P(torus(0.07, 0.012, 14, 5), C.steelD, 'metal', [0.12, 0.74, 0.66], [0, HALF, 0]),
+      // a chimney that clears the shoulders, and loose wiring
+      pipe(0.055, 0.62, -0.3, 1.62, 0.42, C.steelD, 'metal', 0.45),
+      P(rcyl(0.075, 0.075, 0.05, 0.015, 12), C.rubber, 'rubber', [-0.3, 1.93, 0.42]),
+      ring(0.055, -0.3, 1.5, 0.42),
+      P(tube([[-0.25, 1.35, 0.52], [-0.35, 1.2, 0.6], [-0.3, 0.95, 0.6], [-0.4, 0.8, 0.5]], 0.014, 16, 5), C.rubber, 'rubber'),
+      P(tube([[0.25, 1.4, 0.52], [0.38, 1.25, 0.56], [0.36, 1.05, 0.5]], 0.012, 14, 5), 0xa02a22, 'rubber'),
+    ], { base: [0, HIP, 0], ...o }),
+    head: bake([
+      P(rbox(0.72, 0.46, 0.58, 0.07, true), 0x55606a, 'paint', [0, 1.93, 0], [0, 0, 0], [1, 1, 1], { rust: 0.4 }),
+      P(rbox(0.64, 0.17, 0.08, 0.04), C.glass, 'glass', [0, 2.05, -0.27]),
+      P(rbox(0.3, 0.065, 0.08, 0.025), C.dark, 'paint', [-0.17, 2.135, -0.29], [0, 0, -0.28]),
+      P(rbox(0.3, 0.065, 0.08, 0.025), C.dark, 'paint', [0.17, 2.135, -0.29], [0, 0, 0.28]),
+      P(rbox(0.4, 0.08, 0.06, 0.02), 0x111113, 'plastic', [0, 1.82, -0.28]),
+      ...[-0.12, -0.04, 0.04, 0.12].map((x) => P(rbox(0.05, 0.07, 0.03, 0.01), C.chrome, 'chrome', [x, 1.82, -0.305])),
+      P(rcyl(0.075, 0.075, 0.12, 0.02, 14), C.chrome, 'chrome', [-0.4, 1.93, 0], [0, 0, HALF]),
+      P(rcyl(0.075, 0.075, 0.12, 0.02, 14), C.chrome, 'chrome', [0.4, 1.93, 0], [0, 0, HALF]),
+      // a dented lid, a patch plate and tape across the visor
+      P(rcyl(0.3, 0.34, 0.04, 0.015, 20), C.steel, 'metal', [0.02, 2.16, 0.02], [0.04, 0, 0.03], [1, 1, 1], { rust: 0.5 }),
+      P(rbox(0.2, 0.18, 0.02, 0.008), 0x6a4a30, 'metal', [-0.365, 1.92, -0.05], [0, 0, 0], [1, 1, 1], { rust: 0.8 }),
+      P(rbox(0.3, 0.025, 0.012, 0.004), C.black, 'tape', [0.1, 2.05, -0.318], [0, 0, 0.7]),
+      P(rbox(0.3, 0.025, 0.012, 0.004), C.black, 'tape', [0.1, 2.05, -0.32], [0, 0, -0.7]),
+      P(tube([[0.24, 2.17, 0.12], [0.27, 2.19, 0.14], [0.25, 2.2, 0.12]], 0.011, 10, 4), C.steelD, 'metal'),
+    ], { base: [0, NECK, 0], ...o }),
+    fist: bake([
+      P(capsule(0.07, 0.14), C.chrome, 'chrome', [0, -0.1, 0]),
+      P(rbox(0.46, 0.4, 0.46, 0.1, true), GREEN, 'paint', [0, -0.34, 0], [0, 0, 0], [1, 1, 1], { rust: 0.45 }),
+      P(rbox(0.46, 0.07, 0.07, 0.025), C.chrome, 'chrome', [0, -0.2, -0.235]),
+      ...[-0.1, 0, 0.1].map((x) => P(rbox(0.022, 0.26, 0.03, 0.01), C.dark, 'paint', [x, -0.38, -0.225])),
+      P(rbox(0.12, 0.14, 0.1, 0.04), GREEN, 'paint', [0.255, -0.28, -0.08], [0, 0, 0], [1, 1, 1], { rust: 0.4 }),
+    ], { originY: 0.88, ...o }),
+    shoulder: bake([
+      P(ball(0.17), C.chrome, 'chrome'),
+      P(torus(0.16, 0.03, 16, 6), C.rubber, 'rubber', [0, -0.06, 0], [HALF, 0, 0]),
+      P(rcyl(0.19, 0.19, 0.05, 0.02, 18), C.chrome, 'chrome', [0, -0.12, 0]),
+      ...bolts(6, 0.19, -0.12, C.steelD, 0.02),
+    ], { originY: 1.4, ...o }),
+    boneU: bake([
+      P(rcyl(0.15, 0.12, 0.42, 0.04, 16), 0x484d55, 'metal', [0, -0.26, 0], [0, 0, 0], [1, 1, 1], { rust: 0.3 }),
+      P(rcyl(0.17, 0.17, 0.05, 0.02, 16), C.chrome, 'chrome', [0, -0.08, 0]),
+      P(ball(0.13), C.chrome, 'chrome', [0, -0.5, 0]),
+      P(torus(0.13, 0.025, 14, 5), C.rubber, 'rubber', [0, -0.5, 0], [0, HALF, 0]),
+      P(tube([[0.1, -0.1, 0.12], [0.16, -0.25, 0.14], [0.1, -0.44, 0.1]], 0.024, 12, 5), C.rubber, 'rubber'),
+    ], { originY: 1.2, ...o }),
+    boneL: bake([
+      P(rcyl(0.12, 0.1, 0.34, 0.035, 16), C.steel, 'metal', [0, -0.2, 0], [0, 0, 0], [1, 1, 1], { rust: 0.3 }),
+      P(rcyl(0.045, 0.045, 0.3, 0.01, 12), C.chrome, 'chrome', [0, -0.42, 0]),
+      P(rcyl(0.07, 0.07, 0.06, 0.02, 14), C.brass, 'brass', [0, -0.28, 0]),
+      P(rbox(0.22, 0.16, 0.2, 0.05), C.steelD, 'metal', [0, -0.55, 0], [0, 0, 0], [1, 1, 1], { rust: 0.4 }),
+    ], { originY: 1.0, ...o }),
+    hose: bake([
+      P(tube([[0, 0, 0], [0.14, 0.05, 0.1], [0.26, -0.15, 0.14], [0.3, -0.5, 0.12], [0.22, -0.75, 0.12]], 0.04, 24, 6), C.rubber, 'rubber'),
+      P(rcyl(0.055, 0.055, 0.08, 0.02, 12), C.chrome, 'chrome', [0.22, -0.78, 0.12]),
+    ], { originY: 1.2, ...o }),
+    glow: radialDisc(0.5, 0xffb060, 2.2),
+  };
+}
+
+// The Shielded Fizzbang: melee only, carries a vending-machine door. Extras: shieldHit() makes the door recoil and
+// flash for about 0.12 s (safe every frame). Poses: idle, walk, windup, swing, hurt, dead (aim and shoot fall back to
+// windup and swing so nothing breaks if the game asks for them).
+function makeShielded() {
+  const kind = 'shielded';
+  const variant = (variantCount[kind] = (variantCount[kind] ?? -1) + 1) % VARIANTS;
+  const geo = once(`robot:${kind}:${variant}`, () => shieldedGeo(variant));
+  const mat = pbrMat();
+  const phase = (robotCount++) * 1.7;
+  const HIP = 0.45;
+  const NECK = 1.7;
+  const meshes = [];
+  const mk = (g, m, parent, x = 0, y = 0, z = 0) => {
+    const mesh = new THREE.Mesh(g, m);
+    mesh.position.set(x, y, z);
+    mesh.userData.base = m;
+    parent.add(mesh);
+    meshes.push(mesh);
+    return mesh;
+  };
+  const group = new THREE.Group();
+  group.name = `robot-${kind}`;
+  const root = new THREE.Group();
+  group.add(root);
+  const legL = mk(geo.leg, mat, root, -0.26, HIP, 0);
+  const legR = mk(geo.leg, mat, root, 0.26, HIP, 0);
+  const upper = new THREE.Group();
+  upper.position.y = HIP;
+  root.add(upper);
+  mk(geo.torso, mat, upper);
+  const headG = new THREE.Group();
+  headG.position.y = NECK - HIP;
+  upper.add(headG);
+  mk(geo.head, mat, headG);
+  const eyeMat = new THREE.MeshBasicMaterial({ color: hdr(0xff7a1e, 3), fog: false });
+  const eyes = [-1, 1].map((side) => {
+    const e = mk(geo.eye, eyeMat, headG, side * 0.17, 2.06 - NECK, -0.305);
+    e.rotation.z = -side * 0.2;
+    return e;
+  });
+  const lampMat = new THREE.MeshBasicMaterial({ color: hdr(0xffa030, 2.6), fog: false });
+  const lamp = mk(geo.lamp, lampMat, upper, 0.0, 1.5 - HIP, 0.54);
+  const hose = new THREE.Group();
+  hose.position.set(0.3, 1.5 - HIP, 0.42);
+  upper.add(hose);
+  mk(geo.hose, mat, hose);
+
+  const armL = new THREE.Group();
+  armL.position.set(-0.64, 1.38 - HIP, 0);
+  upper.add(armL);
+  mk(geo.arm, mat, armL);
+  const fistL = mk(geo.fist, mat, armL, 0, -0.5, 0);
+
+  // right side: a ball joint, two telescoping bones and the door on the end of them
+  const S0 = new THREE.Vector3(0.64, 1.4 - HIP, 0);
+  const shoulderG = new THREE.Group();
+  shoulderG.position.copy(S0);
+  upper.add(shoulderG);
+  mk(geo.shoulder, mat, shoulderG);
+  const boneU = mk(geo.boneU, mat, upper);
+  const boneL = mk(geo.boneL, mat, upper);
+  const shieldG = new THREE.Group();
+  shieldG.name = 'shield';
+  upper.add(shieldG);
+  mk(geo.shield, mat, shieldG);
+  const glowMat = new THREE.MeshBasicMaterial({
+    vertexColors: true, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false,
+  });
+  const glow = new THREE.Mesh(geo.glow, glowMat);
+  glow.position.set(0, 0.1, -0.08);
+  glow.scale.set(1.2, 1.5, 1);
+  glow.visible = false;
+  glow.rotation.y = Math.PI;
+  shieldG.add(glow);
+
+  const rig = flickerRig(phase, eyeMat, lampMat);
+  const white = whiteMat();
+  const REST = { y: SHIELD.cy - HIP, z: SHIELD.z };
+  const rest = 0.1;
+  const down = new THREE.Vector3(0, -1, 0);
+  const _G = new THREE.Vector3();
+  const _E = new THREE.Vector3();
+  const _v = new THREE.Vector3();
+  const _pole = new THREE.Vector3(0.9, -0.45, 0.55);
+  let limp = 0; // 0..1: the right arm hangs instead of holding the door
+
+  function reset() {
+    root.position.set(0, 0, 0);
+    root.rotation.set(0, 0, 0);
+    legL.rotation.set(0, 0, 0);
+    legR.rotation.set(0, 0, 0);
+    upper.position.set(0, HIP, 0);
+    upper.rotation.set(0, 0, 0);
+    upper.scale.set(1, 1, 1);
+    headG.position.set(0, NECK - HIP, 0);
+    headG.rotation.set(0, 0, 0);
+    armL.rotation.set(0, 0, -rest);
+    fistL.position.set(0, -0.5, 0);
+    hose.rotation.set(0, 0, 0);
+    shoulderG.position.copy(S0);
+    if (shieldG.parent !== upper) upper.add(shieldG);
+    shieldG.position.set(0, REST.y, REST.z);
+    shieldG.rotation.set(0, 0, 0);
+    glow.visible = false;
+    limp = 0;
+    for (const e of eyes) {
+      e.visible = true;
+      e.scale.set(1, 1, 1);
+    }
+    lamp.visible = true;
+  }
+  const eyeScale = (s) => {
+    for (const e of eyes) e.scale.set(s, s, 1);
+  };
+
+  function idle(t) {
+    const s = t + phase;
+    upper.scale.y = 1 + 0.012 * Math.sin(s * 2.2);
+    upper.scale.x = upper.scale.z = 1 - 0.005 * Math.sin(s * 2.2);
+    upper.rotation.z = 0.02 * Math.sin(s * 1.1);
+    upper.rotation.x = 0.02 * Math.sin(s * 0.9 + 1);
+    armL.rotation.x = 0.06 * Math.sin(s * 1.7);
+    fistL.position.y = -0.5 + 0.012 * Math.sin(s * 2.6);
+    headG.rotation.y = 0.1 * Math.sin(s * 0.7);
+    headG.rotation.x = 0.02 * Math.sin(s * 1.3);
+    hose.rotation.set(0.05 * Math.sin(s * 1.3 + 1), 0, 0.07 * Math.sin(s * 1.9));
+    shieldG.position.y += 0.012 * Math.sin(s * 2.2);
+    shieldG.position.x = 0.015 * Math.sin(s * 1.3);
+    shieldG.rotation.y = 0.03 * Math.sin(s * 0.8);
+    shieldG.rotation.z = 0.012 * Math.sin(s * 1.6);
+    eyeScale(1 + 0.08 * Math.sin(s * 5));
+  }
+
+  function walk(t) {
+    const c = t * 5.5 + phase;
+    const sL = Math.sin(c);
+    legL.rotation.x = sL * 0.7;
+    legR.rotation.x = -sL * 0.7;
+    armL.rotation.x = -sL * 0.5;
+    root.position.y = Math.abs(sL) * 0.05;
+    upper.rotation.z = sL * 0.04;
+    upper.rotation.x = -0.05 + 0.02 * Math.cos(c * 2);
+    headG.rotation.y = -sL * 0.05;
+    headG.rotation.x = 0.04 - 0.03 * Math.cos(c * 2);
+    fistL.position.y = -0.5 + 0.02 * Math.cos(c);
+    hose.rotation.set(0.12 * Math.cos(c * 2), 0, 0.12 * sL);
+    // the door is heavy: it lags and rocks with each step
+    shieldG.position.y += 0.03 * Math.abs(Math.cos(c));
+    shieldG.position.x = 0.03 * sL;
+    shieldG.rotation.y = 0.06 * sL;
+    shieldG.rotation.z = 0.03 * Math.cos(c);
+    eyeScale(1 + 0.05 * Math.sin(c * 2));
+  }
+
+  // The door is drawn back and turned, the whole body coils behind it.
+  function windup(k) {
+    const a = easeOut(k);
+    shieldG.position.z = lerp(REST.z, -0.66, a);
+    shieldG.position.y += 0.08 * a;
+    shieldG.position.x = -0.05 * a;
+    shieldG.rotation.y = 0.45 * a;
+    shieldG.rotation.x = 0.12 * a;
+    upper.rotation.y = 0.28 * a;
+    upper.rotation.x = -0.1 * a;
+    upper.rotation.z = Math.sin(k * 60) * 0.012 * a;
+    root.position.y = -0.04 * a;
+    legL.rotation.x = 0.25 * a;
+    legR.rotation.x = -0.2 * a;
+    headG.rotation.x = -0.1 * a;
+    headG.rotation.y = -0.2 * a;
+    armL.rotation.x = 0.5 * a;
+    armL.rotation.z = -rest - 0.25 * a;
+    fistL.position.y = -0.5 + 0.1 * a;
+    hose.rotation.x = -0.3 * a;
+    eyeScale(1 + 0.4 * a);
+  }
+
+  // Shove: the door is slammed forward and the body follows it in, then everything settles.
+  function swing(k) {
+    const p = clamp(k / 0.35, 0, 1);
+    const slam = easeIn(p);
+    const q = Math.max(0, k - 0.35);
+    const settle = smooth(clamp(q / 0.6, 0, 1));
+    const osc = Math.sin(q * 18) * Math.exp(-q * 6);
+    shieldG.position.z = lerp(-0.66, -1.12, slam) + settle * 0.2 + osc * 0.03;
+    shieldG.position.y += 0.08 * (1 - slam) - 0.02 * slam;
+    shieldG.position.x = lerp(-0.05, 0, slam);
+    shieldG.rotation.y = lerp(0.45, -0.08, slam) * (1 - settle);
+    shieldG.rotation.x = lerp(0.12, -0.1, slam) * (1 - settle);
+    shoulderG.position.z = -0.22 * slam * (1 - settle);
+    upper.rotation.y = lerp(0.28, -0.18, slam) * (1 - settle);
+    upper.rotation.x = lerp(-0.1, 0.22, slam) * (1 - settle * 0.6);
+    root.position.z = -0.32 * slam * (1 - settle * 0.7);
+    root.position.y = k > 0.35 ? -0.045 * Math.exp(-q * 10) : -0.04 * (1 - slam);
+    legL.rotation.x = lerp(0.25, -0.2, slam);
+    legR.rotation.x = lerp(-0.2, 0.3, slam);
+    headG.rotation.x = lerp(-0.1, 0.2, slam);
+    headG.rotation.y = lerp(-0.2, 0, slam);
+    armL.rotation.x = lerp(0.5, -0.2, slam);
+    armL.rotation.z = -rest - 0.25 * (1 - slam);
+    hose.rotation.x = lerp(-0.3, 0.5, slam) + osc * 0.2;
+    eyeScale(1.3);
+  }
+
+  function hurt(t) {
+    idle(t);
+    const s = Math.max(0, 1 - t / 0.4);
+    upper.rotation.x += 0.3 * s * (1 + 0.3 * Math.cos(t * 18));
+    upper.rotation.z += Math.sin(t * 38) * s * 0.08;
+    root.position.z = 0.1 * s;
+    headG.rotation.x = 0.4 * s;
+    armL.rotation.x += 0.5 * s;
+    fistL.position.y += 0.06 * s;
+    shieldG.position.z += 0.1 * s;
+    shieldG.rotation.x += 0.12 * s;
+    hose.rotation.x += 0.6 * s * Math.sin(t * 20);
+    eyeScale(1 + 0.5 * s);
+  }
+
+  // Topples backwards like the rest, but the door is thrown clear and lands flat in front of the body.
+  function dead(k) {
+    const fall = easeIn(clamp(k / 0.7, 0, 1));
+    const bounce = k > 0.7 ? Math.sin(clamp((k - 0.7) / 0.3, 0, 1) * Math.PI) * 0.06 : 0;
+    const theta = fall * HALF;
+    root.rotation.x = theta;
+    root.rotation.z = 0.15 * fall;
+    root.position.y = 0.5 * Math.sin(theta) + bounce;
+    root.position.z = 0.2 * fall;
+    const pop = smooth(clamp((k - 0.5) / 0.4, 0, 1));
+    headG.position.x = 0.6 * pop;
+    headG.position.y = NECK - HIP - 0.2 * pop;
+    headG.position.z = -0.2 * pop;
+    headG.rotation.z = -0.8 * pop;
+    headG.rotation.y = 0.6 * pop;
+    upper.rotation.z = 0.2 * fall;
+    armL.rotation.x = 0.4 * fall;
+    armL.rotation.z = -rest - 1.1 * fall;
+    fistL.position.y = -0.5 - 0.25 * fall;
+    legL.rotation.x = 0.5 * fall;
+    legR.rotation.x = -0.3 * fall;
+    legR.rotation.z = 0.3 * fall;
+    hose.rotation.z = 0.7 * fall;
+    limp = fall;
+    // the door tips forward off its bottom edge, thumps down and rings once
+    group.add(shieldG);
+    const tip = easeIn(clamp(k / 0.5, 0, 1));
+    const th = HALF * tip;
+    const yb = lerp(0.2, 0.07, tip);
+    const ring = k > 0.5 ? Math.sin(clamp((k - 0.5) / 0.25, 0, 1) * Math.PI) * 0.05 : 0;
+    shieldG.position.set(0, yb + SHIELD.h / 2 * Math.cos(th) + 0.05 * Math.sin(th) + ring, SHIELD.z - SHIELD.h / 2 * Math.sin(th));
+    shieldG.rotation.set(-th, 0, 0);
+    const on = k < 0.12 || (k < 0.5 && Math.sin(k * 90) > 0);
+    for (const e of eyes) e.visible = on;
+    lamp.visible = on;
+  }
+
+  // Shield hit: a timer that update(dt) runs down, and a wall-clock stamp as a back-stop for callers that never update.
+  let hitT = 0;
+  let hitAt = -1e9;
+  function hitFactor() {
+    return clamp(Math.min(hitT / 0.12, 1 - (wallNow() - hitAt) / 120), 0, 1);
+  }
+  function shieldHit() {
+    hitT = 0.12;
+    hitAt = wallNow();
+  }
+
+  // The right arm follows the door's handle, wherever the pose has put it.
+  function placeArm() {
+    if (limp > 0) {
+      _G.copy(S0).add(_v.set(0.15, -0.9, 0.15 * limp)); // hanging: a point below the shoulder
+    } else {
+      _G.set(SHIELD.grip[0], SHIELD.grip[1], SHIELD.grip[2]).applyEuler(shieldG.rotation).add(shieldG.position);
+    }
+    const S = shoulderG.position;
+    const stretch = twoBone(S, _G, _pole, 0.5, 0.55, _E);
+    boneU.position.copy(S);
+    boneU.quaternion.setFromUnitVectors(down, _v.copy(_E).sub(S).normalize());
+    boneU.scale.set(1, stretch, 1);
+    boneL.position.copy(_E);
+    boneL.quaternion.setFromUnitVectors(down, _v.copy(_G).sub(_E).normalize());
+    boneL.scale.set(1, stretch, 1);
+  }
+
+  function setPose(state, t, k) {
+    t = Math.max(0, num(t, 0));
+    k = clamp(num(k, 0), 0, 1);
+    reset();
+    switch (state) {
+      case 'walk': walk(t); break;
+      case 'windup': case 'aim': windup(k); break;
+      case 'swing': case 'shoot': swing(k); break;
+      case 'hurt': hurt(t); break;
+      case 'dead': dead(k); break;
+      default: idle(t);
+    }
+    const f = state === 'dead' ? 0 : hitFactor();
+    if (f > 0) {
+      shieldG.position.z += 0.1 * f;
+      shieldG.rotation.x += 0.07 * f;
+      shieldG.rotation.z += 0.03 * f * Math.sin(wallNow() * 0.05);
+      upper.rotation.x += 0.03 * f;
+      glow.visible = true;
+      glowMat.opacity = f;
+    }
+    placeArm();
+  }
+
+  function flash(on) {
+    for (const m of meshes) m.material = on ? white : m.userData.base;
+  }
+
+  function update(dt) {
+    hitT = Math.max(0, hitT - Math.max(0, num(dt, 0)));
+    rig.update(dt);
+  }
+
+  setPose('idle', 0, 0);
+  return { group, height: 2.1, radius: 0.7, headY: 1.7, eyes, setPose, flash, update, shieldHit, muzzle: null };
+}
+
+// ---- The Tour Guide ----
+
+// Tartan from flat-coloured cells: `at(u, v, out)` writes a point on any surface, each cell takes the colour of the
+// warp stripe crossing the weft stripe, normals follow the surface. Cheap, and it reads as plaid at game distances.
+const TARTAN = { r: 0xa3202a, g: 0x1f5a36, k: 0x14161c, y: 0xd2ae3a };
+const TARTAN_SETT = 'rrkgggkrry'.split('').map((c) => new THREE.Color(TARTAN[c]));
+
+function tartanGeo(nu, nv, at, { inward = false, plain = null, sett = TARTAN_SETT } = {}) {
+  const pos = [];
+  const nor = [];
+  const col = [];
+  const idx = [];
+  const P0 = new THREE.Vector3();
+  const A = new THREE.Vector3();
+  const B = new THREE.Vector3();
+  const Nn = new THREE.Vector3();
+  const pts = [];
+  const nrm = [];
+  const e = 0.002;
+  for (let j = 0; j <= nv; j++) {
+    for (let i = 0; i <= nu; i++) {
+      const u = i / nu;
+      const v = j / nv;
+      at(u, v, P0);
+      at(Math.min(1, u + e), v, A);
+      at(Math.max(0, u - e), v, B);
+      const du = A.clone().sub(B);
+      at(u, Math.min(1, v + e), A);
+      at(u, Math.max(0, v - e), B);
+      const dv = A.sub(B);
+      Nn.crossVectors(du, dv).normalize();
+      if (Nn.x * P0.x + Nn.z * P0.z < 0) Nn.negate(); // surfaces here all wrap an upright axis: outward
+      if (inward) Nn.negate();
+      pts.push(P0.clone());
+      nrm.push(Nn.clone());
+    }
+  }
+  const W = nu + 1;
+  const c = new THREE.Color();
+  let n = 0;
+  for (let j = 0; j < nv; j++) {
+    for (let i = 0; i < nu; i++) {
+      const corners = [j * W + i, j * W + i + 1, (j + 1) * W + i + 1, (j + 1) * W + i];
+      if (plain !== null) c.set(plain);
+      else {
+        c.copy(sett[i % sett.length]).lerp(sett[j % sett.length], 0.5).multiplyScalar((i + j) % 4 < 2 ? 1 : 0.86);
+      }
+      for (const k of corners) {
+        pos.push(pts[k].x, pts[k].y, pts[k].z);
+        nor.push(nrm[k].x, nrm[k].y, nrm[k].z);
+        col.push(c.r, c.g, c.b);
+      }
+      // wind the cell so its face points the way the normal does
+      const q0 = pts[corners[0]];
+      const gn = new THREE.Vector3().crossVectors(pts[corners[1]].clone().sub(q0), pts[corners[2]].clone().sub(q0));
+      if (gn.dot(nrm[corners[0]]) >= 0) idx.push(n, n + 1, n + 2, n, n + 2, n + 3);
+      else idx.push(n, n + 2, n + 1, n, n + 3, n + 2);
+      n += 4;
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  g.setAttribute('vcol', new THREE.Float32BufferAttribute(col, 3));
+  g.setIndex(idx);
+  return g;
+}
+
+// Radius of a lathe profile at height y (profile given bottom to top as [r, y]).
+function profileR(pts, y) {
+  for (let i = 1; i < pts.length; i++) {
+    if (y <= pts[i][1]) {
+      const [r0, y0] = pts[i - 1];
+      const [r1, y1] = pts[i];
+      return lerp(r0, r1, clamp((y - y0) / (y1 - y0 || 1), 0, 1));
+    }
+  }
+  return pts[pts.length - 1][0];
+}
+
+const GUIDE = { hip: 0.8, neck: 2.15, shoulderX: 0.68, shoulderY: 1.92, wrist: -0.78, hatY: 2.58 };
+const GUIDE_BOTTLE = [[0, 0.78], [0.34, 0.78], [0.42, 0.84], [0.48, 0.95], [0.51, 1.15], [0.51, 1.35], [0.48, 1.55], [0.42, 1.72], [0.34, 1.86], [0.24, 1.98], [0.16, 2.06], [0.14, 2.18], [0, 2.18]];
+const BELL_INNER = [[0, -0.92], [0.05, -0.92], [0.05, -1.0], [0.07, -1.08], [0.14, -1.22], [0.22, -1.37], [0.3, -1.5], [0.36, -1.6], [0.36, -1.64]];
+const BELL_OUTER = [[0.36, -1.64], [0.4, -1.64], [0.4, -1.6], [0.33, -1.5], [0.24, -1.37], [0.16, -1.22], [0.1, -1.08], [0.08, -1.0], [0.08, -0.92], [0, -0.92]];
+const GUIDE_COAT = [[0.78, 0.6], [0.74, 0.75], [0.66, 1.0], [0.6, 1.25], [0.56, 1.5], [0.5, 1.68]];
+
+function tourGuideGeo(v) {
+  const HIP = GUIDE.hip;
+  const NECK = GUIDE.neck;
+  const o = { seed: v + 14, tint: [0, 0.04, -0.04][v] };
+  const BLACK = 0x1a171c;
+  const BOTTLE = 0x1f4a32;
+  const BRASS_B = 0xb08a3a;
+  const bottle = dent(lathe(GUIDE_BOTTLE, 28), [[-0.3, 0.1, -0.4, 0.2, 0.025], [0.4, -0.3, 0.2, 0.2, 0.02]]);
+  const skirt = (pts, phi0, phiL, seg = 30) => withEdge(new THREE.LatheGeometry(pts.map(([r, y]) => v2(r, y)), seg, phi0, phiL));
+  const coatOuter = skirt(GUIDE_COAT, -2.2, 4.4);
+  const coatInner = skirt(GUIDE_COAT.map(([r, y]) => [r - 0.035, y]).reverse(), -2.2, 4.4);
+
+  // the cape hangs from the shoulders round the back, the sash crosses the chest from the right shoulder
+  const capeAt = (u, w, out) => {
+    const th = lerp(-2.05, 2.05, u);
+    const y = lerp(1.98, 1.18, w);
+    const r = lerp(0.42, 0.66, Math.pow(w, 0.85)) + Math.sin(th * 5.5) * 0.04 * smooth(w);
+    out.set(Math.sin(th) * r, y, Math.cos(th) * r);
+  };
+  const cape = tartanGeo(44, 13, capeAt);
+  const capeLining = tartanGeo(10, 4, (u, w, out) => { capeAt(u, w, out); out.x *= 0.95; out.z *= 0.95; out.y -= 0.01; }, { inward: true, plain: 0x4a1216 });
+  const sashAt = (u, w, out) => {
+    const x0 = lerp(0.27, -0.4, w);
+    const y0 = lerp(1.84, 1.0, w);
+    // across the sash: perpendicular to its run in the x-y plane
+    const dx = -0.67;
+    const dy = -0.84;
+    const l = Math.hypot(dx, dy);
+    const t = (u - 0.5) * 0.26;
+    const x = x0 + (dy / l) * t * -1;
+    const y = y0 + (dx / l) * t;
+    const R = profileR(GUIDE_BOTTLE, y) + 0.03;
+    out.set(x, y, -Math.sqrt(Math.max(0.0004, R * R - x * x)));
+  };
+  const sash = tartanGeo(5, 22, sashAt);
+  const hem = tartanGeo(64, 2, (u, w, out) => {
+    const th = lerp(-2.2, 2.2, u);
+    const y = lerp(0.6, 0.74, w);
+    const r = profileR(GUIDE_COAT, y) + 0.012;
+    out.set(Math.sin(th) * r, y, Math.cos(th) * r);
+  });
+  const hatBand = tartanGeo(30, 2, (u, w, out) => {
+    const th = u * Math.PI * 2;
+    out.set(Math.sin(th) * 0.231, 0.05 + w * 0.09, Math.cos(th) * 0.231);
+  });
+  const bz = -Math.sqrt(Math.max(0.01, (profileR(GUIDE_BOTTLE, 1.78) + 0.03) ** 2 - 0.27 ** 2)) - 0.012;
+  const bolt = once('tg:bolt', () => withEdge(new THREE.CylinderGeometry(0.02, 0.02, 0.018, 5, 1)));
+  const edgeTube = (sgn) => tube([[0.63, 0.62, -0.46], [0.53, 1.0, -0.39], [0.47, 1.4, -0.34], [0.4, 1.68, -0.3]].map(([x, y, z]) => [sgn * x, y, z]), 0.028, 20, 5);
+
+  return {
+    leg: bake([
+      P(rcyl(0.15, 0.13, 0.44, 0.04, 16, 2), 0x1f3b2a, 'cloth', [0, -0.22, 0]),
+      P(rcyl(0.155, 0.155, 0.05, 0.015, 16), 0x8a1c20, 'cloth', [0, -0.46, 0]),
+      P(rcyl(0.125, 0.105, 0.3, 0.035, 16), 0x1f3b2a, 'cloth', [0, -0.6, 0]),
+      P(rcyl(0.14, 0.12, 0.15, 0.03, 16), 0xd8d2bf, 'cloth', [0, -0.66, 0]),
+      ...[0.5, 0.62, 0.74].map((y) => P(rbox(0.012, 0.012, 0.01, 0.003), C.brass, 'brass', [0, -y, -0.13])),
+      P(rbox(0.3, 0.17, 0.5, 0.08, true), BLACK, 'leather', [0, -0.725, -0.09]),
+      P(rbox(0.32, 0.05, 0.54, 0.02), C.rubber, 'rubber', [0, -0.775, -0.09]),
+      P(rbox(0.2, 0.09, 0.1, 0.04), BRASS_B, 'brass', [0, -0.73, -0.3], [0, 0, 0], [1, 1, 1], { rust: 0.15 }),
+      P(rbox(0.1, 0.1, 0.02, 0.008), BRASS_B, 'brass', [0, -0.68, -0.12]),
+      P(torus(0.14, 0.02, 14, 5), C.brass, 'brass', [0, -0.12, 0], [HALF, 0, 0]),
+    ], { originY: HIP, ...o }),
+    torso: bake([
+      P(rcyl(0.43, 0.43, 0.1, 0.03, 22), C.black, 'leather', [0, 0.86, 0]),
+      P(rbox(0.15, 0.13, 0.025, 0.012), BRASS_B, 'brass', [0, 0.86, -0.435]),
+      P(bottle, BOTTLE, 'gloss', [0, 0, 0], [0, 0, 0], [1, 1, 1], { rust: 0.12 }),
+      ...[1.0, 1.5, 1.78].map((y) => P(torus(profileR(GUIDE_BOTTLE, y) + 0.01, 0.014, 28, 5), BRASS_B, 'brass', [0, y, 0], [HALF, 0, 0])),
+      // nameplate on the belly and buttons on the coat front
+      P(rbox(0.2, 0.12, 0.02, 0.01), BRASS_B, 'brass', [0.2, 1.12, -0.515], [0, 0.15, 0]),
+      P(rbox(0.15, 0.07, 0.012, 0.005), 0x16120e, 'plastic', [0.2, 1.12, -0.527], [0, 0.15, 0]),
+      ...[0, 1, 2].map((i) => P(ball(0.022, 8, 6), BRASS_B, 'brass', [0.34 - i * 0.0, 1.45 - i * 0.2, -0.43 + i * 0.03])),
+      P(coatOuter, BLACK, 'cloth', [0, 0, 0], [0, 0, 0], [1, 1, 1], { wear: 0.4 }),
+      P(coatInner, 0x3a1014, 'cloth'),
+      P(hem, 0xffffff, 'cloth'),
+      P(capeLining, 0xffffff, 'cloth'),
+      P(cape, 0xffffff, 'cloth'),
+      P(sash, 0xffffff, 'cloth'),
+      P(edgeTube(1), BRASS_B, 'brass'),
+      P(edgeTube(-1), BRASS_B, 'brass'),
+      // collar, brooch on the sash, yoke and shoulder caps
+      P(lathe([[0.14, 1.98], [0.23, 2.04], [0.27, 2.1], [0.22, 2.18], [0.17, 2.2], [0.15, 2.12]], 20), 0xd8d2bf, 'cloth', [0, 0, 0]),
+      P(rcyl(0.07, 0.07, 0.025, 0.008, 14), BRASS_B, 'brass', [0.27, 1.78, bz], [HALF, 0, 0]),
+      P(ball(0.032, 8, 6), 0xd08a1c, 'glass', [0.27, 1.78, bz - 0.02]),
+      P(capsule(0.1, 0.8), BLACK, 'cloth', [0, 1.9, 0], [0, 0, HALF]),
+      ...[-1, 1].map((s) => P(ball(0.19, 14, 8), BRASS_B, 'brass', [s * GUIDE.shoulderX, 2.0, 0], [0, 0, 0], [1, 0.55, 1], { rust: 0.15 })),
+      // a steam pack on the back
+      P(rcyl(0.16, 0.16, 0.56, 0.05, 18), BRASS_B, 'brass', [0, 1.45, 0.76], [0, 0, 0], [1, 1, 1], { rust: 0.3 }),
+      ...[1.22, 1.68].map((y) => P(torus(0.165, 0.016, 18, 5), C.steelD, 'metal', [0, y - 0.23, 0.76], [HALF, 0, 0])),
+      P(rcyl(0.04, 0.04, 0.16, 0.012, 10), C.chrome, 'chrome', [0, 1.8, 0.76]),
+      P(torus(0.055, 0.012, 14, 5), C.chrome, 'chrome', [0.1, 1.5, 0.915]),
+      P(rcyl(0.05, 0.05, 0.02, 0.006, 14), 0xd7cfb8, 'paper', [0.1, 1.5, 0.905], [HALF, 0, 0]),
+      ...bolts(6, 0.162, 1.25, C.steelD, 0.016, 0.3).map((b) => ({ ...b, p: [b.p[0], b.p[1], b.p[2] + 0.76] })),
+    ], { base: [0, HIP, 0], ...o }),
+    head: bake([
+      P(lathe([[0, 2.15], [0.2, 2.15], [0.25, 2.2], [0.27, 2.3], [0.27, 2.56], [0.24, 2.66], [0.16, 2.72], [0, 2.74]], 26), C.cream, 'gloss', [0, 0, 0], [0, 0, 0], [1, 1, 1], { rust: 0.2 }),
+      P(rcyl(0.285, 0.285, 0.2, 0.03, 26), 0x1b1c20, 'plastic', [0, 2.45, 0]),
+      ...[-1, 1].map((s) => P(torus(0.1, 0.017, 18, 5), BRASS_B, 'brass', [s * 0.12, 2.45, -0.283])),
+      P(rbox(0.04, 0.03, 0.03, 0.01), BRASS_B, 'brass', [0, 2.45, -0.29]),
+      // handlebar moustache, mutton chops and a monocle chain
+      ...[-1, 1].map((s) => P(tube([[s * 0.02, 2.29, -0.285], [s * 0.1, 2.265, -0.3], [s * 0.2, 2.28, -0.28], [s * 0.29, 2.34, -0.24], [s * 0.3, 2.42, -0.2]], 0.032, 22, 6), 0xcfcbc0, 'cloth')),
+      ...[-1, 1].map((s) => P(ball(0.075, 10, 7), 0xcfcbc0, 'cloth', [s * 0.26, 2.3, -0.07], [0, 0, 0], [0.7, 1.5, 1])),
+      P(rbox(0.16, 0.045, 0.03, 0.012), 0x0a0a0c, 'plastic', [0, 2.2, -0.27]),
+      P(tube([[0.2, 2.38, -0.29], [0.33, 2.3, -0.24], [0.34, 2.12, -0.2]], 0.007, 14, 4), BRASS_B, 'brass'),
+      P(rcyl(0.03, 0.03, 0.016, 0.005, 10), BRASS_B, 'brass', [0.34, 2.11, -0.2], [HALF, 0, 0]),
+      P(rcyl(0.04, 0.04, 0.05, 0.015, 12), BRASS_B, 'brass', [0, 2.745, 0]),
+    ], { base: [0, NECK, 0], ...o }),
+    hat: bake([
+      P(rcyl(0.37, 0.37, 0.045, 0.018, 28), BLACK, 'cloth', [0, 0.02, 0], [0.03, 0, 0.02]),
+      P(rcyl(0.25, 0.22, 0.4, 0.03, 26), BLACK, 'cloth', [0, 0.22, 0]),
+      P(torus(0.25, 0.013, 26, 5), 0x302a30, 'cloth', [0, 0.41, 0], [HALF, 0, 0]),
+      P(hatBand, 0xffffff, 'cloth'),
+      P(rbox(0.1, 0.12, 0.02, 0.008), BRASS_B, 'brass', [0, 0.12, -0.24]),
+      P(rbox(0.055, 0.07, 0.024, 0.006), 0x120e0c, 'plastic', [0, 0.12, -0.246]),
+      P(ball(0.04, 8, 6), 0x7a3a8a, 'cloth', [0.2, 0.15, -0.15]),
+      P(cone(0.035, 0.13, 6), 0x2f6a3a, 'cloth', [0.22, 0.09, -0.15], [0.3, 0, -0.5]),
+    ], { originY: GUIDE.hatY, ...o }),
+    eye: rcyl(0.075, 0.075, 0.035, 0.012, 16),
+    arm: bake([
+      P(ball(0.14), BRASS_B, 'brass'),
+      P(rcyl(0.14, 0.115, 0.56, 0.04, 16, 2), BLACK, 'cloth', [0, -0.34, 0]),
+      P(rcyl(0.125, 0.125, 0.07, 0.02, 16), 0x8a1c20, 'cloth', [0, -0.64, 0]),
+      P(rcyl(0.1, 0.1, 0.03, 0.01, 14), BRASS_B, 'brass', [0, -0.69, 0]),
+      P(rbox(0.19, 0.2, 0.2, 0.07), C.black, 'leather', [0, -0.79, 0]),
+      P(capsule(0.035, 0.07), C.black, 'leather', [0.1, -0.76, -0.05], [0.5, 0, 0.5]),
+    ], { originY: GUIDE.shoulderY, ...o }),
+    pole: bake([
+      P(rcyl(0.04, 0.04, 2.1, 0.012, 12, 3), 0x4a3020, 'wood', [0, 0.5, 0], [0, 0, 0], [1, 1, 1], { rust: 0.1 }),
+      P(rcyl(0.055, 0.045, 0.14, 0.02, 12), BRASS_B, 'brass', [0, -0.5, 0]),
+      ...[-0.3, 0.3].map((y) => P(rcyl(0.052, 0.052, 0.04, 0.012, 12), BRASS_B, 'brass', [0, y, 0])),
+      P(rcyl(0.052, 0.052, 0.07, 0.015, 12), BRASS_B, 'brass', [0, 1.5, 0]),
+      P(ball(0.05, 8, 6), BRASS_B, 'brass', [0, 1.57, 0]),
+      P(tube([[0, 1.46, 0], [-0.05, 1.62, 0], [-0.17, 1.66, 0], [-0.26, 1.57, 0], [-0.27, 1.45, 0]], 0.014, 16, 5), BRASS_B, 'brass'),
+    ], { originY: 1.2, ...o }),
+    lantern: bake([
+      P(tube([[0, 0, 0], [0.01, -0.06, 0], [0, -0.12, 0.01], [0, -0.18, 0]], 0.012, 8, 4), C.steelD, 'metal'),
+      P(torus(0.03, 0.01, 10, 4), BRASS_B, 'brass', [0, 0.0, 0], [HALF, 0, 0]),
+      P(cone(0.17, 0.12, 8), BRASS_B, 'brass', [0, -0.25, 0], [0, 0, 0], [1, 1, 1], { rust: 0.2 }),
+      P(rcyl(0.15, 0.15, 0.025, 0.01, 8), BRASS_B, 'brass', [0, -0.32, 0]),
+      ...[[1, 1], [-1, 1], [1, -1], [-1, -1]].map(([sx, sz]) => P(rbox(0.022, 0.4, 0.022, 0.007), BRASS_B, 'brass', [sx * 0.115, -0.53, sz * 0.115])),
+      P(rbox(0.3, 0.035, 0.3, 0.012), BRASS_B, 'brass', [0, -0.74, 0], [0, 0, 0], [1, 1, 1], { rust: 0.3 }),
+      P(cone(0.1, 0.07, 8), C.steelD, 'metal', [0, -0.8, 0], [Math.PI, 0, 0]),
+    ], { originY: 1.2, ...o }),
+    cannon: bake([
+      P(ball(0.14), BRASS_B, 'brass'),
+      P(rcyl(0.14, 0.115, 0.56, 0.04, 16, 2), BLACK, 'cloth', [0, -0.34, 0]),
+      P(rcyl(0.125, 0.125, 0.07, 0.02, 16), 0x8a1c20, 'cloth', [0, -0.64, 0]),
+      P(rcyl(0.15, 0.15, 0.3, 0.04, 18), BRASS_B, 'brass', [0, -0.85, 0], [0, 0, 0], [1, 1, 1], { rust: 0.25 }),
+      ...[-0.74, -0.96].map((y) => P(torus(0.155, 0.015, 18, 5), C.steelD, 'metal', [0, y, 0], [HALF, 0, 0])),
+      P(rbox(0.07, 0.2, 0.07, 0.025), C.black, 'leather', [0, -0.88, 0.17], [-0.15, 0, 0]),
+      P(torus(0.05, 0.012, 14, 5), C.chrome, 'chrome', [0, -0.96, 0.12], [0, HALF, 0]),
+      P(tube([[0.1, -0.6, 0.1], [0.18, -0.75, 0.2], [0.1, -0.95, 0.17]], 0.022, 12, 5), C.rubber, 'rubber'),
+      P(torus(0.05, 0.012, 14, 5), C.chrome, 'chrome', [0.155, -0.85, 0], [0, HALF, 0]),
+      P(rcyl(0.045, 0.045, 0.02, 0.006, 14), 0xd7cfb8, 'paper', [0.15, -0.85, 0], [0, 0, HALF]),
+    ], { originY: GUIDE.shoulderY, ...o }),
+    barrel: bake([
+      P(lathe(BELL_INNER, 26), 0x2a1e10, 'brass', [0, 0, 0], [0, 0, 0], [1, 1, 1], { rust: 0.3 }),
+      P(lathe(BELL_OUTER, 26), BRASS_B, 'brass', [0, 0, 0], [0, 0, 0], [1, 1, 1], { rust: 0.15 }),
+      ...[-1.62, -1.37, -1.2].map((y) => P(torus(profileR(BELL_OUTER.slice(1, 8), y) + 0.012, 0.016, 24, 5), C.steelD, 'metal', [0, y, 0], [HALF, 0, 0])),
+      ...Array.from({ length: 8 }, (_, i) => P(bolt, C.steelD, 'metal', [Math.sin((i / 8) * 6.283) * 0.38, -1.645, Math.cos((i / 8) * 6.283) * 0.38], [0, 0, 0])),
+    ], { originY: GUIDE.shoulderY, ...o }),
+    tip: ball(0.07, 12, 8),
+    core: ball(0.075, 10, 8),
+    halo: radialDisc(0.4, 0xffa040, 0.7),
+  };
+}
+
+// The Tour Guide: a Bampot-camp boss, so it shoots. Poses: idle, walk, hurt, dead, aim, shoot and slam (a wide
+// overhead swing of the lantern pole; the hit lands at about k = 0.45). enrage() turns the eyes, lantern and
+// bullhorn glow hot; it is safe to call repeatedly. `muzzle` is at the bullhorn mouth.
+function makeTourGuide() {
+  const kind = 'tourguide';
+  const variant = (variantCount[kind] = (variantCount[kind] ?? -1) + 1) % VARIANTS;
+  const geo = once(`robot:${kind}:${variant}`, () => tourGuideGeo(variant));
+  const mat = pbrMat();
+  const phase = (robotCount++) * 1.7;
+  const HIP = GUIDE.hip;
+  const NECK = GUIDE.neck;
+  const SY = GUIDE.shoulderY - HIP;
+  const meshes = [];
+  const mk = (g, m, parent, x = 0, y = 0, z = 0) => {
+    const mesh = new THREE.Mesh(g, m);
+    mesh.position.set(x, y, z);
+    mesh.userData.base = m;
+    parent.add(mesh);
+    meshes.push(mesh);
+    return mesh;
+  };
+  const group = new THREE.Group();
+  group.name = `robot-${kind}`;
+  const root = new THREE.Group();
+  group.add(root);
+  const legL = mk(geo.leg, mat, root, -0.3, HIP, 0);
+  const legR = mk(geo.leg, mat, root, 0.3, HIP, 0);
+  const upper = new THREE.Group();
+  upper.position.y = HIP;
+  root.add(upper);
+  mk(geo.torso, mat, upper);
+  const headG = new THREE.Group();
+  headG.position.y = NECK - HIP;
+  upper.add(headG);
+  mk(geo.head, mat, headG);
+  const hat = mk(geo.hat, mat, headG, 0, GUIDE.hatY - NECK, 0);
+  hat.name = 'hat';
+  const eyeMat = new THREE.MeshBasicMaterial({ color: hdr(0xfff0cc, 2.6), fog: false });
+  const eyes = [-1, 1].map((s) => {
+    const e = mk(geo.eye, eyeMat, headG, s * 0.12, 2.45 - NECK, -0.272);
+    e.rotation.x = HALF;
+    return e;
+  });
+
+  // left arm holds the lantern pole; the pole pivots at the hand so it can swing on its own
+  const armL = new THREE.Group();
+  armL.position.set(-GUIDE.shoulderX, SY, 0);
+  upper.add(armL);
+  mk(geo.arm, mat, armL);
+  const poleG = new THREE.Group();
+  poleG.name = 'pole';
+  poleG.position.set(0, GUIDE.wrist, 0);
+  armL.add(poleG);
+  mk(geo.pole, mat, poleG, 0, 0, 0);
+  const lanternG = new THREE.Group();
+  lanternG.name = 'lantern';
+  lanternG.position.set(-0.27, 1.43, 0);
+  poleG.add(lanternG);
+  mk(geo.lantern, mat, lanternG);
+  const FLAME = 0xffa838;
+  const lanternMat = new THREE.MeshBasicMaterial({ color: hdr(FLAME, 4.5), fog: false });
+  const haloMat = new THREE.MeshBasicMaterial({
+    vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false,
+  });
+  const core = mk(geo.core, lanternMat, lanternG, 0, -0.53, 0);
+  core.scale.set(1, 1.5, 1);
+  const halo = new THREE.Mesh(geo.halo, haloMat);
+  halo.position.set(0, -0.53, 0);
+  lanternG.add(halo);
+  // a soft glow that always faces the camera
+  const _hq = new THREE.Quaternion();
+  const _cq = new THREE.Quaternion();
+  halo.onBeforeRender = (rend, scn, cam) => {
+    halo.parent.getWorldQuaternion(_hq).invert();
+    halo.quaternion.copy(_hq.multiply(cam.getWorldQuaternion(_cq)));
+    halo.updateMatrix();
+    halo.matrixWorld.multiplyMatrices(halo.parent.matrixWorld, halo.matrix);
+  };
+
+  // right arm: the bullhorn that fires the bottles
+  const armR = new THREE.Group();
+  armR.position.set(GUIDE.shoulderX, SY, 0);
+  upper.add(armR);
+  const cannonMesh = new THREE.Group();
+  armR.add(cannonMesh);
+  mk(geo.cannon, mat, cannonMesh);
+  const barrelG = new THREE.Group();
+  cannonMesh.add(barrelG);
+  mk(geo.barrel, mat, barrelG);
+  const tipMat = new THREE.MeshBasicMaterial({ color: hdr(0xff8a28, 2.6), fog: false });
+  const tip = mk(geo.tip, tipMat, barrelG, 0, -1.56, 0);
+  tip.scale.set(1.8, 0.5, 1.8);
+  const muzzle = new THREE.Object3D();
+  muzzle.name = 'muzzle';
+  muzzle.position.set(0, -1.66, 0);
+  barrelG.add(muzzle);
+
+  const rig = flickerRig(phase, eyeMat, null);
+  const white = whiteMat();
+  const rest = 0.12;
+  let enraged = false;
+  let flame = 1;
+
+  function reset() {
+    root.position.set(0, 0, 0);
+    root.rotation.set(0, 0, 0);
+    legL.rotation.set(0, 0, 0);
+    legR.rotation.set(0, 0, 0);
+    upper.position.set(0, HIP, 0);
+    upper.rotation.set(0, 0, 0);
+    upper.scale.set(1, 1, 1);
+    headG.position.set(0, NECK - HIP, 0);
+    headG.rotation.set(0, 0, 0);
+    hat.position.set(0, GUIDE.hatY - NECK, 0);
+    hat.rotation.set(0, 0, 0);
+    pole(0, -0.05);
+    armR.rotation.set(0.4, 0, rest);
+    barrelG.position.set(0, 0, 0);
+    tip.scale.set(1.8, 0.5, 1.8);
+    lanternG.rotation.set(0, 0, 0);
+    core.visible = true;
+    halo.visible = true;
+    for (const e of eyes) {
+      e.visible = true;
+      e.scale.set(1, 1, 1);
+    }
+  }
+  // Left arm raised by `theta`, the pole pitched to `psi` in the world (0 up, negative leans forward).
+  // The pose functions only say where the arm and pole should end up; setPose applies it once the body's lean is known,
+  // so the pole's pitch in the world is what the pose asked for whichever way the body is leaning.
+  let tTheta = 0;
+  let tPsi = 0;
+  let tOut = rest;
+  function pole(theta, psi, out = rest) {
+    tTheta = theta;
+    tPsi = psi;
+    tOut = out;
+  }
+  const eyeScale = (s) => {
+    const k = s * (enraged ? 1.12 : 1);
+    for (const e of eyes) e.scale.set(k, k, 1);
+  };
+
+  function idle(t) {
+    const s = t + phase;
+    const hot = enraged ? 1.5 : 1;
+    upper.scale.y = 1 + 0.01 * Math.sin(s * 2 * hot);
+    upper.scale.x = upper.scale.z = 1 - 0.004 * Math.sin(s * 2 * hot);
+    upper.rotation.z = 0.02 * Math.sin(s * 1.05);
+    upper.rotation.x = 0.015 * Math.sin(s * 0.8 + 1);
+    pole(0.03 * Math.sin(s * 1.5), -0.06 + 0.03 * Math.sin(s * 1.2));
+    armR.rotation.x = 0.4 + 0.04 * Math.sin(s * 1.6 + 1.5);
+    headG.rotation.y = 0.18 * Math.sin(s * 0.6);
+    headG.rotation.x = 0.02 * Math.sin(s * 1.3);
+    hat.rotation.z = 0.02 * Math.sin(s * 1.1);
+    lanternG.rotation.set(0.07 * Math.sin(s * 1.9), 0, 0.11 * Math.sin(s * 1.4 + 1));
+    eyeScale(1 + 0.08 * Math.sin(s * 5));
+  }
+
+  function walk(t) {
+    const c = t * 5.4 * (enraged ? 1.15 : 1) + phase;
+    const sL = Math.sin(c);
+    legL.rotation.x = sL * 0.62;
+    legR.rotation.x = -sL * 0.62;
+    root.position.y = Math.abs(sL) * 0.05;
+    upper.rotation.z = sL * 0.04;
+    upper.rotation.x = -0.07 + 0.02 * Math.cos(c * 2);
+    // the pole is planted every other step like a walking stick
+    pole(-sL * 0.12, -0.12 - sL * 0.14);
+    armR.rotation.x = 0.5 + 0.06 * sL;
+    headG.rotation.y = -sL * 0.05;
+    headG.rotation.x = 0.04 - 0.03 * Math.cos(c * 2);
+    hat.rotation.z = 0.04 * Math.cos(c * 2);
+    lanternG.rotation.set(0.2 * Math.cos(c), 0, 0.15 * sL);
+    eyeScale(1 + 0.05 * Math.sin(c * 2));
+  }
+
+  function aim(t) {
+    const a = easeOut(clamp(t / 0.3, 0, 1));
+    const sway = Math.sin(t * 7 + phase) * 0.012;
+    armR.rotation.x = lerp(0.4, 1.35, a) + sway + Math.sin(a * Math.PI) * 0.06;
+    armR.rotation.z = lerp(rest, 0.03, a);
+    pole(0.3 * a, -0.06 + 0.1 * a);
+    upper.rotation.x = -0.06 * a;
+    headG.rotation.x = 0.08 * a;
+    barrelG.position.y = 0.04 * (1 - a);
+    hat.rotation.z = 0.02 * Math.sin(t * 30) * (1 - a);
+    lanternG.rotation.set(0.05 * Math.sin(t * 5), 0, 0.1 * Math.sin(t * 4));
+    eyeScale(1 + 0.2 * a);
+  }
+
+  function shoot(k) {
+    const r = Math.exp(-k * 7);
+    armR.rotation.x = 1.35 + 0.45 * r;
+    armR.rotation.z = 0.03;
+    barrelG.position.y = 0.26 * r;
+    tip.scale.set(1.8 + 1.4 * r, 0.5 + 1.2 * r, 1.8 + 1.4 * r);
+    pole(0.3, 0.04);
+    upper.rotation.x = 0.2 * r - 0.06;
+    root.position.z = 0.14 * r;
+    headG.rotation.x = 0.08 + 0.2 * r;
+    hat.rotation.z = Math.sin(k * 70) * 0.07 * r;
+    hat.position.y += 0.02 * r;
+    lanternG.rotation.set(0.5 * r * Math.sin(k * 30), 0, 0.3 * r);
+    eyeScale(1.2 + 0.3 * r);
+  }
+
+  // Overhead swing of the pole. k 0..0.3 raises it back over the shoulder, a beat of shudder, then the fast arc down
+  // through the vertical (impact at k about 0.45), and the follow-through eases back towards a guard.
+  function slam(k) {
+    const w = easeOut(clamp(k / 0.27, 0, 1));
+    const s = Math.pow(clamp((k - 0.3) / 0.15, 0, 1), 1.7);
+    const q = clamp((k - 0.45) / 0.55, 0, 1);
+    const rec = smooth(clamp((q - 0.25) / 0.75, 0, 1));
+    const osc = k > 0.45 ? Math.sin((k - 0.45) * 26) * Math.exp(-(k - 0.45) * 9) : 0;
+    const theta = lerp(lerp(0, 1.5, w), 1.3, s);
+    const psi = lerp(lerp(-0.06, 1.25, w), -1.75, s);
+    pole(lerp(theta, 0.2, rec), lerp(psi - osc * 0.2, -0.3, rec), lerp(rest, 0.02, w * (1 - rec)));
+    const shudder = k > 0.26 && k < 0.31 ? Math.sin(k * 300) * 0.015 : 0;
+    upper.rotation.x = lerp(lerp(0, -0.2, w) + shudder, 0.38, s) * (1 - rec) + 0.05 * osc;
+    upper.rotation.y = lerp(0, 0.3, w) * (1 - s) * (1 - rec);
+    root.position.z = -0.5 * s * (1 - rec * 0.8);
+    root.position.y = -0.06 * s * (1 - rec);
+    legL.rotation.x = lerp(0, 0.3, w) * (1 - rec) - 0.35 * s * (1 - rec);
+    legR.rotation.x = lerp(0, -0.25, w) * (1 - rec) + 0.4 * s * (1 - rec);
+    headG.rotation.x = lerp(-0.12 * w, 0.3, s) * (1 - rec);
+    hat.rotation.x = -0.12 * s * (1 - rec);
+    armR.rotation.x = 0.4 - 0.55 * w * (1 - rec) + 0.7 * s * (1 - rec);
+    lanternG.rotation.set(-0.6 * s * (1 - rec) + osc * 0.6, 0, 0.35 * w * (1 - s));
+    eyeScale(1.35);
+  }
+
+  function hurt(t) {
+    idle(t);
+    const s = Math.max(0, 1 - t / 0.4);
+    upper.rotation.x += 0.34 * s * (1 + 0.3 * Math.cos(t * 18));
+    upper.rotation.z += Math.sin(t * 38) * s * 0.08;
+    root.position.z = 0.1 * s;
+    headG.rotation.x = 0.4 * s;
+    tTheta += 0.3 * s;
+    armR.rotation.x += 0.4 * s;
+    hat.position.y += 0.06 * s;
+    hat.rotation.z = Math.sin(t * 45) * 0.12 * s;
+    lanternG.rotation.z += 0.5 * s * Math.sin(t * 22);
+    eyeScale(1 + 0.5 * s);
+  }
+
+  function dead(k) {
+    // Topples backwards; the hat spins off, the pole drops and the lantern gutters out.
+    const fall = easeIn(clamp(k / 0.7, 0, 1));
+    const bounce = k > 0.7 ? Math.sin(clamp((k - 0.7) / 0.3, 0, 1) * Math.PI) * 0.07 : 0;
+    const theta = fall * HALF;
+    root.rotation.x = theta;
+    root.rotation.z = 0.12 * fall;
+    root.position.y = 0.5 * Math.sin(theta) + bounce;
+    root.position.z = 0.25 * fall;
+    const pop = smooth(clamp((k - 0.45) / 0.45, 0, 1));
+    headG.rotation.z = -0.5 * pop;
+    headG.rotation.y = 0.5 * pop;
+    headG.position.y = NECK - HIP - 0.1 * pop;
+    hat.position.x = 0.7 * pop;
+    hat.position.y = GUIDE.hatY - NECK + 0.7 * Math.sin(pop * Math.PI) - 0.2 * pop;
+    hat.position.z = -0.5 * pop;
+    hat.rotation.z = 3.2 * pop;
+    upper.rotation.z = 0.2 * fall;
+    pole(0.5 * fall, 0.4 * fall, rest + 0.9 * fall);
+    armR.rotation.set(0.4 - 0.7 * fall, 0, rest + 0.9 * fall);
+    barrelG.position.y = 0.05 * fall;
+    legL.rotation.x = 0.5 * fall;
+    legR.rotation.x = -0.3 * fall;
+    legR.rotation.z = 0.3 * fall;
+    lanternG.rotation.set(0.4 * fall, 0, 0.4 * fall);
+    const on = k < 0.12 || (k < 0.5 && Math.sin(k * 90) > 0);
+    for (const e of eyes) e.visible = on;
+    const lit = k < 0.3 || (k < 0.7 && Math.sin(k * 60) > 0);
+    core.visible = lit;
+    halo.visible = lit;
+  }
+
+  function setPose(state, t, k) {
+    t = Math.max(0, num(t, 0));
+    k = clamp(num(k, 0), 0, 1);
+    reset();
+    switch (state) {
+      case 'walk': walk(t); break;
+      case 'aim': aim(t); break;
+      case 'shoot': shoot(k); break;
+      case 'slam': case 'swing': slam(k); break;
+      case 'windup': slam(k * 0.3); break;
+      case 'hurt': hurt(t); break;
+      case 'dead': dead(k); break;
+      default: idle(t);
+    }
+    const lean = state === 'dead' ? 0 : upper.rotation.x;
+    armL.rotation.set(tTheta, 0, -tOut);
+    poleG.rotation.set(tPsi - tTheta - lean, 0, 0);
+    lanternG.rotation.x -= tPsi * 0.9; // the lantern hangs from its hook whichever way the pole points
+  }
+
+  function flash(on) {
+    for (const m of meshes) m.material = on ? white : m.userData.base;
+  }
+
+  function enrage() {
+    if (!enraged) {
+      enraged = true;
+      rig.tintEyes(0xff1e0a, 2.4);
+      lanternMat.color.copy(hdr(0xff3a10, 4.5));
+      haloMat.color.setRGB(1, 0.3, 0.2); // the glow's vertex colours are amber: this pushes them towards red
+      tipMat.color.copy(hdr(0xff2a08, 3.2));
+      halo.scale.setScalar(1.2);
+    }
+  }
+
+  let clock = 0;
+  function update(dt) {
+    rig.update(dt);
+    clock += clamp(num(dt, 0), 0, 0.1);
+    const f = 1 + 0.16 * Math.sin(clock * 23 + phase) * Math.sin(clock * 7.3) + 0.06 * Math.sin(clock * 41);
+    if (Math.abs(f - flame) > 1e-4) {
+      lanternMat.color.multiplyScalar(f / flame);
+      flame = f;
+    }
+  }
+
+  setPose('idle', 0, 0);
+  return {
+    group, height: 3.0, radius: 0.9, headY: 2.45, eyes, setPose, flash, update, enrage, muzzle,
+    get enraged() { return enraged; },
+  };
+}
+
+// ---------------------------------------------------------------------------------------------
 // Weapons
 // ---------------------------------------------------------------------------------------------
 
-export const WEAPON_IDS = ['pistol', 'shotgun', 'smg', 'launcher'];
+export const WEAPON_IDS = ['pistol', 'shotgun', 'smg', 'launcher', 'vinyl'];
 
 // Plinth ring colour per weapon and the colour of each gun's small indicator lamp.
-const WEAPON_COLOUR = { pistol: COLOURS.cyan, shotgun: COLOURS.amber, smg: 0xa77bff, launcher: COLOURS.magenta };
+const WEAPON_COLOUR = { pistol: COLOURS.cyan, shotgun: COLOURS.amber, smg: 0xa77bff, launcher: COLOURS.magenta, vinyl: 0xff4fd8 };
 const WOOD = 0x6b4a2c;
 const TAPE = 0x4c483f;
 const BRASS = 0x9a7a34;
@@ -1018,6 +2158,89 @@ const GW = { originY: 1.3 }; // weapons are not grimed towards the floor
 const rot = (a, b = 0, c = 0) => [a, b, c];
 const gp = (...a) => P(...a);
 const fwd = [HALF, 0, 0]; // lay a cylinder along z
+
+
+// Glowing parts merged into one geometry with HDR vertex colours (for MeshBasicMaterial({ vertexColors: true })).
+// parts: { geo, hex, k, p, r, s }
+function glowMerge(parts) {
+  const pos = [];
+  const nor = [];
+  const col = [];
+  const idx = [];
+  let off = 0;
+  for (const o of parts) {
+    const g = o.geo;
+    _e.set(...(o.r || [0, 0, 0]));
+    _q.setFromEuler(_e);
+    _p.set(...(o.p || [0, 0, 0]));
+    _s.set(...(o.s || [1, 1, 1]));
+    _m.compose(_p, _q, _s);
+    _nm.getNormalMatrix(_m);
+    const c = hdr(o.hex, o.k);
+    const Pa = g.attributes.position;
+    const Na = g.attributes.normal;
+    for (let i = 0; i < Pa.count; i++) {
+      _vv.fromBufferAttribute(Pa, i).applyMatrix4(_m);
+      _nn.fromBufferAttribute(Na, i).applyMatrix3(_nm).normalize();
+      pos.push(_vv.x, _vv.y, _vv.z);
+      nor.push(_nn.x, _nn.y, _nn.z);
+      col.push(c.r, c.g, c.b);
+    }
+    const ia = g.index.array;
+    for (let t = 0; t < ia.length; t++) idx.push(ia[t] + off);
+    off += Pa.count;
+  }
+  const out = new THREE.BufferGeometry();
+  out.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  out.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  out.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  out.setIndex(idx);
+  out.computeBoundingSphere();
+  return out;
+}
+
+// A vinyl record of radius R lying flat (axis y): black grooved disc and a two-tone HDR label, one half magenta and one
+// half hot pink with a notch cut out, so a spin is easy to see. Returns a Group named 'record'; spin it about y.
+const flatRing = (r0, r1, a0 = 0, a = Math.PI * 2) => new THREE.RingGeometry(r0, r1, 40, 1, a0, a);
+function recordParts(R) {
+  const h = R * 0.06; // half thickness
+  const top = [-HALF, 0, 0];
+  const bot = [HALF, 0, 0];
+  const grooves = [[0.9, 0.95], [0.8, 0.84], [0.7, 0.74], [0.6, 0.64], [0.5, 0.53]];
+  return {
+    vinyl: [
+      P(lathe([[0, -h], [R - 0.004, -h], [R, -h + 0.004], [R, h - 0.004], [R - 0.004, h], [0, h]], 40), 0x0b0b0e, 'gloss'),
+      ...grooves.flatMap(([a, b]) => [
+        P(flatRing(R * a, R * b), 0x2c2c36, 'gloss', [0, h + 0.0004, 0], top),
+        P(flatRing(R * a, R * b), 0x2c2c36, 'gloss', [0, -h - 0.0004, 0], bot),
+      ]),
+      P(withEdge(new THREE.CylinderGeometry(R * 0.07, R * 0.07, h * 4, 14, 1)), C.chrome, 'chrome'),
+    ],
+    label: [
+      // the main label with a 50-degree notch, a half-ring inside it in a hotter pink, and a pip on the rim
+      { geo: flatRing(R * 0.2, R * 0.46, 0.9, Math.PI * 2 - 0.9), hex: COLOURS.magenta, k: 3.2, p: [0, h + 0.0012, 0], r: top },
+      { geo: flatRing(R * 0.2, R * 0.46, 0.9, Math.PI * 2 - 0.9), hex: COLOURS.magenta, k: 3.2, p: [0, -h - 0.0012, 0], r: bot },
+      { geo: flatRing(R * 0.1, R * 0.2, 0, Math.PI), hex: 0xffa6e6, k: 3.4, p: [0, h + 0.0016, 0], r: top },
+      { geo: flatRing(R * 0.1, R * 0.2, 0, Math.PI), hex: 0xffa6e6, k: 3.4, p: [0, -h - 0.0016, 0], r: bot },
+      { geo: new THREE.SphereGeometry(R * 0.07, 8, 6), hex: 0xffffff, k: 4, p: [R * 0.78, 0, 0] },
+    ],
+  };
+}
+
+function makeRecord(R, seed = 5) {
+  const g = new THREE.Group();
+  g.name = 'record';
+  const geo = once(`record:${R}`, () => {
+    const parts = recordParts(R);
+    return { vinyl: bake(parts.vinyl, { ...GW, seed }), label: glowMerge(parts.label) };
+  });
+  const body = new THREE.Mesh(geo.vinyl, pbrMat());
+  body.name = 'vinyl';
+  const label = new THREE.Mesh(geo.label, once('recordLabelMat', () => new THREE.MeshBasicMaterial({ vertexColors: true, fog: false })));
+  label.name = 'label';
+  g.add(body, label);
+  return g;
+}
 
 const WEAPON_PARTS = {
   pistol() {
@@ -1132,6 +2355,67 @@ const WEAPON_PARTS = {
       ],
     };
   },
+  // The Vinyl Disc: a chunky black turntable deck with a record spinning on a tilted platter and a chrome flinger rail
+  // at the front. The platter ('cradle') is tilted back towards the player so the label shows; the record itself is a
+  // named, spinnable group added by makeWeaponModel.
+  vinyl() {
+    const rake = rot(-0.2);
+    const sides = [-1, 1];
+    const cyl = (r, h, seg = 24) => withEdge(new THREE.CylinderGeometry(r, r, h, seg, 1));
+    return {
+      muzzle: [0, 0.19, -0.54],
+      lamp: [-0.1, 0.082, 0.07],
+      cradleAt: [0, 0.128, -0.1],
+      cradleTilt: 0.36,
+      body: [
+        gp(rbox(0.28, 0.075, 0.46, 0.024, true), 0x1c1c22, 'plastic', [0, 0.03, -0.1]),
+        gp(rbox(0.26, 0.012, 0.44, 0.005), 0x2c2c34, 'metal', [0, 0.07, -0.1]),
+        gp(rbox(0.282, 0.012, 0.02, 0.004), C.chrome, 'chrome', [0, 0.062, -0.328]),
+        gp(rbox(0.282, 0.012, 0.02, 0.004), C.chrome, 'chrome', [0, 0.062, 0.128]),
+        ...sides.map((sx) => gp(rbox(0.014, 0.012, 0.45, 0.004), C.chrome, 'chrome', [sx * 0.138, 0.062, -0.1])),
+        ...sides.flatMap((sx) => [0.1, -0.3].map((z) => gp(rbox(0.04, 0.03, 0.04, 0.012), 0x161616, 'rubber', [sx * 0.115, -0.012, z]))),
+        // the platter's pivot block, and the front flinger rail: two chrome rods climbing on a rubber strip to a gate
+        gp(rcyl(0.06, 0.08, 0.07, 0.015, 18), STEEL, 'metal', [0, 0.085, -0.1]),
+        ...sides.map((sx) => gp(rcyl(0.011, 0.011, 0.35, 0.004, 10), C.chrome, 'chrome', [sx * 0.05, 0.133, -0.37], [HALF + 0.19, 0, 0])),
+        gp(rbox(0.08, 0.008, 0.31, 0.003), 0x161616, 'rubber', [0, 0.124, -0.37], [0.19, 0, 0]),
+        gp(rbox(0.15, 0.036, 0.022, 0.008), STEEL, 'metal', [0, 0.11, -0.25]),
+        ...sides.map((sx) => gp(rbox(0.014, 0.05, 0.014, 0.004), STEEL, 'metal', [sx * 0.05, 0.085, -0.25])),
+        ...sides.map((sx) => gp(rbox(0.016, 0.085, 0.016, 0.005), C.chrome, 'chrome', [sx * 0.05, 0.19, -0.54])),
+        gp(rbox(0.12, 0.016, 0.016, 0.005), C.chrome, 'chrome', [0, 0.232, -0.54]),
+        gp(rbox(0.12, 0.03, 0.022, 0.008), STEEL, 'metal', [0, 0.152, -0.54]),
+        ...sides.map((sx) => gp(rbox(0.012, 0.1, 0.012, 0.004), STEEL, 'metal', [sx * 0.05, 0.085, -0.4], [-0.5, 0, 0])),
+        // deck controls: three knobs and a play button at the back left, a pitch fader at the front right
+        ...[0, 1, 2].map((i) => gp(cyl(0.017, 0.022, 14), i === 1 ? BRASS : C.chrome, i === 1 ? 'brass' : 'chrome', [-0.095, 0.085, 0.1 - i * 0.05])),
+        gp(rbox(0.014, 0.005, 0.12, 0.002), 0x050505, 'plastic', [0.1, 0.077, -0.2]),
+        gp(rbox(0.03, 0.016, 0.022, 0.006), BRASS, 'brass', [0.1, 0.082, -0.18]),
+        // side speaker: paper cone, chrome ring, brass plate
+        gp(cyl(0.05, 0.012, 28), PAPER, 'paper', [-0.14, 0.025, -0.14], [0, 0, HALF]),
+        gp(new THREE.TorusGeometry(0.054, 0.008, 5, 28), C.chrome, 'chrome', [-0.145, 0.025, -0.14], [0, HALF, 0]),
+        gp(cyl(0.014, 0.014, 10), C.chrome, 'chrome', [-0.148, 0.025, -0.14], [0, 0, HALF]),
+        gp(rbox(0.006, 0.028, 0.08, 0.002), BRASS, 'brass', [-0.142, 0.028, 0.03]),
+        // grips: a raked rubber handle with tape wraps, a fore-grip, a trigger ring and the cable
+        gp(rbox(0.058, 0.17, 0.075, 0.02, true), 0x161616, 'rubber', [0, -0.09, 0.06], rake),
+        ...[-0.05, -0.01, 0.03, 0.07].map((d) => gp(rbox(0.062, 0.012, 0.08, 0.003), TAPE, 'tape', [0, -0.09 + d, 0.06 - 0.2 * d], rake)),
+        gp(rbox(0.046, 0.1, 0.046, 0.014), 0x161616, 'rubber', [0, -0.07, -0.24]),
+        ...[-0.03, 0.0, 0.03].map((d) => gp(rbox(0.05, 0.012, 0.05, 0.003), TAPE, 'tape', [0, -0.07 + d, -0.24])),
+        gp(torus(0.026, 0.006, 14, 5), STEEL, 'metal', [0, -0.02, -0.03], [0, HALF, 0]),
+        gp(tube([[0, 0.03, 0.13], [0, 0.0, 0.22], [0.04, -0.1, 0.2], [0.02, -0.17, 0.17]], 0.009, 14, 5), C.rubber, 'rubber'),
+      ],
+      // everything on the tilted platter, in its own frame (origin at the platter centre, +y out of the platter)
+      cradle: [
+        gp(cyl(0.132, 0.022, 36), C.chrome, 'chrome', [0, 0, 0], [0, 0, 0], [1, 1, 1], { rust: 0.15 }),
+        gp(cyl(0.122, 0.008, 36), 0x5a141c, 'cloth', [0, 0.014, 0]),
+        // a chrome guide rail round the front half of the record, on four posts
+        gp(new THREE.TorusGeometry(0.15, 0.0085, 5, 28, Math.PI), C.chrome, 'chrome', [0, 0.036, 0], [-HALF, 0, 0]),
+        ...[0, 0.5, 1].map((f) => gp(rbox(0.014, 0.04, 0.014, 0.004), STEEL, 'metal', [Math.cos(f * Math.PI) * 0.15, 0.016, -Math.sin(f * Math.PI) * 0.15])),
+        // tonearm at the back right, resting over the record
+        gp(cyl(0.028, 0.04, 16), C.chrome, 'chrome', [0.15, 0.02, 0.14]),
+        gp(tube([[0.15, 0.045, 0.14], [0.15, 0.06, 0.08], [0.115, 0.06, -0.02], [0.08, 0.055, -0.09]], 0.006, 16, 5), C.chrome, 'chrome'),
+        gp(rbox(0.032, 0.008, 0.055, 0.003), C.chrome, 'chrome', [0.075, 0.05, -0.115], [0, 0.4, 0]),
+        gp(cyl(0.017, 0.045, 12), BRASS, 'brass', [0.15, 0.05, 0.18], [HALF, 0, 0]),
+      ],
+    };
+  },
 };
 
 export function makeWeaponModel(id) {
@@ -1145,6 +2429,7 @@ export function makeWeaponModel(id) {
       lamp: p.lamp,
       body: bake(p.body, { ...GW, seed }),
       pump: p.pump ? bake(p.pump, { ...GW, seed }) : null,
+      cradle: p.cradle ? { at: p.cradleAt, tilt: p.cradleTilt, geo: bake(p.cradle, { ...GW, seed }) } : null,
     };
   });
   const g = new THREE.Group();
@@ -1159,6 +2444,24 @@ export function makeWeaponModel(id) {
     const pump = new THREE.Mesh(parts.pump, pbrMat());
     pump.name = 'pump'; // slides along z for the pump action
     g.add(pump);
+  }
+  if (parts.cradle) {
+    // The record sits on the tilted platter. It spins when the integrator calls g.userData.update(t) with a clock in
+    // seconds (the pickup forwards the same call); it is also findable as g.getObjectByName('record').
+    const cradle = new THREE.Group();
+    cradle.name = 'cradle';
+    cradle.position.set(...parts.cradle.at);
+    cradle.rotation.x = parts.cradle.tilt;
+    cradle.add(new THREE.Mesh(parts.cradle.geo, pbrMat()));
+    const rec = makeRecord(0.115);
+    rec.position.y = 0.0225 + 0.115 * 0.06;
+    cradle.add(rec);
+    g.add(cradle);
+    g.userData.record = rec;
+    g.userData.update = (t) => {
+      rec.rotation.y = -num(t, 0) * 2.2;
+    };
+    g.userData.update(0);
   }
   const muzzle = new THREE.Object3D();
   muzzle.name = 'muzzle';
@@ -1184,7 +2487,7 @@ function plinth(colour, k = 2.2, extra = null) {
   return g;
 }
 
-const PICKUP_SCALE = { pistol: 2.4, shotgun: 1.9, smg: 2.0, launcher: 1.8 };
+const PICKUP_SCALE = { pistol: 2.4, shotgun: 1.9, smg: 2.0, launcher: 1.8, vinyl: 2.1 };
 
 export function makeWeaponPickup(id) {
   const g = new THREE.Group();
@@ -1201,6 +2504,7 @@ export function makeWeaponPickup(id) {
   item.scale.setScalar(PICKUP_SCALE[id] ?? 1.8);
   item.position.y = 0.95;
   g.add(item);
+  if (model.userData.update) g.userData.update = (t) => model.userData.update(t); // the record keeps spinning
   return g;
 }
 
@@ -1253,6 +2557,33 @@ export function makeProjectile(kind) {
     core.position.z = 0.32;
     const waves = new THREE.Mesh(once('proj:waves', () => bake([0.06, 0.082, 0.104].map((r, i) => gp(torus(r, 0.005, 20, 4), 0xffffff, 'plastic', [0, 0, 0.5 + i * 0.07]))) ), addHdr(0x7fe8ff, 3, 0.7));
     g.add(body, flame, core, waves);
+    return g;
+  }
+  if (kind === 'disc') {
+    // The Vinyl Disc's shot: a black grooved record (radius 0.3) with a bright two-tone HDR label that has a notch
+    // cut out, a glowing rim and a pip, so a spin shows. Tilted a little towards the player. The game can spin the
+    // whole group about y (it wobbles) or the 'spin' child (a clean spin about the disc's own axis).
+    const tilt = new THREE.Group();
+    tilt.rotation.x = 0.45;
+    const spin = new THREE.Group();
+    spin.name = 'spin';
+    tilt.add(spin);
+    const geo = once('proj:disc', () => {
+      const parts = recordParts(0.3);
+      parts.label.push({ geo: new THREE.TorusGeometry(0.3, 0.009, 4, 40), hex: COLOURS.magenta, k: 2.6, r: [HALF, 0, 0] });
+      return { vinyl: bake(parts.vinyl, { ...GW, seed: 5 }), label: glowMerge(parts.label) };
+    });
+    spin.add(
+      new THREE.Mesh(geo.vinyl, pbrMat()),
+      new THREE.Mesh(geo.label, once('discLabelMat', () => new THREE.MeshBasicMaterial({ vertexColors: true, fog: false }))),
+    );
+    // a soft pink glow either side of the disc so it can be found in the dark
+    const haze = new THREE.Mesh(once('proj:disc-haze', () => radialDisc(0.42, COLOURS.magenta, 0.55)), once('discHazeMat', () => new THREE.MeshBasicMaterial({
+      vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false,
+    })));
+    haze.rotation.x = -HALF;
+    tilt.add(haze);
+    g.add(tilt);
     return g;
   }
   // 'bottle': a glass bottle with a burning rag in the neck. Axis along y inside a 'spin' child, so

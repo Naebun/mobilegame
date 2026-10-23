@@ -273,7 +273,8 @@ try {
   check(!last.includes('next') && last.includes('again') && last.includes('menu'), `the last level offers no NEXT LEVEL (${last.join(', ')})`);
   await pressButton('menu');
   check(await until("s.mode === 'title' && s.level === 1"), 'MAIN MENU returns to the title, ready for level 1 again');
-  check(await page.evaluate(() => window.__game.getWorld().id) === 'cowgate', 'and the Cowgate is loaded again behind it');
+  const back = await page.waitForFunction(() => window.__game.getWorld().id === 'cowgate', null, { timeout: 30000 }).then(() => true, () => false);
+  check(back, 'and the Cowgate is loaded again behind it (the swap waits for a drawn frame)');
 
   // death and retry
   await pressButton('new');

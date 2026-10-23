@@ -1236,7 +1236,7 @@ function updatePickups(dt) {
     pk.phase += dt;
     pk.mesh.position.y = 0.05 + Math.sin(pk.phase * 2.2) * 0.06;
     pk.mesh.rotation.y += dt * 1.4;
-    if (pk.mesh.userData.update) pk.mesh.userData.update(S.t);
+    if (pk.mesh.userData && pk.mesh.userData.update) pk.mesh.userData.update(S.t);
     if (Math.hypot(pk.def.x - p.x, pk.def.z - p.z) > 1.2) continue;
     if (pk.def.kind === 'drink') {
       if (S.drink) continue; // one drink at a time
@@ -1719,13 +1719,14 @@ function animateViewmodel(dt) {
   const drinking = S.drink && R.drinkVms[S.drink.id];
   for (const id of WEAPON_ORDER) models[id].visible = !drinking && !S.laser && id === p.weapon && (S.mode === 'play' || S.mode === 'intro');
   for (const id of Object.keys(R.drinkVms)) R.drinkVms[id].group.visible = !!drinking && S.drink.id === id;
+  if (models.vinyl && models.vinyl.visible && models.vinyl.userData.update) models.vinyl.userData.update(S.t); // the record turns
   const w = WEAPONS[p.weapon];
   const bobX = Math.cos(p.bobT * 0.5) * 0.012 * p.moveMag;
   const bobY = Math.abs(Math.sin(p.bobT * 0.5)) * 0.014 * p.moveMag;
   const reloading = p.reloadT > 0 ? 1 - p.reloadT / (p.reloadTotal || w.reload) : 0;
   const dip = Math.sin(reloading * Math.PI);
   const sw = p.switchT / 0.25;
-  const baseX = p.weapon === 'launcher' ? 0.12 : 0.15;
+  const baseX = p.weapon === 'launcher' || p.weapon === 'vinyl' ? 0.12 : 0.15;
   wroot.scale.setScalar(0.68);
   if (drinking) {
     // the drink animation owns the pose; the root stays at the usual resting spot

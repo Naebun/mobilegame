@@ -1,8 +1,14 @@
 # Roadmap and deferred work
 
 ## Standing rule
-Only level 1 is built. No later level is to be built without the owner's explicit permission, however obvious the next
-step looks. Features are built and tested on level 1 only.
+Levels 1 and 2 are built. Level 2 was built with the owner's explicit permission. No later level is to be built without
+the owner's explicit permission, however obvious the next step looks.
+
+## Level 2 (the Vaults), on branch `level-2`, not merged
+Built on request: the level pipeline (`buildWorld({ level })`, definitions in `src/levels/`), the Vaults (six areas,
+nearly dark, torches), the Shielded Fizzbang, the Vinyl Disc, the Tour Guide boss, NEXT LEVEL with a Cheryl voicemail,
+and per-level best scores. Details, numbers and what is not verified: `docs/level-2.md`. Nothing here has been played by a
+person or seen on a phone.
 
 ## Current state: level 1, first person
 
@@ -66,14 +72,14 @@ the new names.
 
 ## Approved enemy ideas (not built)
 
-The owner approved all five of these for the game. They are **not built and must not be added** until the owner says so.
+The owner approved all five of these for the game. Number 1 is now built (level 2); the other four are **not built and must not be added** until the owner says so.
 They are not tied to level 1 and may appear in any level. Approval of an enemy is not permission to build a later
 level (see the standing rule). The melee and ranged rule holds: Fizzbang robots only fight in melee, Bampot robots can
 shoot.
 
 | # | Robot | Camp | Idea |
 | --- | --- | --- | --- |
-| 1 | Shielded Fizzbang | Melee | Carries a vending-machine door as a shield. Shots from the front do almost nothing, so the player flanks it, shoots it from behind, or uses the launcher or shotgun up close |
+| 1 | Shielded Fizzbang | Melee | **Built, in level 2.** Carries a vending-machine door as a shield. Shots from the front do almost nothing, so the player flanks it, shoots it from behind, or uses the launcher or shotgun up close |
 | 2 | Fizzbang Shaken | Melee, exploder | A shaken can that rattles faster as it nears, then bursts in a fizzy blast when it dies or touches Freddie. It can set off neighbouring robots, so shooting it close is a mistake |
 | 3 | Bampot Longshot | Ranged, sniper | A tall bottle robot with a visible laser line that charges for a moment, then fires one heavy shot. Makes cover matter |
 | 4 | Bampot Nurse | Support | Does not attack, but revives dead robots after a few seconds unless killed first. Makes kill order matter |
@@ -87,7 +93,7 @@ three for level 1 (Shielded, Longshot, Mimic) was suggested but not approved for
 - **Top-down version.** Replaced by this rebuild. It is in git history on `main` (squash commits up to PR #2).
 - **Top-down tuning work for levels 2 to 5** (a headless balance simulator and tuning passes) is on the branch
   `tune-levels`, unmerged. It only applies to the top-down game.
-- **Levels 2 and later** do not exist in the first-person game yet.
+- **Levels 3 and later** do not exist in the first-person game yet.
 
 ## Rule: balance is for normal mode only
 Debug mode (2x fire rate, 2x damage, 2x health) is a testing aid. Never tune enemies, weapons, areas or anything in
