@@ -10,7 +10,7 @@ import { readdirSync } from 'node:fs';
 const OUT = process.env.OUT;
 if (!OUT) { console.error('set OUT=<directory for the screenshots>'); process.exit(2); }
 const only = process.env.ONLY ? process.env.ONLY.split(',') : null;
-const server = spawn('node', ['scripts/serve.mjs', '8095'], { stdio: 'ignore', cwd: process.cwd() });
+const server = spawn('node', ['scripts/serve.mjs', String(process.env.PORT || 8095)], { stdio: 'ignore', cwd: process.cwd() });
 await new Promise((r) => setTimeout(r, 700));
 const base = '/opt/pw-browsers';
 const exe = readdirSync(base).filter((d) => d.startsWith('chromium-')).map((d) => readdirSync(`${base}/${d}`).filter((x) => x.startsWith('chrome-linux')).map((x) => `${base}/${d}/${x}/chrome`)[0])[0];
@@ -19,7 +19,7 @@ const page = await (await b.newContext({ viewport: { width: Number(process.env.W
 const errs = [];
 page.on('pageerror', (e) => errs.push(e.message));
 page.on('console', (m) => m.type() === 'error' && !/favicon|404/.test(m.text()) && errs.push(m.text()));
-await page.goto(`http://localhost:8095/?test&q=${process.env.Q || 'medium'}`);
+await page.goto(`http://localhost:${process.env.PORT || 8095}/?test&q=${process.env.Q || 'medium'}`);
 await page.waitForFunction(() => window.__game && window.__game.getState().player, null, { timeout: 90000 });
 
 // helpers that live in the page

@@ -13,7 +13,7 @@ the `altfire` upgrade (right mouse button or E, an ALT button on mobile), the cl
 records with a joke each, saved in `src/save.js`, and a SETLIST screen on the title once one is found. Design, numbers, how to
 place them later and what is not verified: `docs/arsenal.md`. Nothing has been played by a person; the numbers are first guesses.
 
-## Level 2 (the Vaults), on branch `level-2`, not merged
+## Level 2 (the Vaults), merged to main
 Built on request: the level pipeline (`buildWorld({ level })`, definitions in `src/levels/`), the Vaults (six areas,
 nearly dark, torches), the Shielded Fizzbang, the Vinyl Disc, the Tour Guide boss, NEXT LEVEL with a Cheryl voicemail,
 and per-level best scores. Details, numbers and what is not verified: `docs/level-2.md`. Nothing here has been played by a
