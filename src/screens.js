@@ -5,6 +5,7 @@
 
 import { text, rrect, drawSkyline, hash } from './draw.js';
 import { outlined, fit, wrapLines, paragraph, weaponIcon, panel, corners, circle } from './hud.js';
+import { RECORDS } from './data.js';
 
 const MAGENTA = '#ff2e93';
 const CYAN = '#22d3ee';
@@ -59,7 +60,7 @@ function titleGeom(view) {
 
 // ---- buttons ----
 
-export function buttons(mode, view, state) {
+function baseButtons(mode, view, state) {
   const st = state || {};
   const t = num(st.t);
   const sb = num(safe(view).bottom);
@@ -158,6 +159,31 @@ export function buttons(mode, view, state) {
     }
   } else if (mode === 'voicemail' && t > 0.8) {
     add('continue', 'CONTINUE', view.h - sb - 96);
+  }
+  return list;
+}
+
+// The menu buttons for a mode. The title gains a SETLIST button beside SETTINGS once a record has been found (it shares
+// SETTINGS' row, so the stack never grows taller on a short screen); the setlist page has one BACK button at the bottom.
+export function buttons(mode, view, state) {
+  const st = state || {};
+  if (mode === 'setlist') {
+    const sl = num(safe(view).left);
+    const sr = num(safe(view).right);
+    const bw = Math.min(240, view.w - 48 - sl - sr);
+    const h = 44;
+    return [{ id: 'back', label: 'BACK', x: sl + (view.w - sl - sr - bw) / 2, y: view.h - num(safe(view).bottom) - (landscape(view) ? 12 : 22) - h, w: bw, h, primary: true, accent: null }];
+  }
+  const list = baseButtons(mode, view, state);
+  if (mode === 'title' && num(st.records) > 0) {
+    const i = list.findIndex((b) => b.id === 'settings');
+    if (i >= 0) {
+      const b = list[i];
+      const gap = 10;
+      const half = (b.w - gap) / 2;
+      list[i] = { ...b, w: half };
+      list.splice(i + 1, 0, { id: 'setlist', label: `SETLIST ${Math.floor(num(st.records))}/${RECORDS.length}`, x: b.x + half + gap, y: b.y, w: half, h: b.h, primary: false, accent: null });
+    }
   }
   return list;
 }
@@ -916,4 +942,93 @@ export function drawComplete(ctx, view, state) {
   else outlined(ctx, st.newBest ? 'NEW BEST' : `Best ${Math.floor(num(st.best))}`, cx, ny, 14, st.newBest ? CYAN : '#c9c2e0', 'center', 600);
   ctx.globalAlpha = 1;
   drawButtons(ctx, buttons('complete', view, st), t, 1);
+}
+
+// ---- setlist ----
+
+const RECORD_LABELS = ['#e8d34a', '#e0357c', '#22b8d4', '#7ac943']; // the label colours of the record models, in order
+
+// A 12 inch record seen face on: black vinyl with grooves and a coloured label, or a grey blank for a slot not yet found.
+function recordDisc(ctx, cx, cy, r, found, i) {
+  circle(ctx, cx, cy, r);
+  ctx.fillStyle = found ? '#101014' : 'rgba(120,124,138,0.35)';
+  ctx.fill();
+  if (found) {
+    ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+    ctx.lineWidth = 1;
+    for (const k of [0.62, 0.78, 0.92]) {
+      circle(ctx, cx, cy, r * k);
+      ctx.stroke();
+    }
+  }
+  circle(ctx, cx, cy, r * 0.36);
+  ctx.fillStyle = found ? RECORD_LABELS[i % RECORD_LABELS.length] : 'rgba(200,196,220,0.25)';
+  ctx.fill();
+  circle(ctx, cx, cy, Math.max(1.2, r * 0.07));
+  ctx.fillStyle = found ? '#101014' : 'rgba(30,26,44,0.8)';
+  ctx.fill();
+}
+
+// The found records with the joke each one carries, and a locked slot for each one still out there. One column in
+// portrait, two in landscape (three if the list ever gets long), always above the BACK button.
+export function drawSetlist(ctx, view, state) {
+  const st = state || {};
+  const found = new Set(Array.isArray(st.found) ? st.found.filter((x) => typeof x === 'string') : []);
+  const n = RECORDS.length;
+  const have = RECORDS.filter((r) => found.has(r.id)).length;
+  const F = frame(view);
+  const top = num(safe(view).top);
+  const sl = num(safe(view).left);
+  const sr = num(safe(view).right);
+  dim(ctx, view, 0.82);
+  const titleY = top + Math.max(F.land ? 24 : 36, view.h * (F.land ? 0.07 : 0.06));
+  heavy(ctx, 'SETLIST', view.w / 2, titleY, F.land ? 26 : 30, MAGENTA);
+  outlined(ctx, `${have} of ${n} records found`, view.w / 2, titleY + (F.land ? 24 : 30), 13, have === n ? '#86efac' : '#c9c2e0', 'center', 700);
+
+  const back = buttons('setlist', view, st)[0];
+  const y0 = titleY + (F.land ? 40 : 50);
+  const yb = back.y - 10;
+  const cols = F.land ? (n > 12 ? 3 : 2) : (n > 12 ? 2 : 1);
+  const perCol = Math.ceil(n / cols);
+  const gap = 6;
+  const rowH = clamp((yb - y0 - gap * (perCol - 1)) / perCol, 18, 64);
+  const W = view.w - sl - sr - 32;
+  const colW = (W - 10 * (cols - 1)) / cols;
+  for (let i = 0; i < n; i++) {
+    const r = RECORDS[i];
+    const isFound = found.has(r.id);
+    const col = Math.floor(i / perCol);
+    const x = sl + 16 + col * (colW + 10);
+    const y = y0 + (i % perCol) * (rowH + gap);
+    rrect(ctx, x, y, colW, rowH, 10);
+    ctx.fillStyle = isFound ? 'rgba(255,255,255,0.09)' : 'rgba(255,255,255,0.04)';
+    ctx.fill();
+    ctx.lineWidth = 1.4;
+    ctx.strokeStyle = isFound ? 'rgba(255,46,147,0.55)' : 'rgba(255,255,255,0.12)';
+    ctx.stroke();
+    const dr = Math.min(rowH / 2 - 4, 17);
+    recordDisc(ctx, x + 10 + dr, y + rowH / 2, dr, isFound, i);
+    const tx = x + 20 + dr * 2;
+    const tw = colW - (tx - x) - 10;
+    const head = isFound ? str(r.title) : 'LOCKED';
+    const body = isFound ? str(r.line) : 'Still out there somewhere.';
+    const tall = rowH >= 44;
+    const hs = rowH >= 34 ? 13 : 11.5;
+    const ft = fit(ctx, `${pad2(i + 1)}  ${head}`, tw, hs, 800, 8);
+    if (rowH < 30) { // one line only: title and joke together
+      const f1 = fit(ctx, `${pad2(i + 1)}  ${head}${isFound ? `: ${body}` : ''}`, tw, 11.5, 700, 8);
+      outlined(ctx, f1.str, tx, y + rowH / 2, f1.size, isFound ? '#ffffff' : 'rgba(255,255,255,0.4)', 'left', 700);
+    } else {
+      outlined(ctx, ft.str, tx, y + (tall ? 14 : rowH * 0.33), ft.size, isFound ? '#ffffff' : 'rgba(255,255,255,0.45)', 'left', 800);
+      const size = tall ? 12 : 11;
+      const cap = tall ? 2 : 1;
+      const all = wrapLines(ctx, body, tw, size, 500, 8);
+      const lines = all.slice(0, cap);
+      if (all.length > cap) lines[cap - 1] = fit(ctx, `${lines[cap - 1]}…`, tw, size, 500, size).str; // too long for the room: an ellipsis
+      for (let k = 0; k < lines.length; k++) {
+        outlined(ctx, lines[k], tx, y + (tall ? 30 : rowH * 0.7) + k * (size + 2), size, isFound ? '#d9d2ee' : 'rgba(255,255,255,0.3)', 'left', 500);
+      }
+    }
+  }
+  drawButtons(ctx, [back]);
 }

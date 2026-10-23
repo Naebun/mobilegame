@@ -207,18 +207,19 @@ def weapon_view(parts, png, view='fp', size=(560, 700), samples=40, hide=(), por
     sun((-0.6, 0.2, 0.3), 0.8, (0.7, 0.8, 1.0))
   else:
     cam.clip_start = 0.01
-    if view in ('side', 'top'):
+    if view in ('side', 'top', 'lside'):
       cam.type = 'ORTHO'
       cam.ortho_scale = 0.95
     target = Vector((0, 0.05, -0.02))
     loc = {'side': (1.5, 0.05, -0.02), 'top': (0, 0.05, 1.5), 'rear': (0.35, -0.9, 0.18), 'iso': (0.65, -0.6, 0.38),
-           'front': (0.5, 0.9, 0.2)}[view]
+           'front': (0.5, 0.9, 0.2), 'lside': (-1.5, 0.05, -0.02), 'liso': (-0.65, -0.6, 0.38), 'lfront': (-0.5, 0.9, 0.2)}[view]
     co.location = loc
     co.rotation_euler = (target - Vector(loc)).to_track_quat('-Z', 'Y').to_euler()
-    if view in ('rear', 'iso', 'front'):
+    if view in ('rear', 'iso', 'front', 'liso', 'lfront'):
       cam.lens = 48
-    sun((0.5, -0.6, 1.0), 3.0)
-    sun((-0.6, 0.4, 0.3), 1.2, (0.7, 0.8, 1.0))
+    left = view.startswith('l')
+    sun((-0.5 if left else 0.5, -0.6, 1.0), 3.0)
+    sun((0.6 if left else -0.6, 0.4, 0.3), 1.2, (0.7, 0.8, 1.0))
   if crop:  # a sub-rectangle of the frame, as fractions (x0, x1, y0, y1) with y up, rendered at full resolution
     sc.render.use_border = True
     sc.render.use_crop_to_border = True

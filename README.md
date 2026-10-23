@@ -1,7 +1,7 @@
 # Naebun's Last Set
 
 A first-person 3D horror shooter for the phone browser, set in a basement club in Edinburgh. Naebun is a DJ,
-the club is full of hostile robots, and his speaker weapons are the only way out. Three.js on WebGL, plain ES
+the club is full of hostile robots, and the speaker weapons are the only way out. Three.js on WebGL, plain ES
 modules, no build step for development, no backend.
 
 ## The game
@@ -24,8 +24,8 @@ Beat the Bouncer at the end and walk out to finish the level.
 - **Ammo:** unlimited, but each clip is limited. Reloading is automatic when the clip empties, or press RELOAD.
 - **Headshots** do double damage. There is no aim assist.
 - **Drinks:** the power-ups. Walk onto one and Naebun drinks it, with a first-person animation. Dram heals, Orange
-  speeds him up, Heavy halves damage taken, Energy speeds up fire and reload. **Last Orders** is the super drink: the
-  camera goes third person, Naebun spins and a big laser wipes out the robots around him. It never works in a boss
+  speeds Naebun up, Heavy halves damage taken, Energy speeds up fire and reload. **Last Orders** is the super drink: the
+  camera goes third person, Naebun spins and a big laser wipes out the robots around Naebun. It never works in a boss
   room. Numbers are in `DRINKS` in `src/data.js`; the design is in `docs/drinks.md`.
 
 **Level 2 is the Vaults:** the arched stone cellars under South Bridge and Mary King's Close, six areas (Blair Street
@@ -39,10 +39,16 @@ the weapon fires on its own. **Anywhere else on the screen:** drag to aim only, 
 aiming thumb, or a lighter way to look round). **RELOAD** sits under the right box and **SWAP** (next weapon) under the left box. In landscape the boxes sit in the lower corners, clear of the notch, with SWAP and RELOAD beside them and the whole middle of the screen free for the aiming drag.
 On a desktop: WASD to move, arrow keys to look, space to fire, R to reload, Q to swap. The controls screen shows these.
 
-**Mouse look (computers only).** SETTINGS on the title screen has a MOUSE LOOK switch. Off (the default), the mouse works
-like a finger: hold and drag. On, click the game once to capture the mouse, then just move it to aim; the left button
-fires and the wheel swaps weapon. Esc lets go and a click takes it back. SENSITIVITY has three steps. The Settings page is
-there on phones too, for RESET PROGRESS.
+**Control modes.** PC mode is the default: the grey touch boxes are hidden, click the game once to capture the mouse, then
+move it to aim (no button held), left click fires, the wheel swaps weapon, Esc lets go. A mobile browser switches to mobile
+mode on its own at start-up (the grey boxes). SETTINGS on the title screen has CONTROLS: PC / MOBILE to change it (the
+choice is remembered and wins over detection) and a three-step MOUSE SENSITIVITY in PC mode. The controls screen shows
+whichever mode is active.
+
+**The torch.** Dark levels need it. It is mounted on the gun, a spotlight and a visible beam that point where the gun
+points (through the reload dip and the recoil). At the start of the first dark level (level 2) Naebun fits the pistol's torch
+by hand and the pistol cannot fire until it is on; every other gun already has one. Lit levels leave it off. F switches it
+(PC). Only 2 or 3 of the 10 planned missions are dark.
 
 **Saved progress.** The furthest level unlocked, the levels finished and the best score for each are saved in a cookie
 (a year, this page's path only), mirrored in local storage, and merged if both exist. After a level is finished the title

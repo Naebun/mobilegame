@@ -24,14 +24,14 @@ Fixed decisions:
 ## The story frame
 
 Naebun has the closing slot on the last night of the Fringe, at a club in the Cowgate. Somebody restocked the bar with
-the wrong sort of drinks machine. They have opinions. Worse, his record bag has been carried off by a bigger act,
-the Headliner, who is playing the sunrise show on top of Arthur's Seat. The bag holds the one record he needs.
-Naebun has until dawn to fight across Edinburgh, get it back, and play his set.
+the wrong sort of drinks machine. They have opinions. Worse, the record bag has been carried off by a bigger act,
+the Headliner, who is playing the sunrise show on top of Arthur's Seat. The bag holds the one record that is needed.
+Naebun has until dawn to fight across Edinburgh, get it back, and play the set.
 
 Cast, all delivered in a line or two:
 
 - **Naebun.** Tired, dry, professionally unbothered.
-- **Cheryl, his agent.** Appears only as voicemails between levels. Always optimistic, always wrong.
+- **Cheryl, the agent.** Appears only as voicemails between levels. Always optimistic, always wrong.
 - **The Headliner.** Seen on posters and graffiti all the way up, fought at the end.
 - **Fizzbang Beverages and Bampot and Nephew.** The two firms behind the robots. Product recall notices and
   safety stickers on the walls are the running gag.
@@ -203,3 +203,12 @@ or the upgrades above will lock out the older devices.
 
 Decided: story is a light comic frame; 8 to 10 levels (8 core, 2 stretch); about two hours; portrait and landscape; iOS devices
 from the past four years.
+
+
+## The torch and dark missions (added on request)
+The torch is mounted on the gun: a spotlight and a visible beam that follow where the gun points. Only 2 or 3 of the 10
+missions are dark enough to need it, so a lit mission leaves it off. Level 2 (the Vaults) is the first dark mission, and
+the one where Naebun fits the pistol's torch by hand, which tells the player this is a dark mission. Every other gun is
+picked up with its torch already fitted, in the gun's own style. Proposed (not decided) other dark missions: level 7,
+the climb inside the Scott Monument, and one of the two stretch levels (the castle's dungeons). Each level definition
+carries `dark: true` and its torch settings; nothing else about a dark level needs new code.

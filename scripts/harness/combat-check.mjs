@@ -21,6 +21,7 @@ Math.random = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
 function fresh() {
   game.init(VIEW);
   game.testHook('level', 2);
+  game.testHook('torch', { attached: true }); // the torch is already fitted (the fitting sequence is tested on its own below)
   const S = game.getState();
   if (S.debugMode) throw new Error('combat-check must run in normal mode');
   return { S, W: game.getWorld() };
@@ -259,6 +260,48 @@ function setEnemy(S, e, x, z, yaw) { e.x = x; e.z = z; e.yaw = yaw; e.kx = e.kz 
   ok(p.weapon !== w0, 'the wheel swaps weapon');
   game.testHook('mouse', null);
   game.testHook('setting', { input: null });
+}
+
+// ---- the gun torch: dark levels need it fitted, the pistol keeps it, lit levels do not ----
+{
+  const { S } = fresh(); // level 2, the dark one
+  const T = () => game.testHook('torch');
+  game.testHook('torch', { attached: false });
+  game.testHook('play'); // resetLevel: the fitting sequence starts
+  ok(T().dark === true, 'level 2 is a dark level');
+  ok(T().attach && !T().attached && !T().on, 'a dark level starts with the torch not yet fitted, and the fitting sequence ready');
+  const shots0 = S.shots;
+  const hold = input();
+  hold.keys.add(' ');
+  run(S, 1.5, hold);
+  ok(S.shots === shots0, 'the pistol cannot fire while the torch is being fitted');
+  ok(T().attach && !T().on, 'still fitting after 1.5 s');
+  run(S, 5, input());
+  ok(!T().attach && T().attached && T().on && T().k === 1, 'after the sequence the torch is fitted, on and at full brightness');
+  ok(game.getState().save.torch === true, 'the fitted torch is saved with the progress');
+  const s1 = S.shots;
+  run(S, 0.8, hold);
+  ok(S.shots > s1, 'and the pistol fires again');
+  game.testHook('play'); // retry: no second fitting
+  ok(!T().attach && T().on, 'a retry keeps the torch (no second fitting)');
+  const off = input();
+  off.keys.add('f');
+  run(S, 0.1, off);
+  ok(!T().on, 'F switches the torch off');
+  const off2 = input();
+  run(S, 0.1, off2);
+  const on = input();
+  on.keys.add('f');
+  run(S, 0.1, on);
+  ok(T().on, 'and on again');
+  game.testHook('level', 1);
+  ok(T().dark === false && !T().attach && !T().on, 'a lit level has no fitting sequence and the torch stays off');
+  game.testHook('level', 2);
+  ok(!T().attach && T().on, 'going back to the dark level, the fitted torch is already on');
+  game.testHook('torch', { attached: false });
+  game.testHook('play');
+  ok(T().attach, 'a new game (the pistol without a torch) sees the fitting again');
+  game.testHook('torch', { attached: true });
 }
 
 // ---- saved progress: the format a cookie can carry ----

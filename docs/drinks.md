@@ -16,8 +16,8 @@ the old medkit.
 | `lastorders` | Last Orders (the super power-up) | a big, dark-glass bottle with a gold foil neck and a gold label, glowing like it should not be touched, with embers rising off it | Naebun spins on the spot, unable to walk, while a huge laser sweeps round and wipes out every robot around him (never in a boss room) | about 2.2 s: both hands raise the bottle, a long glug (gold light spills over his face), a roar, the bottle is thrown away, then the spin begins |
 
 **Third person.** When the spin starts the game switches to a third-person camera: the view pulls back behind and above
-Naebun so the player sees him spinning on the spot with the laser, then pulls back in to first person when it ends.
-That needs a model of Naebun himself (see `makeNaebun` below).
+Naebun so the player sees Naebun spinning on the spot with the laser, then pulls back in to first person when it ends.
+That needs a model of Naebun (see `makeNaebun` below).
 
 The super power-up does **not** stop time. It is a rare drink: two in the level, on the dance floor and in the VIP
 corridor, and never in a boss room. The laser never fires in a boss room, never hurts a boss, and is not available
@@ -83,7 +83,7 @@ export function makeDrinkViewmodel(id) -> { group, setPose(k), duration }
   and none within its doorway.** Make them stand out (a taller pickup) but not easy to grab by accident while passing.
 - Pickups do not need extra meshes in the world; the integrator creates the models from `makeDrinkPickup`.
 
-## Naebun himself (for the models agent): third-person model
+## The Naebun model (for the models agent): third-person model
 
 The first-person game never shows Naebun, but the Last Orders spin does. New export:
 
@@ -99,6 +99,6 @@ export function makeNaebun() -> { group, height, setPose(state, t, k), muzzle }
   laser horn (a megaphone-sized speaker cannon with a wide bell, ribbed barrel, an HDR white and magenta glowing core at
   the muzzle, small HDR indicator lights). `t` is seconds in the pose, `k` 0 to 1 over the spin: the stance settles in
   the first 0.2, then holds, with a vibration from the beam (small high-frequency shake of the arms and head, the jacket
-  flaring slightly) and a grimace-grin. The integrator rotates the whole group about y to spin him.
+  flaring slightly) and a grimace-grin. The integrator rotates the whole group about y to spin the model.
 - `idle` pose: a relaxed stand with a slight sway (used if the group is ever shown at rest).
 - Add it to `models-check` and the contact sheets (front, three-quarter and back views of both poses).

@@ -243,7 +243,12 @@ try {
   check(v0.weapon === 'pistol' && v0.owned.length === 1 && v0.health === v0.maxHealth, 'Naebun starts level 2 with the pistol only and full health');
   check(v.kinds.includes('shielded') && v.kinds.includes('tourguide') && v.kinds.includes('fizzbang') && v.kinds.includes('bampot'), `level 2 has its robots (${v.kinds.join(', ')})`);
   check(v.weapons.includes('vinyl') && v.weapons.includes('launcher'), `the Vinyl Disc and the launcher lie on the floor (${v.weapons.join(', ')})`);
-  await page.waitForTimeout(1500);
+  const fitting = await hook('torch');
+  check(fitting.dark && fitting.attach && !fitting.attached && !fitting.on, 'level 2 is dark and starts with the torch still to be fitted to the pistol');
+  check(await until('s.attach && s.attach.k > 0.4', null, 60000), 'the fitting sequence runs');
+  await shot('torch-fitting');
+  check(await until('!s.attach && s.torch.attached && s.torch.on', null, 90000), 'the torch ends up fitted and on');
+  await page.waitForTimeout(800);
   await shot('vaults-start');
   const tele = async (id, d = 4) => page.evaluate(([id, d]) => {
     const g = window.__game;

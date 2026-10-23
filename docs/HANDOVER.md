@@ -121,20 +121,36 @@ viewmodel out to the right. Tested by `ui-check` (12 view sizes, side insets), t
 back) and screenshots from `scripts/harness/screen-views.mjs`. Not tested: a real phone rotating, iOS reporting a stale
 size after rotation (the engine re-measures at 0, 120 and 450 ms to cover it), real thumb reach on the landscape boxes.
 
-## Mouse look, settings page and saved progress
-`src/save.js` keeps the furthest level unlocked, levels done and best scores in a cookie (name `fls`, a year, this page's
-path) and in localStorage, merging both on load; older `mobilegame.fps.best*` scores are picked up once. `game3d.js`
-shows a CONTINUE button on the title once level 2 is unlocked, and a Settings page (`screens.drawSettings`): MOUSE LOOK,
-SENSITIVITY (computers only: `matchMedia('(hover: hover) and (pointer: fine)')`, `?pc` forces it for tests) and RESET
-PROGRESS (two taps). Mouse look: `engine.js` handles pointer lock, movement, the left button and the wheel
-(`input.mouse`), and `wantsMouseLock()` in `game3d.js` says when it is wanted (playing, on a computer, setting on), so the
-engine lets go in the menus. Tested headless by `combat-check` (aim, fire, wheel, sensitivity, the save format) and in the
-smoke test (cookie written, reload offers CONTINUE, settings, reset). Not tested: a real mouse and real pointer lock (the
-tests inject input), Safari's cookie expiry rules (it may drop script-set cookies after about a week without a visit; local
-storage has the same limit for sites not added to the home screen, which is why both are written).
+## Control modes, settings page and saved progress
+Two modes: PC (default: the grey boxes and buttons are hidden, the mouse aims with no button held, left click fires) and
+mobile (the boxes). `detectMobile()` in `game3d.js` picks mobile on a phone or tablet at start-up (matchMedia plus user
+agent; `?pc` and `?mobile` force it for tests); a choice saved on the Settings page wins. Settings (`screens.drawSettings`):
+CONTROLS (PC or MOBILE), SENSITIVITY (PC only) and RESET PROGRESS (two taps). `engine.js` handles pointer lock, movement,
+the left button and the wheel (`input.mouse`), and `wantsMouseLock()` says when it is wanted (playing, in PC mode), so the
+engine lets go in the menus. The controls screen has a PC page with keycaps and a mouse diagram. `src/save.js` keeps the
+furthest level unlocked, levels done, best scores and whether the torch is fitted in a cookie (name `fls`, a year, this
+page's path) and in localStorage, merging both on load; the title offers CONTINUE once level 2 is unlocked. Tested headless
+by `combat-check` (aim, fire, wheel, sensitivity, the save format) and in the smoke test (detection, both modes, cookie
+written, reload offers CONTINUE, settings, reset). Not tested: a real mouse and real pointer lock (the tests inject input),
+Safari's cookie expiry rules (it may drop script-set cookies after about a week without a visit; local storage has the
+same limit for sites not added to the home screen, which is why both are written).
+
+## The torch
+A level definition says `dark: true` (level 2 does; level 1 does not), plus `fill` (a tiny light on the camera) and
+`torch` (the spotlight and beam settings). The torch is part of each weapon model: `makeWeaponModel` has `torch` and `lens`
+meshes and `userData.lens` ({ pos, dir }, dir always -z) and `userData.setTorch({ mounted, on, k })`. Each frame
+`game3d.js` `updateTorch()` reads the lens in the weapon scene, converts it for the main camera (the two cameras have
+different fields of view) and places a SpotLight and a beam cone there, so the light follows the gun through the reload dip,
+the recoil and the swap. The four pickup guns arrive with a torch fitted; the pistol does not. At the start of a dark level
+without a fitted torch `S.attach` runs `makeTorchAttach()` (a left hand carries the module to the pistol, a click at `k` 0.6,
+the hand withdraws) and the pistol cannot fire until it ends; the fitted state is saved. F toggles the torch on a computer.
+Models are in `scripts/blender/weapons.py` (five torches, the attach hand; `preview.py` views `lside`, `liso`, `lfront`);
+tests are in `models-check`, `combat-check` and the smoke test (`torch-fitting`). Known, not fixed: the pistol torch is
+mostly hidden from the first-person camera (you see a cyan glint and the beam); the shotgun's beam starts inside the horn
+flare; the vinyl gooseneck arches about 0.25 m above the deck. Not seen: a real phone.
 
 ## Blender assets (weapons, hands, props)
-Drinks, weapons plus Naebun's hands, and 27 level props are modelled in Blender and generated into data modules
+Drinks, weapons (with their torches) plus Naebun's hands, and 27 level props are modelled in Blender and generated into data modules
 (`src/drink-meshes.js`, `src/weapon-meshes.js`, `src/prop-meshes.js`) by `scripts/blender/{drinks,weapons,props}.py`. Never
 edit the output; each is reproducible (run twice and `cmp`). `models.js` decodes weapons and falls back to the older procedural
 models; `world.js` places props with `placeProp` and falls back to procedural props (the low tier uses them, to stay inside

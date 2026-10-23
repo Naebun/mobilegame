@@ -12,7 +12,7 @@ const AMBER = '#fbbf24';
 const RED = '#ff2a2a';
 const FONT = 'system-ui, -apple-system, sans-serif';
 const ZERO_SAFE = { top: 0, bottom: 0 };
-const WEAPON_COLOURS = { pistol: CYAN, shotgun: AMBER, smg: '#a78bfa', launcher: MAGENTA, vinyl: '#34d399' };
+const WEAPON_COLOURS = { pistol: CYAN, shotgun: AMBER, smg: '#a78bfa', launcher: MAGENTA, vinyl: '#34d399', beam: '#7ff0ff', grenade: '#ff6ec7', airhorn: '#ff9a3a' };
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const num = (v, d = 0) => (Number.isFinite(v) ? v : d);
@@ -45,6 +45,7 @@ export function layout(view) {
   let lookBox;
   let swapBtn;
   let reloadBtn;
+  let altBtn;
   if (isLandscape(view)) {
     // Boxes in the bottom corners (clear of the notch), SWAP and RELOAD beside them on the inside, so the screen's
     // height goes to the view and the wide middle is free for the aiming drag.
@@ -56,6 +57,7 @@ export function layout(view) {
     const bw = Math.min(size * 0.75, 104);
     swapBtn = { x: moveBox.x + size + 14, y: bottom - 38, w: bw, h: 38 };
     reloadBtn = { x: lookBox.x - 14 - bw, y: bottom - 38, w: bw, h: 38 };
+    altBtn = { x: lookBox.x + size - 76, y: top - 52, w: 76, h: 38 };
   } else {
     const size = clamp(Math.min(view.w * 0.4, view.h * 0.24), 120, 180);
     const bottom = view.h - safeBottom - 62;
@@ -66,16 +68,19 @@ export function layout(view) {
     const by = bottom + 10;
     swapBtn = { x: moveBox.x + (size - bw) / 2, y: by, w: bw, h: 38 };
     reloadBtn = { x: lookBox.x + (size - bw) / 2, y: by, w: bw, h: 38 };
+    altBtn = { x: lookBox.x + size - 76, y: top - 52, w: 76, h: 38 };
   }
   cache = {
     moveBox,
     lookBox,
     reloadBtn,
     swapBtn,
+    altBtn, // the SMG's alt-fire, drawn and read only once the SMG has its pedal (the arsenal's upgrade)
     moveHit: inflate(moveBox, 24),
     lookHit: inflate(lookBox, 24),
     reloadHit: inflate(reloadBtn, 10),
     swapHit: inflate(swapBtn, 10),
+    altHit: inflate(altBtn, 10),
   };
   cacheW = view.w;
   cacheH = view.h;
@@ -227,6 +232,33 @@ export function weaponIcon(ctx, id, cx, cy, w, colour) {
       ctx.arc(0, 0, 2.6, 0, TAU, true);
       ctx.fill('evenodd');
       ctx.fillRect(7, -1, 5, 2);
+      break;
+    case 'beam': // a microphone ball on a wedge, with rays
+      rrect(ctx, -10, -4, 13, 8, 1.5);
+      ctx.fill();
+      poly(ctx, [-8, 3, -3, 3, -4.5, 9, -9, 9]);
+      ctx.fillRect(3, -1, 3, 2);
+      ctx.beginPath();
+      ctx.arc(8.5, 0, 3.6, 0, TAU);
+      ctx.fill();
+      ctx.lineWidth = 1.2;
+      ctx.strokeStyle = colour;
+      ctx.beginPath();
+      ctx.moveTo(12.5, -3); ctx.lineTo(15, -5.5);
+      ctx.moveTo(12.8, 0); ctx.lineTo(16, 0);
+      ctx.moveTo(12.5, 3); ctx.lineTo(15, 5.5);
+      ctx.stroke();
+      break;
+    case 'grenade': // a drum on a handle
+      rrect(ctx, -6.5, -8, 13, 9, 2.5);
+      ctx.fill();
+      ctx.fillRect(-2.2, 0.5, 4.4, 8);
+      ctx.fillRect(-4, 7.5, 8, 2);
+      break;
+    case 'airhorn': // a flared horn on a can
+      poly(ctx, [-9, -1.4, 0, -2.4, 10, -7, 10, 7, 0, 2.4, -9, 1.4]);
+      rrect(ctx, -9, 1, 5.5, 8, 1.5);
+      ctx.fill();
       break;
     default:
       rrect(ctx, -8, -5, 16, 10, 3);
@@ -494,7 +526,8 @@ function drawAmmo(ctx, view, L, w, t) {
   let colour = '#ffffff';
   if (clip <= 0) colour = Math.sin(t * 9) > 0 ? RED : '#ff8a8a';
   else if (frac <= 0.34) colour = AMBER;
-  const f = fit(ctx, `${clip} / ∞`, gw, 25, 800, 13);
+  const meter = !!(w && w.meter); // the Feedback Beam has a charge meter in place of a clip
+  const f = fit(ctx, meter ? `${Math.round(frac * 100)}%` : `${clip} / ∞`, gw, 25, 800, 13);
   ctx.globalAlpha = reloading ? 0.5 : 1;
   outlined(ctx, f.str, cx, y + 12, f.size, colour, 'center', 800);
   ctx.globalAlpha = 1;
@@ -507,6 +540,16 @@ function drawAmmo(ctx, view, L, w, t) {
     if (p > 0.03) {
       rrect(ctx, cx - bw / 2, y + 25, bw * p, 4, 2);
       ctx.fillStyle = CYAN;
+      ctx.fill();
+    }
+  } else if (meter) {
+    const bw = Math.min(gw, 62);
+    rrect(ctx, cx - bw / 2, y + 25, bw, 4, 2);
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.fill();
+    if (frac > 0.03) {
+      rrect(ctx, cx - bw / 2, y + 25, bw * clamp(frac, 0, 1), 4, 2);
+      ctx.fillStyle = frac <= 0.25 ? AMBER : '#7ff0ff';
       ctx.fill();
     }
   }
@@ -579,10 +622,10 @@ function drawBuffs(ctx, L, buffs) {
 }
 
 function drawWeapons(ctx, view, ws, top) {
-  const n = Math.min(ws.length, 6);
+  const n = Math.min(ws.length, 8);
   if (!n) return;
-  const gap = 4;
-  const cw = Math.min(34, (Math.max(60, view.w * 0.4) - gap * (n - 1)) / n);
+  const gap = n > 6 ? 3 : 4;
+  const cw = Math.min(34, (Math.max(60, view.w * (n > 6 ? 0.47 : 0.4)) - gap * (n - 1)) / n);
   const ch = 26;
   let x = view.w - 16 - sideSafe(view).right - n * cw - (n - 1) * gap;
   const y = top + 3;
@@ -597,7 +640,7 @@ function drawWeapons(ctx, view, ws, top) {
     ctx.strokeStyle = active ? CYAN : owned ? 'rgba(255,255,255,0.4)' : 'rgba(255,255,255,0.14)';
     ctx.stroke();
     ctx.globalAlpha = owned ? 1 : 0.28;
-    weaponIcon(ctx, w.id, x + cw / 2, y + ch / 2, Math.min(22, cw - 8), owned ? (WEAPON_COLOURS[w.id] || '#e5e0f5') : '#c9c2e0');
+    weaponIcon(ctx, w.id, x + cw / 2, y + ch / 2, Math.min(22, cw - (n > 6 ? 5 : 8)), owned ? (WEAPON_COLOURS[w.id] || '#e5e0f5') : '#c9c2e0');
     ctx.globalAlpha = 1;
     x += cw + gap;
   }
@@ -627,6 +670,75 @@ function drawBoss(ctx, view, boss, y) {
   ctx.stroke();
   const f2 = fit(ctx, str(boss.name).toUpperCase(), bw - 24, 10.5, 800, 8);
   outlined(ctx, f2.str, view.w / 2, y + 8.5, f2.size, '#ffffff', 'center', 800);
+}
+
+// ---- the arsenal: the SMG's alt-fire and the upgrades owned ----
+
+// Mobile mode: a small ALT button above the aim box, drawn only while the SMG is in hand with its pedal fitted. A fill rises
+// while it recharges. PC mode: a pill above the ammo readout that names the keys.
+function drawAlt(ctx, L, alt, compact, t) {
+  const cd = clamp(num(alt.cd), 0, 1);
+  const ready = cd <= 0;
+  const pulse = 0.5 + 0.5 * Math.sin(t * 8);
+  let b = L.altBtn;
+  if (compact) {
+    const w = 118;
+    const cx = (L.swapBtn.x + L.swapBtn.w + L.reloadBtn.x) / 2;
+    b = { x: cx - w / 2, y: L.swapBtn.y - 28, w, h: 20 };
+  }
+  panel(ctx, b.x, b.y, b.w, b.h, compact ? 10 : 11, ready ? 'rgba(139,108,255,0.3)' : 'rgba(120,124,138,0.34)', ready ? '#c4b5fd' : '#ffffff', ready ? 0.6 + 0.4 * pulse : 0.5);
+  if (!ready) {
+    ctx.save();
+    rrect(ctx, b.x + 2, b.y + 2, b.w - 4, b.h - 4, compact ? 8 : 9);
+    ctx.clip();
+    ctx.fillStyle = 'rgba(8,4,16,0.5)';
+    ctx.fillRect(b.x, b.y, b.w * cd, b.h);
+    ctx.restore();
+  }
+  const label = compact ? (ready ? 'E  BURST READY' : `E  BURST ${Math.max(0, num(alt.secs)).toFixed(1)}s`) : 'ALT';
+  const f = fit(ctx, label, b.w - 10, compact ? 11 : 15, 800, 8);
+  outlined(ctx, f.str, b.x + b.w / 2, b.y + b.h / 2 + 0.5, f.size, ready ? '#ede9fe' : 'rgba(255,255,255,0.6)', 'center', 800);
+}
+
+const UPGRADE_COLOURS = { clip: '#fbbf24', reload: '#22d3ee', altfire: '#a78bfa' };
+
+// Upgrades owned: small chips down the right edge under the weapon row, each a glyph with a pip per tier.
+function drawUpgrades(ctx, view, up, y0) {
+  const x = view.w - 16 - sideSafe(view).right - 26;
+  let y = y0;
+  for (const id of ['clip', 'reload', 'altfire']) {
+    const tier = Math.floor(num(up && up[id]));
+    if (tier < 1) continue;
+    const colour = UPGRADE_COLOURS[id];
+    rrect(ctx, x, y, 26, 24, 7);
+    ctx.fillStyle = 'rgba(4,2,8,0.55)';
+    ctx.fill();
+    ctx.lineWidth = 1.4;
+    ctx.strokeStyle = colour;
+    ctx.stroke();
+    ctx.fillStyle = colour;
+    ctx.strokeStyle = colour;
+    const cx = x + 13;
+    const cy = y + 10;
+    if (id === 'clip') { // a magazine
+      poly(ctx, [cx - 3.5, cy - 6, cx + 2.5, cy - 6, cx + 3.5, cy + 5, cx - 2.5, cy + 5]);
+      ctx.fillRect(cx - 4, cy + 5, 8, 1.6);
+    } else if (id === 'reload') { // a circular arrow
+      ctx.lineWidth = 2;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.arc(cx, cy, 5, -2.5, 1.5);
+      ctx.stroke();
+      poly(ctx, [cx + 0.5, cy + 5.2, cx + 5.4, cy + 2.4, cx + 4.6, cy + 7.2]);
+    } else { // a bolt
+      poly(ctx, [cx + 1.5, cy - 7, cx - 4, cy + 1, cx - 0.4, cy + 1, cx - 1.8, cy + 7, cx + 4, cy - 1.2, cx + 0.4, cy - 1.2]);
+    }
+    for (let i = 0; i < Math.min(tier, 3); i++) { // a pip per tier
+      circle(ctx, cx - (Math.min(tier, 3) - 1) * 2.5 + i * 5, y + 20.2, 1.5);
+      ctx.fill();
+    }
+    y += 28;
+  }
 }
 
 // ---- screen effects ----
@@ -828,6 +940,7 @@ export function drawPlayHud(ctx, view, h) {
   // top right: weapon row, then the debug badge
   if (furniture) drawWeapons(ctx, view, Array.isArray(h.weapons) ? h.weapons : EMPTY, top);
   if (h.debugMode) drawDebugBadge(ctx, view, top + 40);
+  if (furniture && h.upgrades) drawUpgrades(ctx, view, h.upgrades, top + (h.debugMode ? 58 : 36));
 
   // top centre: area, objective, status
   const maxW = view.w - 32 - 2 * Math.max(sideSafe(view).left, sideSafe(view).right);
@@ -869,6 +982,7 @@ export function drawPlayHud(ctx, view, h) {
       drawSwap(ctx, L.swapBtn);
     }
     drawAmmo(ctx, view, L, w, t);
+    if (h.alt) drawAlt(ctx, L, h.alt, !!h.compact, t);
   }
   if (h.hint) {
     const f = fit(ctx, str(h.hint), view.w - 48, 15, 800, 10);

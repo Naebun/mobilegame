@@ -1,0 +1,114 @@
+<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><body style="margin:0;background:#000"><canvas id="c" style="width:100vw;height:100vh;display:block"></canvas>
+<script type="module">
+import { THREE, M, setup } from './models-harness.js';
+// The weapon torches, seen the way the game draws the viewmodel (camera at the origin, fov 70, the root placed as
+// animateViewmodel places it). show({ cols, dark, cells: [...] }), a cell being
+//   { weapon: 'smg', on, k, mounted, rig, x, y, lift }   rig: a pose 0..1 of the pistol's attach rig (pistol only)
+//   { pickup: 'shotgun' }                                a floor pickup, seen from a little way off
+// `on` lights the lens and a spotlight from it onto a wall 3 m ahead (the game's own beam is not drawn here).
+const S = setup({ fov: 70, fogNear: 4, fogFar: 22 });
+const { renderer, scene, camera } = S;
+S.scene.children.filter((c) => c.isLight || c.isGridHelper).forEach((c) => { c.visible = false; });
+const hemi = scene.children.find((c) => c.isHemisphereLight);
+hemi.visible = true;
+hemi.intensity = 0.25;
+scene.environmentIntensity = 0.3;
+S.torch.intensity = 3;
+const wall = new THREE.Mesh(new THREE.PlaneGeometry(14, 8), new THREE.MeshStandardMaterial({ color: 0x6a5a4a, roughness: 0.9 }));
+wall.position.set(0, 1.65, -3);
+S.content.add(wall);
+const key = new THREE.PointLight(0xff9a50, 4, 6, 1.5);
+key.position.set(-1.2, 2.4, -0.6);
+scene.add(key);
+const spot = new THREE.SpotLight(0xfff0d0, 0, 12, 0.3, 0.5, 1.3);
+scene.add(spot, spot.target);
+
+window.show = (cfg = {}) => {
+  const cells = cfg.cells || [];
+  const cols = cfg.cols || cells.length;
+  const rows = Math.ceil(cells.length / cols);
+  const W = innerWidth;
+  const H = innerHeight;
+  const cw = W / cols;
+  const ch = H / rows;
+  renderer.setScissorTest(true);
+  renderer.setClearColor(0x0b0807);
+  renderer.setViewport(0, 0, W, H);
+  renderer.setScissor(0, 0, W, H);
+  renderer.clear();
+  cells.forEach((c, i) => {
+    const aspect = cw / ch;
+    camera.fov = 70;
+    camera.aspect = aspect;
+    camera.near = 0.02;
+    camera.updateProjectionMatrix();
+    camera.position.set(0, 1.65, 0);
+    camera.rotation.set(0, 0, 0);
+    camera.updateMatrixWorld();
+    const wr = new THREE.Group();
+    // as animateViewmodel: x follows the aspect (portrait nearly central), the launcher and vinyl sit 0.03 left
+    const halfW = Math.tan((35 * Math.PI) / 180) * aspect * 0.62;
+    const bx = Math.min(0.4, Math.max(0.08, halfW * 0.4)) - (c.weapon === 'launcher' || c.weapon === 'vinyl' ? 0.03 : 0);
+    const lift = c.lift ?? (c.rig !== undefined ? Math.sin(Math.min(1, Math.max(0, c.rig)) * Math.PI) : 0); // the game raises and rolls the pistol while the torch is fitted
+    wr.position.set((c.x ?? bx) - 0.03 * lift, (c.y ?? (aspect < 1 ? -0.205 : -0.24)) + 0.035 * lift, -0.62 + 0.05 * lift);
+    wr.rotation.set(0.03 + 0.12 * lift, 0.07, -0.3 * lift);
+    wr.scale.setScalar(0.68);
+    let w = null;
+    if (c.pickup) {
+      const p = M.makeWeaponPickup(c.pickup);
+      p.position.set(0, 0, -1.3);
+      p.rotation.y = c.yaw ?? 0.6;
+      S.content.add(p);
+      camera.position.set(0, 1.1, 0);
+      camera.lookAt(0, 0.95, -1.3);
+      camera.fov = 40;
+      camera.updateProjectionMatrix();
+      camera.updateMatrixWorld();
+      spot.intensity = 0;
+      wall.visible = false;
+      S.content.updateMatrixWorld(true);
+      const x = (i % cols) * cw;
+      const y = (rows - 1 - Math.floor(i / cols)) * ch;
+      renderer.setViewport(x, y, cw, ch);
+      renderer.setScissor(x, y, cw, ch);
+      renderer.render(scene, camera);
+      S.content.remove(p);
+      wall.visible = true;
+      return;
+    }
+    w = M.makeWeaponModel(c.weapon);
+    if (w.userData.update) w.userData.update(c.t ?? 0);
+    if (c.mounted !== undefined || c.on !== undefined) w.userData.setTorch({ mounted: c.mounted, on: c.on, k: c.k });
+    wr.add(w);
+    let rig = null;
+    if (c.rig !== undefined) {
+      rig = M.makeTorchAttach();
+      rig.setPose(c.rig);
+      if (c.rig >= rig.seatK) w.userData.setTorch({ mounted: true });
+      wr.add(rig.group);
+    }
+    camera.add(wr); // the viewmodel rides the camera
+    camera.updateMatrixWorld(true);
+    wr.updateMatrixWorld(true);
+    if (c.on) {
+      const L = w.userData.lens;
+      const p = new THREE.Vector3(...L.pos).applyMatrix4(w.matrixWorld);
+      const d = new THREE.Vector3(...L.dir).transformDirection(w.matrixWorld);
+      spot.position.copy(p);
+      spot.target.position.copy(p).addScaledVector(d, 3);
+      spot.target.updateMatrixWorld();
+      spot.intensity = 30;
+    } else {
+      spot.intensity = 0;
+    }
+    const x = (i % cols) * cw;
+    const y = (rows - 1 - Math.floor(i / cols)) * ch;
+    renderer.setViewport(x, y, cw, ch);
+    renderer.setScissor(x, y, cw, ch);
+    renderer.render(scene, camera);
+    camera.remove(wr);
+  });
+  window.__done = true;
+};
+window.show({ cells: [{ weapon: 'pistol', mounted: true, on: true }, { weapon: 'shotgun', on: true }] });
+</script>

@@ -3,17 +3,27 @@
 // cleared, so both are read and merged, and every write is wrapped: with neither available the game just does not remember.
 // Nothing here touches the DOM at import, so it also loads under plain Node (where load() returns a fresh save).
 
+import { RECORDS } from './data.js';
+
 const COOKIE = 'fls';
 const LS_KEY = 'mobilegame.save';
 const MAX_AGE = 60 * 60 * 24 * 365;
 export const MAX_LEVELS = 2; // the number of levels that exist; unlocked never goes past it
 
-export const fresh = () => ({ v: 1, unlocked: 1, done: [], best: {} });
+export const fresh = () => ({ v: 1, unlocked: 1, done: [], best: {}, torch: false, records: [] }); // torch: the pistol's torch has been fitted
+
+// Only ids of records that exist survive, once each, in the order of the list: anything else in the field is dropped.
+const cleanRecords = (raw) => {
+  const have = new Set(Array.isArray(raw) ? raw.filter((x) => typeof x === 'string') : []);
+  return RECORDS.map((r) => r.id).filter((id) => have.has(id));
+};
 
 // Coerce anything we read into a valid save (a hand-edited or old cookie must not break the game).
 export function clean(raw) {
   const out = fresh();
   if (!raw || typeof raw !== 'object') return out;
+  out.torch = raw.torch === true;
+  out.records = cleanRecords(raw.records); // the ids of the collectible records found; older saves have none
   const u = Math.floor(Number(raw.unlocked));
   if (u >= 1) out.unlocked = Math.min(MAX_LEVELS, u);
   if (Array.isArray(raw.done)) out.done = [...new Set(raw.done.map(Number).filter((n) => Number.isInteger(n) && n >= 1 && n <= MAX_LEVELS))].sort();
@@ -32,6 +42,8 @@ export function clean(raw) {
 export function merge(a, b) {
   const out = fresh();
   out.unlocked = Math.max(a.unlocked, b.unlocked);
+  out.torch = a.torch || b.torch;
+  out.records = cleanRecords([...(a.records || []), ...(b.records || [])]);
   out.done = [...new Set([...a.done, ...b.done])].sort();
   for (const n of Object.keys({ ...a.best, ...b.best })) out.best[n] = Math.max(a.best[n] || 0, b.best[n] || 0);
   return out;

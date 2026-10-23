@@ -154,6 +154,25 @@ export function createFx(scene) {
         });
       }
     },
+    // a burst of white foam and bright bubbles (a Fizzbang Shaken going off)
+    foam(x, y, z, radius = 3) {
+      for (let i = 0; i < Math.round(36 * quality); i++) {
+        const a = rand(0, 6.283);
+        const sp = rand(1.5, 6) * (radius / 3.2);
+        emit(smoke, {
+          x, y, z, vx: Math.cos(a) * sp, vy: rand(1, 4), vz: Math.sin(a) * sp, g: 5, drag: 0.8,
+          s0: rand(0.12, 0.3), s1: rand(0.25, 0.55), r: 0.95, gc: 0.93, b: 0.88, a: 0.75, max: rand(0.6, 1.3),
+        });
+      }
+      for (let i = 0; i < Math.round(30 * quality); i++) {
+        const a = rand(0, 6.283);
+        const sp = rand(2, 8) * (radius / 3.2);
+        emit(sparks, {
+          x, y, z, vx: Math.cos(a) * sp, vy: rand(0.5, 5), vz: Math.sin(a) * sp, g: 6, drag: 0.9,
+          s0: rand(0.04, 0.1), s1: 0.02, r: 2.2, gc: 2.1, b: 2.2, a: 0.9, max: rand(0.4, 0.9),
+        });
+      }
+    },
     // a small puff and a few sparks at the muzzle
     muzzle(x, y, z, dx, dy, dz) {
       this.smoke(x + dx * 0.2, y + dy * 0.2, z + dz * 0.2, 1, 0.22, 0.4, 0.5);

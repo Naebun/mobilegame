@@ -46,8 +46,12 @@ percent faster. Last Orders is refused in its room, like the Bouncer's.
 ## Look
 
 Nearly dark on purpose. The baked ambient tint is a third of level 1's, the fog is near and black, and the world's four
-point lights are braziers and lamps. Wall torches light pools through the baked light (no extra lights). Naebun's own
-torch is much stronger than in level 1 (`LEVEL_DEF.torch` in `src/levels/vaults.js`). Flames are soft crossed quads
+point lights are braziers and lamps. Wall torches light pools through the baked light (no extra lights). The level is dark enough that the gun torch is needed:
+at the start Naebun fits a torch to the pistol by hand (a short animation; the pistol cannot fire until it is on), and from then
+on the torch is a spotlight and a visible beam placed on the torch lens, so it points where the gun points, including through
+the reload dip and the recoil. Every other gun already has a torch fitted. There is no light on the camera in this level apart
+from a tiny fill (`fill` in `src/levels/vaults.js`); the torch settings are `torch` there and `dark: true` marks the level.
+F switches the torch off and on (PC). Flames are soft crossed quads
 drawn additively and re-shaped every frame. The ceiling is flat with stone arch ribs under it; a true barrel vault was
 tried on paper and dropped, because doors in the long walls would be cut off by the curve.
 

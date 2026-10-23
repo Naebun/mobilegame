@@ -114,5 +114,7 @@ export const LEVEL_DEF = {
   fog: { colour: 0x0b0608, near: 6, far: 40 },
   ambient: { sky: 0xb0a09a, ground: 0x6e5c54, intensity: 2.2 },
   look: { exposure: 1.3, bloom: 0.55, vignette: 0.35, grade: { lift: [0.012, 0.004, 0.016], gamma: [1.0, 0.98, 0.95], gain: [1.05, 1.0, 0.94] } },
-  torch: { colour: 0xfff0dd, intensity: 1.2, range: 15, decay: 1.6 },
+  dark: false, // lit by the club's own lights; the gun torch is not needed (and stays off unless Naebun switches it on)
+  fill: { colour: 0xfff0dd, intensity: 1.2, range: 15, decay: 1.6 }, // a gentle light on the camera, part of this level's look
+  torch: { colour: 0xfff0d8, intensity: 32, distance: 24, angle: 0.4, penumbra: 0.55, decay: 1.5, beam: 16 },
 };

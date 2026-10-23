@@ -393,7 +393,9 @@ export function buildWorld(opts = {}) {
     fog: lv.fog,
     ambient: lv.ambient,
     look: lv.look,
-    torch: lv.torch,
+    fill: lv.fill, // a small light on the camera: level 1's warm fill
+    torch: lv.torch, // the gun torch: spot light and beam settings
+    dark: !!lv.dark, // a dark level: the torch must be fitted and switched on to see
     quality,
     start,
     exit,

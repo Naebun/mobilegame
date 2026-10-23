@@ -1,0 +1,120 @@
+<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><body style="margin:0;background:#000"><canvas id="c" style="width:100vw;height:100vh;display:block"></canvas>
+<script type="module">
+import { THREE, M, setup } from './models-harness.js';
+// The four prepared enemies (shaken, longshot, nurse, mimic), one cell per view. Same cells as models-l2.html plus
+//   { robot, pre: [['setLaser', 30, 0.02, true, 1]], post: [['setBeam', 0, 0, -3, 0.5]] }   robot methods called before and after setPose
+//   { robot, tris: true }                                                                  logs the triangle and mesh count
+// Level 2 models, one cell per view. show({ cols, dark, cells: [...] }), a cell being one of
+//   { robot: 'shielded' | 'tourguide' | ..., state, t, k, hit, enrage, yaw, dist, aimY, camY }   (yaw 0 = seen from the front)
+//   { weapon: 'vinyl', t, yaw, dist, aimY }      the first-person viewmodel on its own, spun by userData.update(t)
+//   { pickup: 'vinyl', t, yaw, dist }            the floor pickup
+//   { projectile: 'disc', t, yaw, dist, scale }  a flying disc
+// `dark` swaps the harness light rig for a game-like one: almost no ambient, a warm torch light and two wall torches.
+const S = setup({ fov: 40 });
+const { renderer, scene, camera } = S;
+const hemi = scene.children.find((c) => c.isHemisphereLight);
+const base = { hemi: hemi.intensity, env: scene.environmentIntensity ?? 1, lights: S.lights.map((l) => l.intensity), torch: S.torch.intensity };
+const torches = [new THREE.PointLight(0xff8a3a, 7, 9, 1.6), new THREE.PointLight(0xff8a3a, 5, 9, 1.6)];
+torches.forEach((l) => { l.visible = false; scene.add(l); });
+function lighting(dark) {
+  hemi.intensity = dark ? 0.05 : base.hemi;
+  scene.environmentIntensity = dark ? 0.18 : base.env;
+  S.lights.forEach((l, i) => { l.visible = !dark; l.intensity = base.lights[i]; });
+  S.torch.intensity = dark ? 5 : base.torch;
+  torches.forEach((l) => { l.visible = dark; });
+}
+window.show = (cfg = {}) => {
+  const cells = cfg.cells || [];
+  const cols = cfg.cols || 3;
+  const rows = Math.ceil(cells.length / cols);
+  const W = innerWidth;
+  const H = innerHeight;
+  const cw = W / cols;
+  const ch = H / rows;
+  lighting(!!cfg.dark);
+  renderer.setScissorTest(true);
+  renderer.setClearColor(0x0b0807);
+  renderer.setViewport(0, 0, W, H);
+  renderer.setScissor(0, 0, W, H);
+  renderer.clear();
+  cells.forEach((c, i) => {
+    let obj;
+    let aim = c.aimY ?? 1.2;
+    let dist = c.dist ?? 6;
+    if (c.robot) {
+      const r = M.makeRobot(c.robot);
+      if (c.enrage && r.enrage) r.enrage();
+      if (c.hit && r.shieldHit) r.shieldHit();
+      for (const [m, ...a] of c.pre || []) r[m](...a);
+      r.setPose(c.state || 'idle', c.t ?? 1, c.k ?? 0);
+      for (const [m, ...a] of c.post || []) r[m](...a);
+      if (c.flash) r.flash(true);
+      obj = r.group;
+      if (c.aimY === undefined) aim = r.height * 0.5;
+      if (c.dist === undefined) dist = r.height * 2.3;
+    } else if (c.weapon) {
+      const w = M.makeWeaponModel(c.weapon);
+      if (w.userData.update) w.userData.update(c.t ?? 0);
+      obj = w;
+      w.position.y = 1;
+      if (c.aimY === undefined) aim = 1;
+      if (c.dist === undefined) dist = 0.9;
+    } else if (c.pickup) {
+      obj = M.makeWeaponPickup(c.pickup);
+      if (obj.userData.update) obj.userData.update(c.t ?? 0);
+      if (c.aimY === undefined) aim = 0.9;
+      if (c.dist === undefined) dist = 3.2;
+    } else if (c.projectile) {
+      obj = M.makeProjectile(c.projectile);
+      if (c.scale) obj.scale.setScalar(c.scale);
+      obj.position.y = 1;
+      if (c.spin !== undefined) { obj.rotation.y = c.spin; const sp = obj.getObjectByName('spin'); if (sp) sp.rotation.y = c.spin; }
+      if (c.aimY === undefined) aim = 1;
+      if (c.dist === undefined) dist = 1.6;
+    }
+    // fp: true seats a weapon like the game's viewmodel (camera at the origin, fov 70, root at 0.15 -0.24 -0.62, scale 0.68)
+    const fp = !!(c.weapon && c.fp);
+    camera.fov = fp ? 70 : 40;
+    if (fp) {
+      const wr = new THREE.Group();
+      wr.position.set(0.15 + (c.dx ?? 0), -0.24 + 1.65, -0.62);
+      wr.scale.setScalar(0.68);
+      wr.rotation.set(0.03, 0.07, 0);
+      obj.position.y = 0;
+      wr.add(obj);
+      obj = wr;
+    }
+    S.content.add(obj);
+    const yaw = c.yaw ?? 0;
+    const pitch = c.pitch ?? 0.12;
+    // the camera orbits the object; yaw 0 views the front (the object faces -z, so the camera sits at -z)
+    if (fp) {
+      camera.position.set(0, 1.65, 0);
+      camera.lookAt(0, 1.65, -1);
+    } else {
+      camera.position.set(Math.sin(yaw) * dist * Math.cos(pitch), aim + Math.sin(pitch) * dist, -Math.cos(yaw) * dist * Math.cos(pitch));
+      camera.lookAt(0, aim, 0);
+    }
+    camera.aspect = cw / ch;
+    camera.updateProjectionMatrix();
+    torches[0].position.set(camera.position.x - 2.5, aim + 1.4, camera.position.z + 0.5);
+    torches[1].position.set(camera.position.x + 3, aim + 1.0, camera.position.z * 0.4);
+    const x = (i % cols) * cw;
+    const y = (rows - 1 - Math.floor(i / cols)) * ch;
+    renderer.setViewport(x, y, cw, ch);
+    renderer.setScissor(x, y, cw, ch);
+    camera.updateMatrixWorld();
+    S.torch.position.set(0, 0.1, 0.2);
+    S.torch.visible = true;
+    renderer.render(scene, camera);
+    S.content.remove(obj);
+  });
+  window.__done = true;
+};
+window.show({
+  cells: [
+    { robot: 'shaken', yaw: 0.4 }, { robot: 'longshot', yaw: 0.4 },
+  ],
+  cols: 3,
+});
+</script>
