@@ -11,7 +11,7 @@ const ROWS = 48;
 // Legend. Solid: # wall, P pillar, S speaker stack, T stairs. Low cover (blocks walking, not bullets):
 // b bar counter, j DJ booth, v booth, x crate or flight case, r coat or costume rail, o round table.
 // 1-6 door tiles (two per door), . floor. Markers that sit on floor: @ start, E exit (two tiles),
-// d fizzbang, w bampot, K bouncer, G shotgun, M smg, L launcher, H medkit.
+// d fizzbang, w bampot, K bouncer, G shotgun, M smg, L launcher; drinks H dram, O orange, B heavy, N energy.
 // <map>
 const MAP = [
   '####################################',
@@ -20,10 +20,10 @@ const MAP = [
   '#EE6................d..............#',
   '#EE6......K.....P.......P..........#',
   '#..#..................d............#',
-  '####.............................H.#',
+  '####.........B...................H.#',
   '####..........rr....rr.............#',
   '###############################55###',
-  '#.....vvv.....vvv.....vvv..........#',
+  '#.....vvv...N.vvv..H..vvv..........#',
   '#..................................#',
   '#.L...............d.......d...w..w.#',
   '#..................................#',
@@ -32,14 +32,14 @@ const MAP = [
   '#........w..................#......#',
   '#..................w........#...H..#',
   '#...........................#.....x#',
-  '#....bbbbbbbbbbbbbbbbbbbb...#.....x#',
+  '#....bbbbbbbbbbbbbbbbbbbbB..#.....x#',
   '#..........o................#......#',
   '#..o...d........P....d.............#',
   '#.............d....................#',
   '#.................o.....o..........#',
   '###############################33###',
   '#...........S.jjjjjjjj.S...........#',
-  '#...........S.jjjjjjjj.S...........#',
+  '#...........S.jjjjjjjjNS...........#',
   '#...d.........jjjjjjjj.............#',
   '#...........w..............d.......#',
   '#v....S...........................S#',
@@ -55,7 +55,7 @@ const MAP = [
   '###################22###############',
   '########..............##############',
   '#TTT..x#..............##############',
-  '#TTT...#....rrr..P....##############',
+  '#TTT...#...Orrr..P....##############',
   '#......#..............##############',
   '#......1..G..d....d...##############',
   '#..@...1.......rrr....##############',
@@ -155,7 +155,7 @@ export function buildWorld() {
   let start = { x: 7, z: 89, yaw: -Math.PI / 2 };
   const exitTiles = [];
   const KIND_OF = { d: 'fizzbang', w: 'bampot', K: 'bouncer' };
-  const PICK_OF = { G: ['weapon', 'shotgun'], M: ['weapon', 'smg'], L: ['weapon', 'launcher'], H: ['health', 'medkit'] };
+  const PICK_OF = { G: ['weapon', 'shotgun'], M: ['weapon', 'smg'], L: ['weapon', 'launcher'], H: ['drink', 'dram'], O: ['drink', 'orange'], B: ['drink', 'heavy'], N: ['drink', 'energy'] };
   for (const m of marks) {
     const [x, z] = tileCentre(m.c, m.r);
     const an = areaOfTile(m.c, m.r);

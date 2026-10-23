@@ -315,7 +315,10 @@ section('7. pickups and exit');
   const w = buildWorld();
   openAll(w);
   const items = w.pickups.map((p) => `${p.kind}:${p.item}`).sort().join(',');
-  ok(items === 'health:medkit,health:medkit,health:medkit,weapon:launcher,weapon:shotgun,weapon:smg', `pickup set ${items}`);
+  const want = ['drink:dram', 'drink:dram', 'drink:dram', 'drink:dram', 'drink:energy', 'drink:energy', 'drink:heavy', 'drink:heavy', 'drink:orange', 'weapon:launcher', 'weapon:shotgun', 'weapon:smg'].sort().join(',');
+  ok(items === want, `pickup set ${items}`);
+  ok(w.pickups.every((p) => p.kind !== 'health' && p.item !== 'medkit'), 'no medkits any more');
+  ok(w.pickups.filter((p) => p.kind === 'drink').length === 9, 'nine drinks in the level');
   const ids = new Set(w.pickups.map((p) => p.id));
   ok(ids.size === w.pickups.length, 'pickup ids are unique');
   for (const p of w.pickups) {
@@ -323,12 +326,18 @@ section('7. pickups and exit');
   }
   ok(!w.isSolidAt(w.exit.x, w.exit.z), 'exit centre is walkable');
   ok(clearance(w, w.exit.x, w.exit.z) >= w.exit.r * 0.8, 'exit circle is mostly open floor');
-  const where = (id) => w.areaAt(...(([p]) => [p.x, p.z])(w.pickups.filter((q) => q.id === id)));
-  ok(where('shotgun-1').id === 'cloakroom', 'shotgun in the cloakroom');
-  ok(where('smg-1').id === 'dancefloor', 'smg on the dancefloor');
-  ok(where('launcher-1').id === 'vip', 'launcher in the vip corridor');
-  const med = w.pickups.filter((p) => p.item === 'medkit').map((p) => w.areaAt(p.x, p.z).id).sort().join(',');
-  ok(med === 'backstage,bar,dancefloor', `medkits in dancefloor, bar, backstage (${med})`);
+  const inArea = (id) => w.pickups.filter((q) => q.id === id).map((q) => w.areaAt(q.x, q.z).id)[0];
+  ok(inArea('shotgun-1') === 'cloakroom', 'shotgun in the cloakroom');
+  ok(inArea('smg-1') === 'dancefloor', 'smg on the dancefloor');
+  ok(inArea('launcher-1') === 'vip', 'launcher in the vip corridor');
+  const drinksIn = (area) => w.pickups.filter((p) => p.kind === 'drink' && w.areaAt(p.x, p.z).id === area).map((p) => p.item).sort().join(',');
+  ok(drinksIn('stairwell') === '', 'no drinks in the stairwell');
+  ok(drinksIn('cloakroom') === 'orange', `cloakroom drinks: ${drinksIn('cloakroom')}`);
+  ok(drinksIn('dancefloor') === 'dram,energy', `dancefloor drinks: ${drinksIn('dancefloor')}`);
+  ok(drinksIn('bar') === 'dram,heavy', `bar drinks: ${drinksIn('bar')}`);
+  ok(drinksIn('vip') === 'dram,energy', `vip drinks: ${drinksIn('vip')}`);
+  ok(drinksIn('backstage') === 'dram,heavy', `backstage drinks: ${drinksIn('backstage')}`);
+  for (const p of w.pickups) console.log(`  ${p.id.padEnd(11)} ${w.areaAt(p.x, p.z).id.padEnd(10)} tile ${Math.floor(p.x / TILE)},${Math.floor(p.z / TILE)}`);
 }
 
 // ---------------------------------------------------------------- 8 door animation
