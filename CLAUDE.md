@@ -48,7 +48,8 @@ Two levels so far. Read `README.md` for the layout and `docs/fps-design.md` for 
   Ammo is unlimited, clips are not; reload is automatic when empty or via RELOAD. Button taps are read from press
   events, not live touches, so they work at any frame rate. `hud.layout(view)` is the single source of truth for the
   box and button rectangles.
-- Mouse look is a setting for computers (Settings page from the title); by default the mouse acts like a finger. Progress is saved by `src/save.js` (cookie plus localStorage); debug runs never write it.
+- The Settings page (from the title) switches CONTROLS between PC and MOBILE and sets mouse sensitivity (PC only). In PC mode the
+  mouse aims with no button held and the left button fires. Progress is saved by `src/save.js` (cookie plus localStorage); debug runs never write it.
 - Menu buttons come from `screens.buttons(mode, view, state)`, used for both drawing and hit testing.
 - NEW GAME goes to the controls screen first; only START GAME begins the run.
 

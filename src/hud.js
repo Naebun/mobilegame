@@ -721,8 +721,10 @@ function drawUpgrades(ctx, view, up, y0) {
     const cx = x + 13;
     const cy = y + 10;
     if (id === 'clip') { // a magazine
-      poly(ctx, [cx - 3.5, cy - 6, cx + 2.5, cy - 6, cx + 3.5, cy + 5, cx - 2.5, cy + 5]);
-      ctx.fillRect(cx - 4, cy + 5, 8, 1.6);
+      ctx.lineWidth = 1.6;
+      rrect(ctx, cx - 4.5, cy - 6.5, 9, 13, 2);
+      ctx.stroke();
+      for (let i = 0; i < 3; i++) ctx.fillRect(cx - 2.4, cy - 4 + i * 3.4, 4.8, 1.8);
     } else if (id === 'reload') { // a circular arrow
       ctx.lineWidth = 2;
       ctx.lineCap = 'round';

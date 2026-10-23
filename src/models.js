@@ -2512,7 +2512,7 @@ function makeShaken() {
 
   setPose('idle', 0, 0);
   return {
-    group, height: 1.75, radius: 0.5, headY: 1.3, eyes, setPose, flash, update: (dt) => rig.update(dt), muzzle: null,
+    group, height: 1.85, radius: 0.5, headY: 1.3, eyes, setPose, flash, update: (dt) => rig.update(dt), muzzle: null,
     setBlast(r) { blastR = clamp(num(r, 3.2), 0.5, 12); },
     get primed() { return primed; },
   };
@@ -2793,8 +2793,7 @@ function makeLongshot() {
     rifleG.rotation.x = lerp(-0.55, curPitch, a) + 0.0035 * Math.sin(t * 9) * (1 - k);
     rifleG.position.y = lerp(1.4 - HIP, SNIPE.up - HIP, a);
     rifleG.position.z = lerp(-0.25, -SNIPE.fwd, a);
-    upper.rotation.x = 0.06 * a;
-    headG.rotation.x = 0.16 * a;
+    headG.rotation.x = 0.16 * a; // (the body does not lean: the rifle's pitch must be exactly the shot's)
     headG.position.z = -0.04 * a;
     legs[0].g.rotation.x = 0.12 * a;
     legs[1].g.rotation.x = -0.14 * a;
@@ -2901,7 +2900,7 @@ function makeLongshot() {
     len = clamp(len, 0.2, 80);
     laserLen = len;
     laserLocked = !!locked;
-    const wd = locked ? [0.03, 0.09, 0.24] : [0.008 + 0.008 * k, 0.026 + 0.02 * k, 0.08 + 0.07 * k];
+    const wd = locked ? [0.022, 0.06, 0.15] : [0.008 + 0.008 * k, 0.026 + 0.02 * k, 0.08 + 0.07 * k];
     lparts.forEach((b, i) => b.scale.set(wd[i], wd[i], len));
     lmats[0].color.copy(hdr(locked ? 0xffffff : 0xffb0a0, locked ? 8 : 5));
     lmats[1].color.copy(hdr(locked ? 0xffe0a0 : 0xff3030, locked ? 4 : 3));
@@ -2917,7 +2916,7 @@ function makeLongshot() {
 
   setPose('idle', 0, 0);
   return {
-    group, height: 2.6, radius: 0.42, headY: 2.1, eyes, setPose, flash, update: (dt) => rig.update(dt), muzzle, setLaser,
+    group, height: 2.7, radius: 0.42, headY: 2.1, eyes, setPose, flash, update: (dt) => rig.update(dt), muzzle, setLaser,
     pivot: SNIPE,
     get laserOn() { return laserOn; },
     get laserLen() { return laserOn ? laserLen : 0; },
@@ -3013,9 +3012,9 @@ function nurseGeo(v) {
       const col = new Float32Array(P_.count * 3);
       for (let i = 0; i < P_.count; i++) {
         const f = Math.pow(1 - clamp(P_.getY(i) / 1.7, 0, 1), 1.6);
-        col[i * 3] = 0.25 * f;
-        col[i * 3 + 1] = 1.5 * f;
-        col[i * 3 + 2] = 0.6 * f;
+        col[i * 3] = 0.12 * f;
+        col[i * 3 + 1] = 0.7 * f;
+        col[i * 3 + 2] = 0.3 * f;
       }
       g.setAttribute('color', new THREE.BufferAttribute(col, 3));
       return g;
@@ -3204,7 +3203,7 @@ function makeNurse() {
   function revive(t, k) {
     const a = easeOut(clamp(t / 0.35, 0, 1));
     const trem = Math.sin(t * (18 + 26 * k)) * 0.012 * (0.4 + k);
-    armR.rotation.x = lerp(0.15, 1.5, a) + trem;
+    armR.rotation.x = lerp(0.85, 1.5, a) + trem;
     armR.rotation.z = lerp(0.12, 0.05, a);
     armL.rotation.x = lerp(0.1, 2.3, a) + trem * 0.6;
     armL.rotation.z = lerp(-0.12, -0.25, a);
@@ -3300,7 +3299,7 @@ function makeNurse() {
     fxG.position.set(lx, Math.max(0, ly), lz);
     const rise = 0.4 + 0.9 * k;
     pillar.scale.set(0.6 + 0.6 * k, rise, 0.6 + 0.6 * k);
-    pillarMat.opacity = 0.35 + 0.65 * k;
+    pillarMat.opacity = 0.3 + 0.5 * k;
     pool.scale.setScalar(0.8 + 0.5 * k);
     const rr = 1.2 - 0.9 * ((wallNow() * 0.0012) % 1); // a ring that keeps closing in on the corpse
     fxRing.scale.setScalar(Math.max(0.2, rr));
@@ -3483,8 +3482,8 @@ function makeMimic() {
     return { a, claw, s };
   });
   // lit parts: the window panel, the sign, the keypad display and the inside of the mouth
-  const winMat = new THREE.MeshBasicMaterial({ color: hdr(0xffe6a8, 0.9), side: THREE.DoubleSide });
-  const signMat = new THREE.MeshBasicMaterial({ color: hdr(0xffe9b8, 1.0), side: THREE.DoubleSide });
+  const winMat = new THREE.MeshBasicMaterial({ color: hdr(0xffd890, 0.5), side: THREE.DoubleSide });
+  const signMat = new THREE.MeshBasicMaterial({ color: hdr(0xffe0a0, 0.7), side: THREE.DoubleSide });
   const dispMat = new THREE.MeshBasicMaterial({ color: hdr(0x40ff80, 1.6), side: THREE.DoubleSide });
   const mawMat = new THREE.MeshBasicMaterial({ color: hdr(0xff6a1a, 2.4), fog: false, side: THREE.DoubleSide });
   const winMesh = new THREE.Mesh(geo.panel, winMat);
@@ -3498,9 +3497,9 @@ function makeMimic() {
 
   const rig = flickerRig(phase, eyeMat, null);
   const white = whiteMat();
-  const WIN_C = new THREE.Color(hdr(0xffe6a8, 0.9));
+  const WIN_C = new THREE.Color(hdr(0xffd890, 0.5));
   const WIN_A = new THREE.Color(hdr(0xff3a1a, 1.7));
-  const SIGN_C = new THREE.Color(hdr(0xffe9b8, 1.0));
+  const SIGN_C = new THREE.Color(hdr(0xffe0a0, 0.7));
   const SIGN_A = new THREE.Color(hdr(0x8a1408, 0.9));
 
   // what a pose sets before apply(): lift (m), arm swing out (rad) and forward (rad), claw size 0..1, head tilt (rad),
@@ -3516,7 +3515,7 @@ function makeMimic() {
     for (const l of legs) l.rotation.set(0, 0, 0);
   }
   const awake = () => {
-    Z.lift = LIFT; Z.armOut = 0.28; Z.armFwd = 0.1; Z.claw = 1; Z.tilt = 0.26; Z.eye = 1; Z.flap = 0.5; Z.angry = 1;
+    Z.lift = LIFT; Z.armOut = 0.33; Z.armFwd = 0.1; Z.claw = 1; Z.tilt = 0.26; Z.eye = 1; Z.flap = 0.5; Z.angry = 1;
   };
   function apply() {
     const f = clamp(Z.lift / LIFT, 0, 1.4);
@@ -3528,7 +3527,7 @@ function makeMimic() {
       l.scale.set(1, Math.max(0.001, f), 1);
     }
     for (const a of arms) {
-      a.a.rotation.set(Z.armFwd, 0, -a.s * Z.armOut);
+      a.a.rotation.set(Z.armFwd, 0, a.s * Z.armOut);
       a.claw.scale.setScalar(Math.max(0.001, Z.claw));
       a.claw.visible = Z.claw > 0.03;
     }
@@ -3561,7 +3560,7 @@ function makeMimic() {
     const L = clamp((k - 0.18) / 0.4, 0, 1);
     Z.lift = LIFT * easeOut(L) + 0.12 * Math.sin(L * PI);
     const A = smooth(clamp((k - 0.35) / 0.35, 0, 1));
-    Z.armOut = 0.28 * A + 0.5 * Math.sin(A * PI);
+    Z.armOut = 0.33 * A + 0.5 * Math.sin(A * PI);
     Z.armFwd = 0.1 * A;
     Z.claw = A;
     const H = smooth(clamp((k - 0.5) / 0.3, 0, 1));
@@ -3597,7 +3596,7 @@ function makeMimic() {
     bodyG.rotation.z = sL * 0.035;
     Z.lean = -0.07 + 0.02 * Math.cos(c * 2);
     Z.armFwd = -sL * 0.4 + 0.1;
-    Z.armOut = 0.3 + 0.06 * Math.abs(sL);
+    Z.armOut = 0.36 + 0.06 * Math.abs(sL);
     Z.flap = 0.35 + 0.35 * Math.abs(Math.sin(c));
     Z.tilt = 0.3 + 0.03 * Math.cos(c * 2);
     Z.eye = 1 + 0.05 * Math.sin(c * 2);
@@ -3607,7 +3606,7 @@ function makeMimic() {
     awake();
     const a = easeOut(k);
     Z.armFwd = a * 2.75;
-    Z.armOut = 0.28 + 0.12 * a;
+    Z.armOut = 0.4 + 0.12 * a;
     Z.lean = 0.26 * a;
     bodyG.rotation.z = Math.sin(k * 60) * 0.012 * a;
     root.position.y = -0.04 * a;
@@ -3626,7 +3625,7 @@ function makeMimic() {
     const settle = smooth(clamp(q / 0.55, 0, 1));
     const osc = Math.sin(q * 16) * Math.exp(-q * 6);
     Z.armFwd = lerp(2.75, 0.35, slam) + settle * 0.3 + osc * 0.14;
-    Z.armOut = lerp(0.4, 0.28, slam);
+    Z.armOut = lerp(0.52, 0.4, slam);
     Z.lean = lerp(0.26, -0.45, slam) + settle * 0.3 + osc * 0.05;
     root.position.z = -0.32 * slam * (1 - settle * 0.7);
     root.position.y = k > 0.45 ? -0.045 * Math.exp(-q * 10) : -0.04 * (1 - slam);
@@ -3660,7 +3659,7 @@ function makeMimic() {
     root.rotation.z = 0.12 * fall;
     root.position.y = 0.39 * Math.sin(theta) + bounce;
     root.position.z = 0.3 * fall;
-    Z.armOut = 0.28 + 0.9 * fall;
+    Z.armOut = 0.4 + 0.9 * fall;
     Z.armFwd = 0.4 * fall;
     Z.claw = 1 - 0.3 * fall;
     Z.flap = 0.5 + 0.9 * sag;
@@ -3696,7 +3695,7 @@ function makeMimic() {
 
   setPose('dormant', 0, 0);
   return {
-    group, height: 2.35, radius: 0.62, headY: 2.0, eyes, setPose, flash, update: (dt) => rig.update(dt), muzzle: null,
+    group, height: 2.45, radius: 0.62, headY: 2.0, eyes, setPose, flash, update: (dt) => rig.update(dt), muzzle: null,
     dormantHeight: 1.92, dormantHeadY: 1.62,
   };
 }

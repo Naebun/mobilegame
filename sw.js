@@ -2,7 +2,7 @@
 const CACHE = 'mobilegame-v8';
 const ASSETS = [
   './', 'index.html', 'manifest.webmanifest', 'icons/icon.svg', 'src/style.css', 'src/main.js', 'src/engine.js',
-  'src/game3d.js', 'src/save.js', 'src/audio.js', 'src/data.js', 'src/consts.js', 'src/draw.js', 'src/world.js', 'src/levels/cowgate.js', 'src/levels/vaults.js', 'src/levels/vaults-decor.js', 'src/models.js', 'src/drink-meshes.js', 'src/weapon-meshes.js', 'src/prop-meshes.js',
+  'src/game3d.js', 'src/save.js', 'src/audio.js', 'src/data.js', 'src/consts.js', 'src/draw.js', 'src/world.js', 'src/levels/cowgate.js', 'src/levels/vaults.js', 'src/levels/vaults-decor.js', 'src/models.js', 'src/arsenal.js', 'src/arsenal-play.js', 'src/arsenal-meshes.js', 'src/drink-meshes.js', 'src/weapon-meshes.js', 'src/prop-meshes.js',
   'src/hud.js', 'src/screens.js', 'vendor/three.module.min.js',
 ];
 

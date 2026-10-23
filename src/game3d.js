@@ -1241,7 +1241,7 @@ function updateLongshot(e, dt) {
     const along = (p.x - ox) * hx + (p.z - oz) * hz;
     const lateral = Math.abs((p.x - ox) * hz - (p.z - oz) * hx);
     let reach = Math.min(def.range, wall) / cp;
-    if (along > 0 && along < wall && lateral < def.shot.halfWidth + 0.2) reach = Math.min(reach, (along - 0.8) / cp);
+    if (along > 0 && along < wall && lateral < def.shot.halfWidth + 0.2) reach = Math.min(reach, (along - 1.2) / cp);
     const len = Math.max(0.5, reach - 0.96); // the beam starts at the muzzle, 0.96 m along the barrel
     const k = clamp(e.stateT / total, 0, 1);
     e.robot.setLaser(len, e.aimPitch, e.locked, k);

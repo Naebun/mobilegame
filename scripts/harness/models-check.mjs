@@ -216,6 +216,180 @@ ok(rs[0].muzzle && rs[0].muzzle.name === 'muzzle', 'bampot muzzle');
   }
 }
 
+// ---- The four prepared enemies (not placed in any level): Shaken, Longshot, Nurse, Mimic ----
+{
+  const POSES = ['idle', 'walk', 'windup', 'swing', 'aim', 'shoot', 'hurt', 'dead'];
+  const EXTRA = { shaken: ['prime'], longshot: [], nurse: ['revive'], mimic: ['dormant', 'unfold'] };
+  const NUMS = { shaken: [1.85, 0.5, 1.3], longshot: [2.7, 0.42, 2.1], nurse: [2.05, 0.53, 1.38], mimic: [2.45, 0.62, 2.0] };
+  const KS_ALL = [-1, 0, 0.5, 1, 2, NaN];
+  const world = (o) => o.getWorldPosition(new THREE.Vector3());
+  // bounds of what can be seen: meshes that are visible all the way up (effects that are switched off do not count)
+  const visBox = (root) => {
+    root.updateMatrixWorld(true);
+    const b = new THREE.Box3();
+    root.traverse((c) => {
+      if (!c.isMesh) return;
+      for (let p = c; p; p = p.parent) if (!p.visible) return;
+      b.expandByObject(c);
+    });
+    return b;
+  };
+  const at = (r, s, t, k) => { r.setPose(s, t, k); r.group.updateMatrixWorld(true); };
+  const others = ['fizzbang', 'bampot', 'bouncer', 'shielded', 'tourguide'].map((k) => M.makeRobot(k).height);
+  for (const kind of M.PREPARED_KINDS) {
+    for (let variant = 0; variant < 3; variant++) {
+      const r = M.makeRobot(kind);
+      const label = `${kind}#${variant}`;
+      const [h, rad, hy] = NUMS[kind];
+      ok(Math.abs(r.height - h) < 0.01 && Math.abs(r.radius - rad) < 0.01 && Math.abs(r.headY - hy) < 0.01, `${label}: numbers ${r.height} ${r.radius} ${r.headY}`);
+      ok(r.headY > 0.5 * r.height && r.headY < r.height, `${label}: headY inside the body`);
+      ok(Array.isArray(r.eyes) && r.eyes.length === 2 && r.eyes.every((e) => e.isMesh), `${label}: two eye meshes`);
+      ok(typeof r.setPose === 'function' && typeof r.flash === 'function' && typeof r.update === 'function', `${label}: setPose, flash, update`);
+      const st = stats(r.group);
+      ok(st.meshes <= 24, `${label}: ${st.meshes} meshes`);
+      ok(st.tris >= 5000 && st.tris <= 14000, `${label}: ${st.tris} triangles (budget 5k to 14k)`);
+      r.setPose(kind === 'mimic' ? 'idle' : 'idle', 0, 0);
+      const bb = visBox(r.group);
+      ok(Math.abs(bb.max.y - r.height) < 0.15, `${label}: top ${bb.max.y.toFixed(2)} vs height ${r.height}`);
+      ok(bb.min.y > -0.03 && bb.min.y < 0.05, `${label}: feet at ${bb.min.y.toFixed(3)}`);
+      ok(bb.max.x - bb.min.x < r.radius * 4.2, `${label}: width ${(bb.max.x - bb.min.x).toFixed(2)}`);
+      for (const s of [...POSES, ...EXTRA[kind]]) {
+        for (const t of TS) {
+          for (const k of KS_ALL) {
+            try { r.setPose(s, t, k); } catch (e) { ok(false, `${label} ${s} t=${t} k=${k}: ${e.message}`); }
+            finiteTransforms(r.group, `${label} ${s} t=${t} k=${k}`);
+          }
+        }
+      }
+      for (const odd of [NaN, undefined, Infinity, -5]) {
+        try { r.setPose('walk', odd, odd); r.setPose('nonsense', odd, odd); r.update(odd); } catch (e) { ok(false, `${label} odd input: ${e.message}`); }
+        finiteTransforms(r.group, `${label} odd input`);
+      }
+      for (let i = 0; i < 50; i++) r.update(0.016);
+      ok(r.eyes[0].material.color.toArray().every((v) => Number.isFinite(v) && v < 40), `${label}: eye colour drifted`);
+      r.setPose('dead', 1, 1);
+      const dbb = visBox(r.group);
+      ok(dbb.max.y < r.height * 0.7, `${label}: dead k=1 top ${dbb.max.y.toFixed(2)} is not flat`);
+      try { r.flash(true); r.flash(false); r.flash(true); r.flash(false); } catch (e) { ok(false, `${label} flash: ${e.message}`); }
+      if (variant === 0) console.log(`${kind}: height ${r.height} radius ${r.radius} headY ${r.headY} meshes ${st.meshes} tris ${st.tris} deadTop ${dbb.max.y.toFixed(2)}`);
+    }
+  }
+  ok(others.every((x) => x > 1.9), 'sanity: the older robots are all about 2 m or more');
+
+  // silhouettes differ from the five older robots: height and width are not all the same as any of them
+  const dims = (kind) => { const r = M.makeRobot(kind); r.setPose('idle', 0, 0); const b = visBox(r.group); return [b.max.y - b.min.y, b.max.x - b.min.x, b.max.z - b.min.z]; };
+  const old = ['fizzbang', 'bampot', 'bouncer', 'shielded', 'tourguide'].map(dims);
+  for (const kind of M.PREPARED_KINDS) {
+    const d = dims(kind);
+    ok(old.every((o) => o.some((v, i) => Math.abs(v - d[i]) > 0.15)), `${kind}: its size (${d.map((v) => v.toFixed(2))}) is not the same as an existing robot's`);
+  }
+
+  // Shaken: the prime pose swells, glows, shows the ring; the rattle moves it; the ring takes a radius
+  {
+    const sk = M.makeRobot('shaken');
+    ok(typeof sk.setBlast === 'function', 'shaken: setBlast');
+    const ringVisible = () => { let on = false; sk.group.traverse((c) => { if (c.isMesh && !c.userData.base && c.visible && c.geometry.type === 'RingGeometry') on = true; }); return on; };
+    at(sk, 'idle', 1, 0);
+    ok(!ringVisible() && !sk.primed, 'shaken: no ring and not primed when idle');
+    at(sk, 'prime', 0.4, 0.8);
+    ok(ringVisible() && sk.primed, 'shaken: the prime pose shows the blast ring');
+    const w = (s, k) => { at(sk, s, 0.3, k); return new THREE.Box3().setFromObject(sk.group.children[0].children[2] || sk.group); };
+    at(sk, 'prime', 0.4, 0);
+    const b0 = new THREE.Box3(); sk.group.traverse((c) => { if (c.isMesh && c.userData.base && c.geometry.attributes.surf) b0.expandByObject(c); });
+    at(sk, 'prime', 0.4, 1);
+    const b1 = new THREE.Box3(); sk.group.traverse((c) => { if (c.isMesh && c.userData.base && c.geometry.attributes.surf) b1.expandByObject(c); });
+    ok(b1.max.y - b1.min.y > b0.max.y - b0.min.y + 0.1, 'shaken: swells and heaves foam up as the fuse runs down');
+    void w;
+    at(sk, 'walk', 0.37, 0);
+    const p0 = sk.group.children[0].children[2].position.x; // the upper body
+    at(sk, 'walk', 0.37, 1);
+    ok(Number.isFinite(p0), 'shaken: rattle level in walk is finite');
+    sk.setBlast(NaN);
+    sk.setBlast(5);
+    at(sk, 'prime', 0.2, 1);
+    finiteTransforms(sk.group, 'shaken blast radius');
+    at(sk, 'dead', 1, 1);
+    ok(!ringVisible(), 'shaken: no ring once it has burst');
+  }
+  // Longshot: muzzle on the rifle's line, laser API, recoil flash
+  {
+    const ls = M.makeRobot('longshot');
+    ok(ls.muzzle && ls.muzzle.name === 'muzzle' && ls.pivot.up === 1.5 && ls.pivot.fwd === 0.3, 'longshot: muzzle and pivot');
+    ls.setLaser(0, 0);
+    at(ls, 'idle', 1, 0);
+    ok(!ls.laserOn, 'longshot: no laser at rest');
+    const tipOf = (pitch) => { ls.setLaser(10, pitch, false, 0.5); at(ls, 'aim', 1, 0.5); return world(ls.muzzle); };
+    const m0 = tipOf(0);
+    ok(ls.laserOn && ls.laserLen === 10 && !ls.laserLocked, 'longshot: laser on, 10 m, not locked');
+    ok(Math.abs(m0.y - 1.5) < 0.05 && Math.abs(m0.x) < 0.05 && m0.z < -1.15 && m0.z > -1.35, `longshot: level aim, muzzle ${m0.toArray().map((v) => v.toFixed(2))} sits on the pivot line (y 1.5, z about -1.26)`);
+    const m1 = tipOf(0.2);
+    ok(m1.y > m0.y + 0.15 && Math.abs(m1.y - (1.5 + 0.96 * Math.sin(0.2))) < 0.05, `longshot: the rifle pitches with the line (muzzle y ${m1.y.toFixed(2)})`);
+    // the muzzle is on the ray from the pivot: (pivot) + 0.96 along the aim direction
+    const ray = new THREE.Vector3(0, 1.5, -0.3).addScaledVector(new THREE.Vector3(0, Math.sin(0.2), -Math.cos(0.2)), 0.96);
+    ok(ray.distanceTo(m1) < 0.05, 'longshot: the muzzle lies on the shot line');
+    ls.setLaser(30, 0.1, true, 1);
+    ok(ls.laserLocked && ls.laserLen === 30, 'longshot: locked laser');
+    for (const bad of [NaN, undefined, -3, Infinity, 1e9]) { ls.setLaser(bad, bad, true, bad); at(ls, 'aim', 1, 0.7); finiteTransforms(ls.group, `longshot laser ${bad}`); }
+    ls.setLaser(0, 0);
+    at(ls, 'shoot', 0.05, 0.1);
+    let flare = false; ls.group.traverse((c) => { if (c.name === 'muzzle-flash' && c.visible) flare = true; });
+    ok(flare, 'longshot: a muzzle flash while it recoils');
+  }
+  // Nurse: beam API
+  {
+    const nu = M.makeRobot('nurse');
+    ok(nu.tip && typeof nu.setBeam === 'function', 'nurse: tip and setBeam');
+    at(nu, 'revive', 2, 0.5);
+    ok(!nu.beamOn, 'nurse: no beam until asked');
+    nu.setBeam(0.4, 0.3, -3, 0.5);
+    ok(nu.beamOn, 'nurse: beam on');
+    const tip = world(nu.tip);
+    ok(tip.z < -0.8 && tip.y > 0.4 && tip.y < 1.4, `nurse: the syringe points forward in the revive pose (tip ${tip.toArray().map((v) => v.toFixed(2))})`);
+    for (const bad of [[NaN, 0, 0], [0, undefined, 0], [Infinity, 0, 0], [null], [0, 0, 0]]) { nu.setBeam(...bad, 0.5); finiteTransforms(nu.group, `nurse beam ${bad}`); }
+    nu.setBeam(null);
+    ok(!nu.beamOn, 'nurse: beam off');
+    // the beam end lands where it was asked, whatever the robot's own transform
+    nu.group.position.set(10, 0, -4);
+    nu.group.rotation.y = 1.1;
+    at(nu, 'revive', 2, 0.5);
+    nu.setBeam(0.4, 0.3, -3, 0.5);
+    nu.group.updateMatrixWorld(true);
+    let far = -1;
+    nu.group.traverse((c) => { if (c.isMesh && !c.userData.base && c.geometry.type === 'BoxGeometry' && c.visible && c.parent.visible) { const b = new THREE.Box3().setFromObject(c); far = Math.max(far, b.getCenter(new THREE.Vector3()).distanceTo(new THREE.Vector3(10, 0, -4))); } });
+    ok(far > 0.5, 'nurse: the beam moves with the robot');
+  }
+  // Mimic: looks like a machine until it unfolds
+  {
+    const mi = M.makeRobot('mimic');
+    ok(mi.dormantHeight === 1.92 && mi.dormantHeadY === 1.62, 'mimic: dormant numbers');
+    at(mi, 'dormant', 1, 0);
+    const bb = visBox(mi.group);
+    ok(Math.abs(bb.max.y - 1.92) < 0.06 && bb.min.y > -0.03, `mimic: a dormant machine is ${bb.max.y.toFixed(2)} m tall, on the floor`);
+    ok(bb.max.x - bb.min.x < 1.2 && bb.max.z - bb.min.z < 1.6, `mimic: its footprint is machine-sized (${(bb.max.x - bb.min.x).toFixed(2)} x ${(bb.max.z - bb.min.z).toFixed(2)})`);
+    ok(mi.eyes.every((e) => !e.visible), 'mimic: no eyes while dormant');
+    const body = new THREE.Box3();
+    mi.group.traverse((c) => { if (c.isMesh && c.userData.base) body.expandByObject(c); });
+    ok(body.max.x - body.min.x < 1.16, `mimic: dormant width ${(body.max.x - body.min.x).toFixed(2)}: the arms lie flat against the sides`);
+    at(mi, 'unfold', 1, 1);
+    const eyesOn = mi.eyes.every((e) => e.visible);
+    const top1 = visBox(mi.group).max.y;
+    at(mi, 'idle', 1, 0);
+    const top2 = visBox(mi.group).max.y;
+    ok(eyesOn && Math.abs(top1 - top2) < 0.12, `mimic: the unfold ends in the idle stance (tops ${top1.toFixed(2)} and ${top2.toFixed(2)})`);
+    ok(top2 > 2.2, 'mimic: awake it is taller than the machine (it stands up on legs)');
+    let prev = null;
+    let jump = 0;
+    for (let k = 0; k <= 1.0001; k += 0.02) { // the unfold is continuous
+      at(mi, 'unfold', 1, k);
+      const b = visBox(mi.group);
+      const v = [b.max.y, b.min.y, b.max.x, b.min.x];
+      if (prev) jump = Math.max(jump, ...v.map((x, i) => Math.abs(x - prev[i])));
+      prev = v;
+    }
+    ok(jump < 0.45, `mimic: the unfold moves smoothly (largest step ${jump.toFixed(2)} m per 0.02 of k)`);
+  }
+}
+
 // Weapons. The gun alone first (hands: false): muzzle, length, the record and the pump. Then Naebun's hands.
 const MAX_WEAPON_TRIS = 6000; // gun and hands together
 const nameCount = (o, name) => { let n = 0; o.traverse((c) => { if (c.name === name) n++; }); return n; };

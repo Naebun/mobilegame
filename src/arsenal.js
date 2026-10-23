@@ -165,8 +165,8 @@ export function createArsenal(kit) {
     holder.add(body, band);
     spin.add(holder);
     spin.scale.setScalar(1.25);
-    const halo = new THREE.Mesh(once('ars:halo', () => new THREE.SphereGeometry(0.22, 10, 8)), once('ars:haloMat', () => new THREE.MeshBasicMaterial({
-      color: hdr(0xff2e93, 1.2), transparent: true, opacity: 0.12, blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+    const halo = new THREE.Mesh(once('ars:halo', () => new THREE.SphereGeometry(0.13, 10, 8)), once('ars:haloMat', () => new THREE.MeshBasicMaterial({
+      color: hdr(0xff2e93, 1.0), transparent: true, opacity: 0.08, blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
     })));
     g.add(spin, halo);
     // setFuse(remaining01, t): the band throbs faster and brighter as the fuse runs out
@@ -213,7 +213,7 @@ export function createArsenal(kit) {
   // `index` is the record's place in the RECORDS list: the label colours repeat every four.
   function makeRecordPickup(index = 0) {
     const v = ((Math.floor(num(index, 0)) % RECORD_VARIANTS) + RECORD_VARIANTS) % RECORD_VARIANTS;
-    return pickupFrom('pickups', `record${v}`, `pickup-record-${v}`, RECORD_ACCENT[v], 2.5, -0.18);
+    return pickupFrom('pickups', `record${v}`, `pickup-record-${v}`, RECORD_ACCENT[v], 2.8, -0.18);
   }
 
   // ---- effects (HDR and additive, so they bloom) ----
@@ -228,8 +228,10 @@ export function createArsenal(kit) {
     const group = new THREE.Group();
     group.name = 'fx-beam';
     const part = (w, hex, k, opacity) => {
+      // a thin cone along -z, a tenth as wide at the gun as at the far end, so it never fills the screen near the camera
       const geo = once(`ars:beam:${w}`, () => {
-        const b = new THREE.BoxGeometry(w, w, 1);
+        const b = new THREE.CylinderGeometry(w / 2, w / 20, 1, 8, 1, true);
+        b.rotateX(-HALF);
         b.translate(0, 0, -0.5);
         return b;
       });
@@ -238,10 +240,10 @@ export function createArsenal(kit) {
       group.add(m);
       return m;
     };
-    const core = part(0.03, 0xffffff, 8, 1);
-    const mid = part(0.09, 0x7ff0ff, 4, 0.55);
-    const glow = part(0.2, 0xff2e93, 2.2, 0.22);
-    const spot = new THREE.Mesh(once('ars:spot', () => new THREE.SphereGeometry(0.16, 10, 8)), additive(0xbff8ff, 4, 0.8));
+    const core = part(0.035, 0xffffff, 5, 1);
+    const mid = part(0.09, 0x7ff0ff, 2.6, 0.5);
+    const glow = part(0.2, 0xff2e93, 1.4, 0.16);
+    const spot = new THREE.Mesh(once('ars:spot', () => new THREE.SphereGeometry(0.1, 10, 8)), additive(0xbff8ff, 2.5, 0.7));
     spot.frustumCulled = false;
     group.add(spot);
     const warm = new THREE.Color();
@@ -258,7 +260,7 @@ export function createArsenal(kit) {
         glow.scale.set(1 + 1.2 * r, 1 + 1.2 * r, L);
         // the feedback builds: the sheath goes from cyan to hot pink-white
         warm.copy(cool).lerp(hot, r);
-        mid.material.color.copy(warm).multiplyScalar(4);
+        mid.material.color.copy(warm).multiplyScalar(2.6);
         spot.position.z = -L;
         spot.scale.setScalar((0.6 + 1.4 * r) * pulse);
       },
@@ -282,7 +284,7 @@ export function createArsenal(kit) {
     let update;
     if (kind === 'cone') {
       const rings = [0, 1, 2, 3].map((i) => {
-        const m = mk(once('ars:conering', () => new THREE.RingGeometry(0.86, 1, 28)), i % 2 ? 0xffb347 : 0xfff0c8, 3.2, 0.9);
+        const m = mk(once('ars:conering', () => new THREE.RingGeometry(0.93, 1, 28)), i % 2 ? 0xffb347 : 0xfff0c8, 1.6, 0.8);
         return m;
       });
       const shell = mk(once('ars:coneshell', () => {
@@ -290,12 +292,12 @@ export function createArsenal(kit) {
         c.rotateX(-HALF); // apex at the origin, opening along -z
         c.translate(0, 0, -0.5);
         return c;
-      }), 0xff9a3a, 1.2, 0.18);
+      }), 0xff9a3a, 1.0, 0.07);
       update = (k, radius = 7, arc = 0.62) => {
         const kk = clamp(num(k, 0), 0, 1);
         const reach = radius * (0.25 + 0.75 * (1 - (1 - kk) * (1 - kk)));
         shell.scale.set(Math.tan(arc) * reach, Math.tan(arc) * reach, reach);
-        shell.material.opacity = 0.2 * (1 - kk);
+        shell.material.opacity = 0.08 * (1 - kk);
         rings.forEach((m, i) => {
           const f = clamp(kk * 1.25 - i * 0.1, 0, 1);
           const d = Math.max(0.2, radius * f);
@@ -305,25 +307,29 @@ export function createArsenal(kit) {
         });
       };
     } else {
-      const ring = mk(once('ars:ring', () => new THREE.RingGeometry(0.88, 1, 40)), 0xff5ec0, 3, 0.9);
+      const ring = mk(once('ars:ring', () => new THREE.RingGeometry(0.88, 1, 40)), 0xff5ec0, 1.8, 0.85);
       ring.rotation.x = -HALF;
       ring.position.y = 0.07;
-      const ring2 = mk(once('ars:ring', () => new THREE.RingGeometry(0.88, 1, 40)), 0x7ff0ff, 2.4, 0.7);
+      const ring2 = mk(once('ars:ring', () => new THREE.RingGeometry(0.88, 1, 40)), 0x7ff0ff, 1.4, 0.6);
       ring2.rotation.x = -HALF;
       ring2.position.y = 0.09;
-      const dome = mk(once('ars:dome', () => new THREE.SphereGeometry(1, 20, 10, 0, Math.PI * 2, 0, HALF)), 0xff2e93, 1.4, 0.2);
-      const flash = mk(once('ars:flash', () => new THREE.SphereGeometry(1, 10, 8)), 0xffffff, 3, 0.8);
+      const dome = mk(once('ars:wall', () => {
+        const c = new THREE.CylinderGeometry(1, 1, 1, 40, 1, true);
+        c.translate(0, 0.5, 0);
+        return c;
+      }), 0xff2e93, 1.2, 0.25); // a low wall of light riding out with the ring
+      const flash = mk(once('ars:flash', () => new THREE.SphereGeometry(1, 10, 8)), 0xffffff, 2, 0.7);
       update = (k, radius = 7) => {
         const kk = clamp(num(k, 0), 0, 1);
         const e = 1 - (1 - kk) * (1 - kk) * (1 - kk);
         const r = Math.max(0.05, radius * e);
         ring.scale.setScalar(r);
         ring2.scale.setScalar(Math.max(0.05, radius * Math.min(1, e * 1.2) * 0.8));
-        dome.scale.setScalar(r);
+        dome.scale.set(r, 0.9 * (1 - kk * 0.6), r);
         flash.scale.setScalar(0.3 + 0.6 * (1 - kk));
         ring.material.opacity = 0.9 * (1 - kk);
         ring2.material.opacity = 0.7 * (1 - kk) * (1 - kk);
-        dome.material.opacity = 0.22 * (1 - kk);
+        dome.material.opacity = 0.3 * (1 - kk) * (1 - kk);
         flash.material.opacity = 0.8 * Math.max(0, 1 - kk * 5);
       };
     }

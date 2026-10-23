@@ -3,7 +3,7 @@
 // Scenes: vm (the three viewmodels), ref (the pistol, SMG and launcher for comparison), strip (eight weapons on the HUD), beam (firing at a robot), torch (level 2, torch on),
 // pickups (weapons, upgrades, records on the floor), grenade (in flight), wave (the bass-drop ring and the airhorn cone),
 // stun (a stunned robot), alt (mobile ALT button and upgrade chips), setlist (the title with its button, the setlist).
-// Needs the ?test hook (the page exposes window.__game only with it). Uses testHook('give'), ('pickup') and ('arsenal').
+// Needs the ?test hook (the page exposes window.__game only with it). Uses testHook('give') and testHook('arsenal') (spawnPickup, freezeWave, stun).
 import { chromium } from 'playwright';
 import { spawn } from 'node:child_process';
 import { readdirSync } from 'node:fs';

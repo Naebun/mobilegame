@@ -140,7 +140,6 @@ const give = (S, w) => { game.testHook('give', w); S.player.weapon = w; S.player
   ok(late > early * 2, 'the damage per second ramps up the longer it stays on the target');
   ok(near(meter1, w.clip - w.drain * 1, 3), `the meter drains ${w.drain} units a second while firing (${meter1 && meter1.toFixed(1)} after 1 s)`);
   ok(p.beam.on && p.beam.ramp >= w.ramp, 'the beam is on and the ramp is full');
-  ok(S.hitMarker > 0 || true, 'sanity');
   // switching to another target starts the ramp again
   const b = stand(S, 'fizzbang', LANE.x + 6, LANE.z + 2.2);
   const hpB = b.hp;
@@ -288,7 +287,7 @@ const give = (S, w) => { game.testHook('give', w); S.player.weapon = w; S.player
       ok(!bots[i].stunT && bots[i].hp === bots[i].maxHp, `a robot ${d} m away is outside the ${w.radius} m radius and untouched`);
     }
   });
-  ok(bots[0].hp - 0 < bots[1].hp + 1 && (bots[0].maxHp - bots[0].hp) >= (bots[2].maxHp - bots[2].hp), 'the damage falls off with distance');
+  ok((bots[0].maxHp - bots[0].hp) > (bots[2].maxHp - bots[2].hp), 'the damage falls off with distance');
   ok(near(boss.stunT, w.stun * w.bossStun, 1e-6) && boss.stunT < w.stun / 2, `a boss is stunned for less (${boss.stunT.toFixed(2)} s against ${w.stun})`);
   ok(boss.hp > boss.maxHp - w.damage - 0.01, 'and hurt as little');
   // walls stop it: a robot the other side of a wall within the radius is not stunned
@@ -477,7 +476,7 @@ const give = (S, w) => { game.testHook('give', w); S.player.weapon = w; S.player
   p.ammo.smg = smg.clip;
   run(S, 0.1, hold(S, 'e'));
   run(S, 0.5);
-  ok(near(hpT - e.hp, a.rounds * a.damage, a.damage * 1.01 * a.rounds) && hpT - e.hp >= (a.rounds - 0.5) * a.damage, `all ${a.rounds} rounds land at 10 m (${(hpT - e.hp).toFixed(0)} damage)`);
+  ok(hpT - e.hp >= a.rounds * a.damage - 0.01, `all ${a.rounds} rounds land at 10 m (${(hpT - e.hp).toFixed(0)} damage)`);
   // an empty clip: the burst does not start; a short clip fires what is left
   p.alt.cd = 0;
   p.ammo.smg = 2;

@@ -121,7 +121,7 @@ export function createArsenalPlay(host) {
     const p = S.player;
     p.upgrades = { clip: 0, reload: 0, altfire: 0 };
     p.alt = { cd: 0, left: 0, gap: 0 };
-    p.beam = { on: false, target: null, ramp: 0, miss: 0, idle: 0, tick: 0, len: 0, hit: null };
+    p.beam = { on: false, target: null, ramp: 0, miss: 0, idle: 0, tick: 0, ticks: 0, len: 0, hit: null };
     S.runRecords = [];
     if (fx) {
       for (const w of fx.live) { w.obj.group.visible = false; w.obj.group.parent && w.obj.group.parent.remove(w.obj.group); }
@@ -364,7 +364,10 @@ export function createArsenalPlay(host) {
     while (b.tick >= w.tick - 1e-9) { // (the epsilon keeps six 60 Hz frames to a tenth of a second)
       b.tick -= w.tick;
       if (tgt && !tgt.dead) {
+        // a hit flashes a robot white; ten of those a second would keep it white, so only every third tick flashes
+        const flash = tgt.flashT;
         damageEnemy(tgt, beamDps(w, b.ramp) * w.tick * m.damage, false, p.x, p.z, 0, { dist: hit.t });
+        if (++b.ticks % 3 && !tgt.dead) tgt.flashT = flash;
         if (tgt.dead) {
           b.target = null;
           b.ramp = 0;

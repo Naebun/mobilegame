@@ -557,6 +557,10 @@ def clip_pickup():
   G.add(box(0.07, 0.006, 0.016, 0.001, 0), 0xffffff, 'plastic', wear=0, at=(0, -0.058, 0.0))
   G.add(box(0.016, 0.006, 0.07, 0.001, 0), 0xffffff, 'plastic', wear=0, at=(0, -0.058, 0.0))
   P.add(box(0.1, 0.01, 0.1, 0.004, 1, sub=0.0), 0x14161a, 'plastic', wear=0, at=(0, -0.052, 0.0))
+  # and the same sign on the back, so it shows as the pickup turns
+  G.add(box(0.07, 0.006, 0.016, 0.001, 0), 0xffffff, 'plastic', wear=0, at=(0, 0.0645, 0.0))
+  G.add(box(0.016, 0.006, 0.07, 0.001, 0), 0xffffff, 'plastic', wear=0, at=(0, 0.0645, 0.0))
+  P.add(box(0.1, 0.01, 0.1, 0.004, 1, sub=0.0), 0x14161a, 'plastic', wear=0, at=(0, 0.0585, 0.0))
   return dict(body=P, glow=G)
 
 
@@ -607,6 +611,9 @@ def altfire_pickup():
   P.add(box(0.12, 0.004, 0.062, 0.001, 1, sub=0.0), 0x14141a, 'plastic', wear=0, at=(0, -d / 2 - 0.0005, -0.01))
   bolt = [(0.012, 0.027), (-0.026, -0.004), (-0.004, -0.004), (-0.014, -0.027), (0.026, 0.006), (0.004, 0.006)]
   G.add(kit.prism(bolt, 0.004), 0xffffff, 'plastic', wear=0, at=(0, -d / 2 - 0.0025, -0.01))
+  # the back: a plate with the same bolt, so it shows as the pickup turns
+  P.add(box(0.12, 0.004, 0.1, 0.001, 1, sub=0.0), 0x14141a, 'plastic', wear=0, at=(0, d / 2 + 0.0005, 0.0))
+  G.add(kit.prism([(-x, z) for x, z in bolt], 0.004), 0xffffff, 'plastic', wear=0, at=(0, d / 2 + 0.0045, 0.0))
   # jack sockets on the sides
   for s in (-1, 1):
     P.add(rev([(0, 0), (0.011, 0, 0.001), (0.011, 0.014), (0, 0.014)], 10), CHROME, 'chrome', wear=0, at=(s * w / 2, 0.0, 0.05), rot=(0, s * PI / 2, 0))
@@ -630,22 +637,25 @@ def record(v):
   P = Part('body')
   S = 0.31
   P.add(loft([((0, -0.002, 0), S, S, 0.003), ((0, 0.002, 0), S, S, 0.003)], n=1, up=(0, 0, 1), bevel=0.001, bsteps=1, sub=0.02), v['sleeve'], 'paper', wear=0)
-  f = -0.0022  # the sleeve's front face
   st = v['style']
-  if st == 'sun':
-    P.add(rev([(0.0, 0.0), (0.085, 0.0), (0.085, 0.0012), (0.0, 0.0012)], 28), v['art'], 'paper', wear=0, at=(0, f, 0.02), rot=(PI / 2, 0, 0))
-    P.add(box(S, 0.0012, 0.05, 0.0, 0), 0x0c1230, 'paper', wear=0, at=(0, f - 0.0003, -0.115))
-  elif st == 'stripes':
-    for i in range(5):
-      P.add(box(0.012, 0.0012, S - 0.04, 0.0, 0), v['art'], 'paper', wear=0, at=(-0.1 + i * 0.05, f - 0.0003, 0.0))
-  elif st == 'rings':
-    for i, r in enumerate((0.11, 0.08, 0.05)):
-      P.add(rev([(r - 0.007, 0.0), (r, 0.0), (r, 0.0012), (r - 0.007, 0.0012)], 28), v['art'], 'paper', wear=0, at=(0, f, 0.0), rot=(PI / 2, 0, 0))
-  else:
-    for i in range(4):
-      for j in range(4):
-        if (i + j) % 2 == 0:
-          P.add(box(0.05, 0.0012, 0.05, 0.0, 0), v['art'], 'paper', wear=0, at=(-0.075 + i * 0.05, f - 0.0003, -0.075 + j * 0.05))
+  for sg in (-1, 1):  # the same art on the front (-y) and the back (+y), so the pickup looks right as it turns
+    f = 0.0022 * sg
+    o = 0.0003 * sg
+    if st == 'sun':
+      P.add(rev([(0.0, 0.0), (0.085, 0.0), (0.085, 0.0012), (0.0, 0.0012)], 28), v['art'], 'paper', wear=0, at=(0, f, 0.02), rot=(PI / 2, 0, 0))
+      P.add(box(S, 0.0012, 0.05, 0.0, 0), 0x0c1230, 'paper', wear=0, at=(0, f + o, -0.115))
+    elif st == 'stripes':
+      for i in range(5):
+        P.add(box(0.012, 0.0012, S - 0.04, 0.0, 0), v['art'], 'paper', wear=0, at=(-0.1 + i * 0.05, f + o, 0.0))
+    elif st == 'rings':
+      for i, r in enumerate((0.11, 0.08, 0.05)):
+        P.add(rev([(r - 0.007, 0.0), (r, 0.0), (r, 0.0012), (r - 0.007, 0.0012)], 28), v['art'], 'paper', wear=0, at=(0, f, 0.0), rot=(PI / 2, 0, 0))
+    else:
+      for i in range(4):
+        for j in range(4):
+          if (i + j) % 2 == 0:
+            P.add(box(0.05, 0.0012, 0.05, 0.0, 0), v['art'], 'paper', wear=0, at=(-0.075 + i * 0.05, f + o, -0.075 + j * 0.05))
+  f = -0.0022
   # the disc, pulled out to the lower right so its label shows: grooves in three shades, then the label
   dc = V((0.1, f - 0.006, -0.06))
   R = 0.15
