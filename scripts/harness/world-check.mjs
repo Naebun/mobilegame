@@ -315,10 +315,20 @@ section('7. pickups and exit');
   const w = buildWorld();
   openAll(w);
   const items = w.pickups.map((p) => `${p.kind}:${p.item}`).sort().join(',');
-  const want = ['drink:dram', 'drink:dram', 'drink:dram', 'drink:dram', 'drink:energy', 'drink:energy', 'drink:heavy', 'drink:heavy', 'drink:orange', 'weapon:launcher', 'weapon:shotgun', 'weapon:smg'].sort().join(',');
+  const want = ['drink:dram', 'drink:dram', 'drink:dram', 'drink:dram', 'drink:energy', 'drink:energy', 'drink:heavy', 'drink:heavy', 'drink:lastorders', 'drink:lastorders', 'drink:orange', 'weapon:launcher', 'weapon:shotgun', 'weapon:smg'].sort().join(',');
   ok(items === want, `pickup set ${items}`);
   ok(w.pickups.every((p) => p.kind !== 'health' && p.item !== 'medkit'), 'no medkits any more');
-  ok(w.pickups.filter((p) => p.kind === 'drink').length === 9, 'nine drinks in the level');
+  ok(w.pickups.filter((p) => p.kind === 'drink').length === 11, 'eleven drinks in the level (nine power-ups and two last orders)');
+  const lo = w.pickups.filter((p) => p.item === 'lastorders');
+  ok(lo.length === 2, `exactly two lastorders (${lo.length})`);
+  w.areas.forEach((a, i) => { // the owner's hard rule: never a super laser in a boss room or its doorway
+    if (!a.spawns.some((s) => s.kind === 'bouncer')) return;
+    const entry = w.doors[i - 1];
+    for (const p of lo) {
+      ok(w.areaAt(p.x, p.z) !== a, `lastorders ${p.id} is not inside the boss room (${a.id})`);
+      ok(Math.hypot(p.x - entry.x, p.z - entry.z) >= 6, `lastorders ${p.id} is at least 6 units from the boss room door ${entry.id}`);
+    }
+  });
   const ids = new Set(w.pickups.map((p) => p.id));
   ok(ids.size === w.pickups.length, 'pickup ids are unique');
   for (const p of w.pickups) {
@@ -333,9 +343,9 @@ section('7. pickups and exit');
   const drinksIn = (area) => w.pickups.filter((p) => p.kind === 'drink' && w.areaAt(p.x, p.z).id === area).map((p) => p.item).sort().join(',');
   ok(drinksIn('stairwell') === '', 'no drinks in the stairwell');
   ok(drinksIn('cloakroom') === 'orange', `cloakroom drinks: ${drinksIn('cloakroom')}`);
-  ok(drinksIn('dancefloor') === 'dram,energy', `dancefloor drinks: ${drinksIn('dancefloor')}`);
+  ok(drinksIn('dancefloor') === 'dram,energy,lastorders', `dancefloor drinks: ${drinksIn('dancefloor')}`);
   ok(drinksIn('bar') === 'dram,heavy', `bar drinks: ${drinksIn('bar')}`);
-  ok(drinksIn('vip') === 'dram,energy', `vip drinks: ${drinksIn('vip')}`);
+  ok(drinksIn('vip') === 'dram,energy,lastorders', `vip drinks: ${drinksIn('vip')}`);
   ok(drinksIn('backstage') === 'dram,heavy', `backstage drinks: ${drinksIn('backstage')}`);
   for (const p of w.pickups) console.log(`  ${p.id.padEnd(11)} ${w.areaAt(p.x, p.z).id.padEnd(10)} tile ${Math.floor(p.x / TILE)},${Math.floor(p.z / TILE)}`);
 }

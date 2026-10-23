@@ -62,6 +62,7 @@ const S = {
   hitMarker: 0,
   headshot: false,
   allClear: false,
+  laser: null, // the super power-up spin: { t, dur, charge, yaw0, beam, len, sounded }
   drink: null, // the drink being drunk: { id, t, dur, opened, gulpT, applied }
   buffs: { speed: 0, guard: 0, rapid: 0 }, // seconds left
   view: null,
@@ -101,7 +102,13 @@ function layoutFor(view) {
 }
 
 // Drink models come from models.js; until a model exists the old medkit stands in so nothing breaks.
-const makeDrinkMesh = (id) => (M.makeDrinkPickup ? M.makeDrinkPickup(id) : M.makeHealthPickup());
+const makeDrinkMesh = (id) => {
+  try {
+    return M.makeDrinkPickup ? M.makeDrinkPickup(id) : M.makeHealthPickup();
+  } catch {
+    return M.makeHealthPickup();
+  }
+};
 const buffOn = (name) => S.buffs[name] > 0;
 
 const inRect = (x, y, r) => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
@@ -185,12 +192,32 @@ function initRender(view) {
   const drinkVms = {};
   if (M.makeDrinkViewmodel) {
     for (const id of DRINK_ORDER) {
+      if (M.DRINK_IDS && !M.DRINK_IDS.includes(id)) continue;
       const vm = M.makeDrinkViewmodel(id);
       vm.group.visible = false;
       wroot.add(vm.group);
       drinkVms[id] = vm;
     }
   }
+
+  // the laser: a white-hot core inside a wide magenta glow, both HDR so they bloom; unit length along -z
+  const beam = new THREE.Group();
+  const beamPart = (w, colour, power, opacity) => {
+    const geo = new THREE.BoxGeometry(w, w, 1);
+    geo.translate(0, 0, -0.5);
+    const mat = new THREE.MeshBasicMaterial({
+      color: new THREE.Color(colour).multiplyScalar(power), transparent: true, opacity, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false,
+    });
+    const m = new THREE.Mesh(geo, mat);
+    m.frustumCulled = false;
+    beam.add(m);
+    return m;
+  };
+  const beamCore = beamPart(0.16, 0xffffff, 9, 1);
+  const beamMid = beamPart(0.5, 0xff8ad8, 4, 0.55);
+  const beamGlow = beamPart(1.1, 0xff2e93, 2.4, 0.3);
+  beam.visible = false;
+  scene.add(beam);
 
   const impacts = [];
   for (let i = 0; i < 24; i++) {
@@ -205,7 +232,7 @@ function initRender(view) {
   const pipeline = createPipeline(renderer, view, Q.tier);
   const fx = createFx(scene);
   fx.setQuality(FX_QUALITY[Q.tier]);
-  R = { renderer, scene, camera, torch, wscene, wcam, wroot, models, flashes, impacts, explosions: [], flashT: 0, muzzleT: 0, pipeline, fx, look, drinkVms };
+  R = { renderer, scene, camera, torch, wscene, wcam, wroot, models, flashes, impacts, explosions: [], flashT: 0, muzzleT: 0, pipeline, fx, look, drinkVms, beam, beamParts: [beamCore, beamMid, beamGlow], fov: 85 };
   resize(view);
 }
 
@@ -256,6 +283,7 @@ function resetLevel() {
   S.currentArea = null;
   S.newBest = false;
   S.drink = null;
+  S.laser = null;
   S.buffs.speed = S.buffs.guard = S.buffs.rapid = 0;
   flowT = 0;
   flow.update(S.player.x, S.player.z);
@@ -576,6 +604,7 @@ function fireBottle(e) {
 function hurtPlayer(amount, srcX, srcZ, melee) {
   const p = S.player;
   if (S.mode !== 'play' || p.health <= 0) return;
+  if (S.laser) return; // the spin makes Freddie untouchable
   if (buffOn('guard')) amount = Math.max(1, Math.round(amount * DRINKS.heavy.mult));
   p.health -= amount;
   p.hurt = 1;
@@ -890,7 +919,7 @@ function updateWeapon(dt, ctl) {
   p.switchT = Math.max(0, p.switchT - dt);
   p.heat = Math.max(0, p.heat - dt * 6);
   p.kick = Math.max(0, p.kick - dt * 6);
-  if (S.drink) {
+  if (S.drink || S.laser) {
     // hands are full: no firing, reloading or swapping until the drink is done
     p.fireT = Math.max(p.fireT, 0.1);
     return;
@@ -985,6 +1014,10 @@ function updatePickups(dt) {
     if (pk.def.kind === 'drink') {
       if (S.drink) continue; // one drink at a time
       if (pk.def.item === 'dram' && p.health >= p.maxHealth) continue; // keep it for when it is needed
+      if (DRINKS[pk.def.item].super && laserBlocked()) {
+        if (!S.toast) toast('LAST ORDERS: NOT IN HERE');
+        continue;
+      }
       startDrink(pk.def.item);
     } else {
       const w = WEAPONS[pk.def.item];
@@ -1044,7 +1077,85 @@ function updateDrink(dt) {
     audio.drinkDone(d.id);
     applyDrink(d.id);
   }
-  if (k >= 1) S.drink = null;
+  if (k >= 1) {
+    S.drink = null;
+    if (DRINKS[d.id].super) {
+      if (laserBlocked()) toast('THE LASER FIZZLES');
+      else startLaser();
+    }
+  }
+}
+
+// ---- the super power-up: Last Orders ----
+
+// The laser must never fire in a boss room, and never while a boss is awake.
+function inBossArea(x, z) {
+  const a = world.areaAt(x, z);
+  return !!a && a.spawns.some((s) => ENEMY_DEFS[s.kind].boss);
+}
+
+function laserBlocked() {
+  const p = S.player;
+  return inBossArea(p.x, p.z) || S.enemies.some((e) => e.boss && !e.dead && e.state !== 'idle');
+}
+
+function startLaser() {
+  const p = S.player;
+  const cfg = DRINKS.lastorders.laser;
+  S.laser = { t: 0, dur: cfg.seconds, charge: cfg.charge, tail: cfg.tail, yaw0: p.yaw, beam: false, len: 0, sounded: false, ended: false };
+  p.vx = p.vz = 0;
+  S.banner = { title: 'LAST ORDERS!', sub: DRINKS.lastorders.line, t: 2.4, max: 2.4 };
+  audio.laserCharge();
+}
+
+function vaporise(e, p) {
+  damageEnemy(e, 1e9, false, p.x, p.z, 0);
+  if (R) R.fx.explosion(e.x, e.h * 0.5, e.z, 1.6);
+}
+
+// Kills every non-boss robot with a clear line to Freddie inside the beam's arc (and, at the very end, any that
+// slipped through), as the view spins. Bosses are never touched.
+function updateLaser(dt) {
+  const L = S.laser;
+  const p = S.player;
+  const cfg = DRINKS.lastorders.laser;
+  L.t += dt;
+  p.vx = p.vz = 0;
+  p.pitch += (0 - p.pitch) * Math.min(1, dt * 8);
+  const spinFor = L.dur - L.charge - L.tail;
+  const k = clamp((L.t - L.charge) / spinFor, 0, 1);
+  const prev = p.yaw;
+  p.yaw = wrap(L.yaw0 + k * k * (3 - 2 * k) * cfg.turns * TAU);
+  L.beam = L.t >= L.charge && L.t < L.dur - L.tail;
+  if (L.beam && !L.sounded) {
+    L.sounded = true;
+    audio.laserBeam(spinFor + 0.2);
+  }
+  if (L.beam) {
+    const dx = -Math.sin(p.yaw);
+    const dz = -Math.cos(p.yaw);
+    L.len = Math.min(cfg.radius, world.raycast(p.x, p.z, dx, dz, cfg.radius));
+    const sweep = Math.abs(wrap(p.yaw - prev));
+    for (const e of S.enemies) {
+      if (e.dead || e.boss) continue;
+      const ex = e.x - p.x;
+      const ez = e.z - p.z;
+      const d = Math.hypot(ex, ez);
+      if (d > cfg.radius) continue;
+      const diff = Math.abs(wrap(Math.atan2(-ex, -ez) - p.yaw));
+      if (diff <= Math.max(Math.atan2(cfg.width + e.r, Math.max(d, 0.5)), sweep) && world.los(p.x, p.z, e.x, e.z)) vaporise(e, p);
+    }
+    if (R) R.fx.sparks(p.x + dx * L.len, 1.1, p.z + dz * L.len, -dx, 0.2, -dz, 4);
+  }
+  if (L.t >= L.dur) {
+    for (const e of S.enemies) {
+      if (e.dead || e.boss || Math.hypot(e.x - p.x, e.z - p.z) > cfg.radius) continue;
+      if (world.los(p.x, p.z, e.x, e.z)) vaporise(e, p);
+    }
+    audio.laserEnd();
+    S.laser = null;
+    S.player.shake = Math.max(S.player.shake, 0.4);
+  }
 }
 
 function toast(text) {
@@ -1155,6 +1266,12 @@ function updatePlay(dt, input, view) {
   const p = S.player;
   S.runT += dt;
   const ctl = readControls(input, view, dt);
+  if (S.laser) {
+    // the spin owns the view: no walking, turning, firing, reloading or swapping
+    ctl.mx = ctl.mz = ctl.yawD = ctl.pitchD = 0;
+    ctl.firing = ctl.reload = ctl.swap = false;
+    updateLaser(dt);
+  }
 
   // look
   p.yaw = wrap(p.yaw + ctl.yawD);
@@ -1269,7 +1386,26 @@ function placeCamera() {
     y = EYE * (1 - k) + 0.35 * k;
     roll = 0.9 * k;
   }
-  const sh = p.shake * p.shake * 0.5;
+  const laser = S.laser && S.laser.beam;
+  if (S.laser) roll += Math.sin(S.t * 9) * 0.035;
+  const fov = laser ? 100 : 85;
+  if (Math.abs(R.fov - fov) > 0.05) {
+    R.fov += (fov - R.fov) * 0.12;
+    camera.fov = R.fov;
+    camera.updateProjectionMatrix();
+  }
+  const bv = R.beam;
+  bv.visible = !!laser;
+  if (laser) {
+    const L = S.laser;
+    bv.position.set(p.x - Math.sin(p.yaw) * 0.35, EYE - 0.5, p.z - Math.cos(p.yaw) * 0.35);
+    bv.rotation.set(0, p.yaw, 0);
+    const pulse = 1 + Math.sin(S.t * 40) * 0.08;
+    R.beamParts[0].scale.set(pulse, pulse, L.len);
+    R.beamParts[1].scale.set(pulse * 1.1, pulse * 1.1, L.len);
+    R.beamParts[2].scale.set(pulse * 1.3, pulse * 1.3, L.len);
+  }
+  const sh = p.shake * p.shake * 0.5 + (laser ? 0.05 : 0);
   camera.position.set(p.x + (Math.random() - 0.5) * sh * 0.3, y, p.z + (Math.random() - 0.5) * sh * 0.3);
   camera.rotation.set(p.pitch + (Math.random() - 0.5) * sh * 0.2, p.yaw, roll + (Math.random() - 0.5) * sh * 0.2);
 }
@@ -1286,7 +1422,7 @@ function animateViewmodel(dt) {
   const p = S.player;
   const { models, flashes, wroot } = R;
   const drinking = S.drink && R.drinkVms[S.drink.id];
-  for (const id of WEAPON_ORDER) models[id].visible = !drinking && id === p.weapon && (S.mode === 'play' || S.mode === 'intro');
+  for (const id of WEAPON_ORDER) models[id].visible = !drinking && !S.laser && id === p.weapon && (S.mode === 'play' || S.mode === 'intro');
   for (const id of Object.keys(R.drinkVms)) R.drinkVms[id].group.visible = !!drinking && S.drink.id === id;
   const w = WEAPONS[p.weapon];
   const bobX = Math.cos(p.bobT * 0.5) * 0.012 * p.moveMag;
@@ -1376,7 +1512,7 @@ export function render(ctx, view, alpha) {
   R.renderer.info.reset();
   const showWeapon = S.mode === 'play' || S.mode === 'intro';
   R.pipeline.render(R.scene, R.camera, showWeapon ? R.wscene : null, R.wcam, R.look, {
-    time: S.t, hurt: S.mode === 'play' ? S.player.hurt : 0, flash: R.flashT > 0 ? 1 : 0,
+    time: S.t, hurt: S.mode === 'play' ? S.player.hurt : 0, flash: R.flashT > 0 || (S.laser && S.laser.beam) ? 1 : 0,
   });
   if (R.pipeline.tier === 'low') drawVignette(ctx, view);
 
@@ -1429,7 +1565,7 @@ export function testHook(cmd, arg) {
       const w = WEAPONS[S.player.weapon];
       return {
         fireInterval: w.interval / mult().fire, damageMult: mult().damage, maxHealth: S.player.maxHealth, weapon: w.id, clip: S.player.ammo[w.id],
-        reloading: S.player.reloadT > 0, buffs: { ...S.buffs }, drinking: S.drink ? S.drink.id : null, health: S.player.health,
+        reloading: S.player.reloadT > 0, buffs: { ...S.buffs }, drinking: S.drink ? S.drink.id : null, laser: !!S.laser, yaw: S.player.yaw, health: S.player.health,
       };
     }
     default: return undefined;

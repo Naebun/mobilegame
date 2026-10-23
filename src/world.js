@@ -11,7 +11,7 @@ const ROWS = 48;
 // Legend. Solid: # wall, P pillar, S speaker stack, T stairs. Low cover (blocks walking, not bullets):
 // b bar counter, j DJ booth, v booth, x crate or flight case, r coat or costume rail, o round table.
 // 1-6 door tiles (two per door), . floor. Markers that sit on floor: @ start, E exit (two tiles),
-// d fizzbang, w bampot, K bouncer, G shotgun, M smg, L launcher; drinks H dram, O orange, B heavy, N energy.
+// d fizzbang, w bampot, K bouncer, G shotgun, M smg, L launcher; drinks H dram, O orange, B heavy, N energy, X last orders.
 // <map>
 const MAP = [
   '####################################',
@@ -23,10 +23,10 @@ const MAP = [
   '####.........B...................H.#',
   '####..........rr....rr.............#',
   '###############################55###',
-  '#.....vvv...N.vvv..H..vvv..........#',
+  '#.....vvv...N.vvv..X..vvv..........#',
   '#..................................#',
   '#.L...............d.......d...w..w.#',
-  '#..................................#',
+  '#..........................H.......#',
   '###44###############################',
   '#...........................#x.....#',
   '#........w..................#......#',
@@ -41,7 +41,7 @@ const MAP = [
   '#...........S.jjjjjjjj.S...........#',
   '#...........S.jjjjjjjjNS...........#',
   '#...d.........jjjjjjjj.............#',
-  '#...........w..............d.......#',
+  '#...........w....X.........d.......#',
   '#v....S...........................S#',
   '#v....S......................P....S#',
   '#.....S...P........................#',
@@ -155,7 +155,7 @@ export function buildWorld() {
   let start = { x: 7, z: 89, yaw: -Math.PI / 2 };
   const exitTiles = [];
   const KIND_OF = { d: 'fizzbang', w: 'bampot', K: 'bouncer' };
-  const PICK_OF = { G: ['weapon', 'shotgun'], M: ['weapon', 'smg'], L: ['weapon', 'launcher'], H: ['drink', 'dram'], O: ['drink', 'orange'], B: ['drink', 'heavy'], N: ['drink', 'energy'] };
+  const PICK_OF = { G: ['weapon', 'shotgun'], M: ['weapon', 'smg'], L: ['weapon', 'launcher'], H: ['drink', 'dram'], O: ['drink', 'orange'], B: ['drink', 'heavy'], N: ['drink', 'energy'], X: ['drink', 'lastorders'] };
   for (const m of marks) {
     const [x, z] = tileCentre(m.c, m.r);
     const an = areaOfTile(m.c, m.r);

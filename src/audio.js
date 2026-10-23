@@ -313,3 +313,32 @@ export function drinkDone(id) {
     noise(t, 0.55, 0.2, sfxBus, { type: 'bandpass', freq: 1000, to: 600 });
   }
 }
+
+// ---- the super laser ----
+
+// A rising charge-up hum before the beam fires.
+export function laserCharge() {
+  if (!running()) return;
+  const t = ac.currentTime;
+  osc('sawtooth', 70, t, 0.5, 0.3, sfxBus, { to: 520, attack: 0.1 });
+  osc('sine', 140, t, 0.5, 0.25, sfxBus, { to: 1040, attack: 0.1 });
+  noise(t, 0.5, 0.2, sfxBus, { type: 'bandpass', freq: 300, to: 3000 });
+}
+
+// The beam itself: a deep roar with a bright whine on top, for as long as it sweeps.
+export function laserBeam(seconds) {
+  if (!running()) return;
+  const t = ac.currentTime;
+  osc('sawtooth', 55, t, seconds, 0.4, sfxBus, { attack: 0.08 });
+  osc('square', 110, t, seconds, 0.18, sfxBus, { attack: 0.08 });
+  osc('sine', 880, t, seconds, 0.12, sfxBus, { to: 1200, attack: 0.15 });
+  noise(t, seconds, 0.25, sfxBus, { type: 'lowpass', freq: 1800, to: 900 });
+}
+
+// The beam cuts out with a heavy thump.
+export function laserEnd() {
+  if (!running()) return;
+  const t = ac.currentTime;
+  osc('sine', 130, t, 0.7, 0.7, sfxBus, { to: 30 });
+  noise(t, 0.6, 0.4, sfxBus, { type: 'lowpass', freq: 1200, to: 120 });
+}

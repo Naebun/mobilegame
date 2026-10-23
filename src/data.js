@@ -35,7 +35,7 @@ export const ENEMY_DEFS = {
     shotInterval: [1.9, 2.8], aim: 0.55, shoot: 0.35, projSpeed: 11, keepMin: 7, keepMax: 13, range: 24,
   },
   bouncer: {
-    name: 'THE BOUNCER', hp: 450, speed: 3.3, ranged: false, reach: 2.7, windup: 0.8, swing: 0.4, cooldown: 1.5,
+    name: 'THE BOUNCER', boss: true, hp: 450, speed: 3.3, ranged: false, reach: 2.7, windup: 0.8, swing: 0.4, cooldown: 1.5,
     damage: 28, score: 1000, wakeRange: 22, quote: 'Not in those trainers.',
   },
 };
@@ -88,4 +88,11 @@ export const DRINKS = {
     id: 'energy', name: 'BASSLINE ENERGY', buff: 'rapid', mult: 1.5, reload: 0.35, seconds: 15, duration: 1.7, label: 'RAPID', line: 'Everything is louder.',
   },
 };
-export const DRINK_ORDER = ['dram', 'orange', 'heavy', 'energy'];
+// The super power-up. Drinking it (the usual animation) is followed by a spin on the spot with a huge laser that
+// wipes out every robot around Freddie. It does not stop time. Rules: never in a boss room, never hurts a boss, and is
+// refused while a boss is awake. Freddie cannot move or fire during the spin and cannot be hurt.
+DRINKS.lastorders = {
+  id: 'lastorders', name: 'LAST ORDERS', super: true, duration: 2.2, line: 'Time, gentlemen, please.',
+  laser: { seconds: 3.4, charge: 0.45, tail: 0.3, turns: 2, radius: 26, width: 0.9 },
+};
+export const DRINK_ORDER = ['dram', 'orange', 'heavy', 'energy', 'lastorders'];
