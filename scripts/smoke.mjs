@@ -70,7 +70,8 @@ try {
   });
   const shot = (name) => page.screenshot({ path: join(outDir, `smoke-${name}.png`) });
 
-  await page.goto(`http://localhost:${port}/?test`);
+  // medium tier: the full post pipeline (HDR, bloom, MSAA) at a cost software WebGL can bear
+  await page.goto(`http://localhost:${port}/?test&q=medium`);
   await page.waitForFunction(() => window.__game && window.__game.getState().player, null, { timeout: 60000 });
   await page.waitForTimeout(1500);
   const gl = await page.evaluate(() => { const c = document.getElementById('gl'); return { w: c.width, h: c.height, ok: !!c.getContext('webgl2') || !!c.getContext('webgl') }; });
@@ -146,20 +147,51 @@ try {
   await ptr('pointerup', 2, lx, ly);
   check(await until('s.projectiles.length === 0', null, 15000), 'rockets explode on impact and clean up');
 
-  // enemy bottles: a Wray and Nephew bot with a clear line of sight throws one
+  // enemy bottles: a Bampot and Nephew bot with a clear line of sight throws one
   await hook('play');
   await page.evaluate(() => {
     const g = window.__game;
     const w = g.getWorld();
-    const e = g.getState().enemies.find((x) => x.kind === 'wray');
+    const e = g.getState().enemies.find((x) => x.kind === 'bampot');
     for (const d of [8, 7, 6, 5, 4]) {
       const x = e.x - Math.sin(e.yaw) * d;
       const z = e.z - Math.cos(e.yaw) * d;
       if (!w.isSolidAt(x, z) && w.los(x, z, e.x, e.z)) { g.testHook('teleport', { x, z, yaw: e.yaw + Math.PI }); break; }
     }
   });
-  check(await until("s.projectiles.some((p) => p.owner === 'enemy')", null, 30000), 'a Wray and Nephew bot throws bottles when it sees Freddie');
+  check(await until("s.projectiles.some((p) => p.owner === 'enemy')", null, 30000), 'a Bampot and Nephew bot throws bottles when it sees Freddie');
   await shot('bottles');
+
+  // Last Orders: drink, switch to third person, spin with the laser, clear the room, return to first person
+  await hook('play');
+  await page.evaluate(() => {
+    const g = window.__game;
+    const w = g.getWorld();
+    const S = g.getState();
+    let best = null;
+    for (const e of S.enemies) {
+      for (const d of [3.5, 5, 7]) {
+        for (let k = 0; k < 8; k++) {
+          const x = e.x + Math.cos((k * Math.PI) / 4) * d;
+          const z = e.z + Math.sin((k * Math.PI) / 4) * d;
+          const a = w.areaAt(x, z);
+          if (!a || a.id !== 'dancefloor' || w.isSolidAt(x, z) || S.enemies.some((o) => Math.hypot(o.x - x, o.z - z) < 3)) continue;
+          const n = S.enemies.filter((o) => Math.hypot(o.x - x, o.z - z) < 26 && w.los(x, z, o.x, o.z)).length;
+          if (!best || n > best.n) best = { x, z, n };
+        }
+      }
+    }
+    g.testHook('teleport', best);
+    g.testHook('drink', 'lastorders');
+  });
+  check(await until('s.drink !== null', null, 8000), 'drinking Last Orders plays the drinking animation first');
+  check(await until('s.laser !== null && s.camK > 0.9', null, 60000), 'the spin starts and the camera goes third person');
+  await until('s.laser && s.laser.beam', null, 30000);
+  await shot('laser');
+  check(await until('s.laser === null', null, 60000), 'the spin ends');
+  check(await until('s.camK === 0', null, 20000), 'the camera returns to first person');
+  const dancefloor = await page.evaluate(() => window.__game.getState().areas.find((a) => a.def.id === 'dancefloor').cleared);
+  check(dancefloor, 'the laser cleared the dance floor and its door opened');
 
   // the linear route: kill each area in order, doors open, the dead stay dead
   await hook('play');

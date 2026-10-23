@@ -1,0 +1,16 @@
+<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><body style="margin:0;background:#000"><canvas id="c" style="width:100vw;height:100vh;display:block"></canvas>
+<script type="module">
+import * as THREE from '../../vendor/three.module.min.js';
+import { makeEnvironment } from '../../src/gfx-env.js';
+const r = new THREE.WebGLRenderer({ canvas: document.getElementById('c'), antialias: true });
+r.setSize(innerWidth, innerHeight, false);
+r.toneMapping = THREE.ACESFilmicToneMapping; r.toneMappingExposure = 1.1;
+const s = new THREE.Scene(); s.background = new THREE.Color(0x0b0807);
+s.environment = makeEnvironment(r);
+const cam = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.05, 50); cam.position.set(0, 1.2, 4);
+[[-1.2, 0.05, 0.9], [0, 0.4, 0.5], [1.2, 0.9, 0.2]].forEach(([x, rough, metal], i) => {
+  const m = new THREE.Mesh(new THREE.SphereGeometry(0.5, 32, 20), new THREE.MeshStandardMaterial({ color: 0xb08060, roughness: rough + 0.05, metalness: metal }));
+  m.position.set(x, 1.2 - i * 0.0, 0); s.add(m);
+});
+r.render(s, cam);
+</script>

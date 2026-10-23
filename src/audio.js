@@ -270,3 +270,75 @@ export function dawn() {
   const t = ac.currentTime;
   [523.3, 659.3, 784, 1046.5].forEach((f, i) => osc('sine', f, t + i * 0.14, 1.2, 0.2, sfxBus, { attack: 0.03 }));
 }
+
+// ---- drinks ----
+
+// Opening the drink: a can tab and hiss, a screw cap and fizz, a glass clink.
+export function drinkOpen(id) {
+  if (!running()) return;
+  const t = ac.currentTime;
+  if (id === 'energy') {
+    osc('square', 1800, t, 0.03, 0.12, sfxBus, { to: 900 });
+    noise(t + 0.03, 0.35, 0.3, sfxBus, { freq: 5500 });
+  } else if (id === 'orange') {
+    osc('triangle', 700, t, 0.12, 0.1, sfxBus, { to: 1100 });
+    noise(t + 0.08, 0.5, 0.28, sfxBus, { freq: 4000 });
+  } else {
+    osc('sine', 2400, t, 0.25, 0.14, sfxBus, { to: 2300 });
+    osc('sine', 3600, t, 0.18, 0.06, sfxBus);
+  }
+}
+
+// One swallow: a low glug with a little bubble.
+export function gulp() {
+  if (!running()) return;
+  const t = ac.currentTime;
+  osc('sine', 150 + Math.random() * 30, t, 0.11, 0.35, sfxBus, { to: 80 });
+  noise(t, 0.08, 0.1, sfxBus, { type: 'bandpass', freq: 700, to: 300 });
+}
+
+// The satisfied noise afterwards: an aah, a burp, a sigh, or a crushed can.
+export function drinkDone(id) {
+  if (!running()) return;
+  const t = ac.currentTime;
+  if (id === 'orange') {
+    osc('sawtooth', 95, t, 0.4, 0.3, sfxBus, { to: 50, attack: 0.02 });
+    noise(t, 0.25, 0.12, sfxBus, { type: 'lowpass', freq: 600, to: 150 });
+  } else if (id === 'heavy') {
+    noise(t, 0.7, 0.2, sfxBus, { type: 'bandpass', freq: 800, to: 350 });
+  } else if (id === 'energy') {
+    noise(t, 0.18, 0.35, sfxBus, { type: 'bandpass', freq: 3500, to: 1200 });
+    osc('square', 2200, t, 0.05, 0.1, sfxBus, { to: 1500 });
+  } else {
+    noise(t, 0.55, 0.2, sfxBus, { type: 'bandpass', freq: 1000, to: 600 });
+  }
+}
+
+// ---- the super laser ----
+
+// A rising charge-up hum before the beam fires.
+export function laserCharge() {
+  if (!running()) return;
+  const t = ac.currentTime;
+  osc('sawtooth', 70, t, 0.5, 0.3, sfxBus, { to: 520, attack: 0.1 });
+  osc('sine', 140, t, 0.5, 0.25, sfxBus, { to: 1040, attack: 0.1 });
+  noise(t, 0.5, 0.2, sfxBus, { type: 'bandpass', freq: 300, to: 3000 });
+}
+
+// The beam itself: a deep roar with a bright whine on top, for as long as it sweeps.
+export function laserBeam(seconds) {
+  if (!running()) return;
+  const t = ac.currentTime;
+  osc('sawtooth', 55, t, seconds, 0.4, sfxBus, { attack: 0.08 });
+  osc('square', 110, t, seconds, 0.18, sfxBus, { attack: 0.08 });
+  osc('sine', 880, t, seconds, 0.12, sfxBus, { to: 1200, attack: 0.15 });
+  noise(t, seconds, 0.25, sfxBus, { type: 'lowpass', freq: 1800, to: 900 });
+}
+
+// The beam cuts out with a heavy thump.
+export function laserEnd() {
+  if (!running()) return;
+  const t = ac.currentTime;
+  osc('sine', 130, t, 0.7, 0.7, sfxBus, { to: 30 });
+  noise(t, 0.6, 0.4, sfxBus, { type: 'lowpass', freq: 1200, to: 120 });
+}

@@ -1,0 +1,74 @@
+<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><body style="margin:0;background:#000"><canvas id="c" style="width:100vw;height:100vh;display:block"></canvas>
+<script type="module">
+import { THREE, M, setup } from './models-harness.js';
+const S = setup({ fov: 70 });
+const { renderer, scene, camera } = S;
+// The weapon scene as the game sets it up: the viewmodel root sits at (0.15, -0.24, -0.62), scaled 0.68, fov 70.
+const wscene = new THREE.Scene();
+wscene.environment = scene.environment;
+wscene.add(new THREE.AmbientLight(0xffffff, 0.85));
+const sun = new THREE.DirectionalLight(0xffe6c8, 1.4);
+sun.position.set(0.5, 1, 0.6);
+wscene.add(sun);
+const wcam = new THREE.PerspectiveCamera(70, 390 / 844, 0.02, 10);
+const wroot = new THREE.Group();
+wroot.position.set(0.15, -0.24, -0.62);
+wroot.scale.setScalar(0.68);
+wscene.add(wroot);
+// A dim stand-in for the world behind it.
+const back = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), new THREE.MeshBasicMaterial({ color: 0x1c1210 }));
+back.position.z = -8;
+scene.add(back);
+const strip = new THREE.Mesh(new THREE.BoxGeometry(30, 0.08, 0.05), new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffa040).multiplyScalar(1.5) }));
+strip.position.set(0, 1.5, -7.9);
+scene.add(strip);
+S.lights.forEach((l) => scene.remove(l));
+window.show = (cfg = {}) => {
+  const ids = cfg.ids || [cfg.id || 'dram'];
+  const ks = cfg.ks || [0, 0.1, 0.2, 0.3, 0.45, 0.6, 0.8, 1];
+  const cols = cfg.cols || 4;
+  const rows = Math.ceil(ks.length / cols);
+  const W = innerWidth;
+  const H = innerHeight;
+  const cw = W / cols;
+  const ch = H / rows;
+  renderer.setScissorTest(true);
+  let n = 0;
+  for (const id of ids) {
+    const vm = M.makeDrinkViewmodel(id);
+    wroot.add(vm.group);
+    for (const k of ks) {
+      vm.setPose(k);
+      const x = (n % cols) * cw;
+      const y = (rows - 1 - Math.floor(n / cols)) * ch;
+      renderer.setViewport(x, y, cw, ch);
+      renderer.setScissor(x, y, cw, ch);
+      renderer.setClearColor(0x14100e);
+      renderer.clear();
+      wcam.aspect = cw / ch;
+      wcam.updateProjectionMatrix();
+      renderer.render(wscene, wcam);
+      n++;
+    }
+    wroot.remove(vm.group);
+  }
+};
+window.showPickups = (cfg = {}) => {
+  renderer.setScissorTest(false);
+  S.content.clear();
+  M.DRINK_IDS.forEach((id, i) => {
+    const p = M.makeDrinkPickup(id);
+    p.position.x = (i - 2) * 1.3;
+    p.rotation.y = 0.5 + i * 0.3;
+    S.content.add(p);
+  });
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  camera.position.set(0, 1.0, cfg.dist ?? 6.5);
+  camera.lookAt(0, 0.8, 0);
+  S.scene.add(S.lights[0], S.lights[1]);
+  renderer.setViewport(0, 0, innerWidth, innerHeight);
+  renderer.render(scene, camera);
+};
+window.show();
+</script>

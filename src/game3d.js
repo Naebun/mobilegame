@@ -7,17 +7,28 @@ import * as THREE from '../vendor/three.module.min.js';
 import * as audio from './audio.js';
 import { WALL_H, EYE, PLAYER_R, COLOURS } from './consts.js';
 import { buildWorld } from './world.js';
+import { createPipeline, TIERS, TIER_ORDER } from './gfx.js';
+import { makeEnvironment } from './gfx-env.js';
+import { createFx } from './fx.js';
 import {
   makeRobot, makeWeaponModel, makeWeaponPickup, makeHealthPickup, makeProjectile, makeMuzzleFlash, makeImpact,
 } from './models.js';
 import * as hud from './hud.js';
 import * as screens from './screens.js';
-import { WEAPONS, WEAPON_ORDER, ENEMY_DEFS, PLAYER, LEVEL, AREA_HINTS, DEATH_LINES } from './data.js';
+import * as M from './models.js';
+import { WEAPONS, WEAPON_ORDER, ENEMY_DEFS, PLAYER, LEVEL, AREA_HINTS, DEATH_LINES, DRINKS, DRINK_ORDER } from './data.js';
 
 const TAU = Math.PI * 2;
 const HURT_DUR = 0.38; // matches the hurt animation length in models.js
 const BEST_KEY = 'mobilegame.fps.best';
 const DEBUG_KEY = 'mobilegame.debugMode';
+const QUALITY_KEY = 'mobilegame.quality';
+const FX_QUALITY = { high: 1, medium: 0.7, low: 0.4 };
+const DEFAULT_LOOK = { exposure: 1, bloom: 0.5, vignette: 0.35, grade: { lift: [0, 0, 0], gamma: [1, 1, 1], gain: [1, 1, 1] } };
+const query = typeof location !== 'undefined' ? new URLSearchParams(location.search) : new URLSearchParams('');
+// Quality: ?q=low|medium|high forces a tier (used by tests); otherwise start from the saved tier (default high)
+// and step down automatically if the device is clearly struggling. ?perf shows a frame-rate overlay.
+const Q = { tier: 'high', fixed: false, ema: 1 / 60, frames: 0, last: 0, perf: query.has('perf'), fps: 60 };
 // Debug mode is a testing aid for Freddie only. It must never feed back into balance: enemies, weapons' base stats,
 // areas and everything in data.js are tuned for normal mode alone.
 const DEBUG_MULT = { fire: 2, damage: 2, health: 2 };
@@ -51,6 +62,11 @@ const S = {
   hitMarker: 0,
   headshot: false,
   allClear: false,
+  camK: 0, // 0 first person .. 1 third person (Last Orders pulls the camera out)
+  camYaw: 0, // where the third-person camera sits: behind this heading
+  laser: null, // the super power-up spin: { t, dur, charge, yaw0, beam, len, sounded }
+  drink: null, // the drink being drunk: { id, t, dur, opened, gulpT, applied }
+  buffs: { speed: 0, guard: 0, rapid: 0 }, // seconds left
   view: null,
   ui: { move: { active: false, nx: 0, ny: 0 }, look: { active: false, nx: 0, ny: 0 }, firing: false },
 };
@@ -87,6 +103,16 @@ function layoutFor(view) {
   return layoutCache;
 }
 
+// Drink models come from models.js; until a model exists the old medkit stands in so nothing breaks.
+const makeDrinkMesh = (id) => {
+  try {
+    return M.makeDrinkPickup ? M.makeDrinkPickup(id) : M.makeHealthPickup();
+  } catch {
+    return M.makeHealthPickup();
+  }
+};
+const buffOn = (name) => S.buffs[name] > 0;
+
 const inRect = (x, y, r) => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
 
 // ---- lifecycle ----
@@ -95,7 +121,11 @@ export function init(view) {
   S.view = view;
   S.best = Number(read(BEST_KEY)) || 0;
   S.debugMode = read(DEBUG_KEY) === true;
-  world = buildWorld();
+  const forced = query.get('q');
+  const saved = read(QUALITY_KEY);
+  Q.fixed = !!TIERS[forced];
+  Q.tier = TIERS[forced] ? forced : (TIERS[saved] ? saved : 'high');
+  world = buildWorld({ quality: Q.tier });
   for (const d of world.doors) initialOpen[d.id] = d.open;
   flow = world.createFlowField();
   if (typeof document !== 'undefined' && document.getElementById('gl')) initRender(view);
@@ -106,12 +136,12 @@ export function init(view) {
 export function resize(view) {
   S.view = view;
   if (!R) return;
-  R.renderer.setPixelRatio(Math.min(view.dpr, 1.5));
-  R.renderer.setSize(view.w, view.h, false);
+  R.pipeline.resize(view);
   R.camera.aspect = view.w / view.h;
   R.camera.updateProjectionMatrix();
   R.wcam.aspect = view.w / view.h;
   R.wcam.updateProjectionMatrix();
+  R.fx.setScale((view.h * R.pipeline.pixelRatio) / (2 * Math.tan((R.camera.fov * Math.PI) / 360)));
 }
 
 export function gesture() {
@@ -122,6 +152,7 @@ function initRender(view) {
   const canvas = document.getElementById('gl');
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
   renderer.autoClear = false;
+  renderer.info.autoReset = false;
   renderer.setClearColor(COLOURS.bg, 1);
 
   const scene = new THREE.Scene();
@@ -141,6 +172,9 @@ function initRender(view) {
   const sun = new THREE.DirectionalLight(0xffffff, 0.9);
   sun.position.set(0.5, 1, 0.6);
   wscene.add(sun);
+  const env = makeEnvironment(renderer);
+  scene.environment = env;
+  wscene.environment = env;
   const wcam = new THREE.PerspectiveCamera(70, view.w / view.h, 0.02, 10);
   const wroot = new THREE.Group();
   wscene.add(wroot);
@@ -157,6 +191,41 @@ function initRender(view) {
     flashes[id] = flash;
   }
 
+  const drinkVms = {};
+  if (M.makeDrinkViewmodel) {
+    for (const id of DRINK_ORDER) {
+      if (M.DRINK_IDS && !M.DRINK_IDS.includes(id)) continue;
+      const vm = M.makeDrinkViewmodel(id);
+      vm.group.visible = false;
+      wroot.add(vm.group);
+      drinkVms[id] = vm;
+    }
+  }
+
+  // Freddie himself, seen only when Last Orders pulls the camera out to third person
+  const freddie = M.makeFreddie ? M.makeFreddie() : fallbackFreddie();
+  freddie.group.visible = false;
+  scene.add(freddie.group);
+
+  // the laser: a white-hot core inside a wide magenta glow, both HDR so they bloom; unit length along -z
+  const beam = new THREE.Group();
+  const beamPart = (w, colour, power, opacity) => {
+    const geo = new THREE.BoxGeometry(w, w, 1);
+    geo.translate(0, 0, -0.5);
+    const mat = new THREE.MeshBasicMaterial({
+      color: new THREE.Color(colour).multiplyScalar(power), transparent: true, opacity, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false,
+    });
+    const m = new THREE.Mesh(geo, mat);
+    m.frustumCulled = false;
+    beam.add(m);
+    return m;
+  };
+  const beamCore = beamPart(0.16, 0xffffff, 9, 1);
+  const beamMid = beamPart(0.5, 0xff8ad8, 4, 0.55);
+  const beamGlow = beamPart(1.1, 0xff2e93, 2.4, 0.3);
+  beam.visible = false;
+  scene.add(beam);
+
   const impacts = [];
   for (let i = 0; i < 24; i++) {
     const o = makeImpact();
@@ -165,8 +234,37 @@ function initRender(view) {
     impacts.push({ obj: o, t: 0 });
   }
 
-  R = { renderer, scene, camera, torch, wscene, wcam, wroot, models, flashes, impacts, explosions: [], flashT: 0, muzzleT: 0 };
+  const wl = world.look || {};
+  const look = { ...DEFAULT_LOOK, ...wl, grade: { ...DEFAULT_LOOK.grade, ...(wl.grade || {}) } };
+  const pipeline = createPipeline(renderer, view, Q.tier);
+  const fx = createFx(scene);
+  fx.setQuality(FX_QUALITY[Q.tier]);
+  R = { renderer, scene, camera, torch, wscene, wcam, wroot, models, flashes, impacts, explosions: [], flashT: 0, muzzleT: 0, pipeline, fx, look, drinkVms, beam, beamParts: [beamCore, beamMid, beamGlow], fov: 85, freddie };
   resize(view);
+}
+
+// Stand-in until models.js provides makeFreddie: a simple figure with a cannon, enough to see the spin.
+function fallbackFreddie() {
+  const g = new THREE.Group();
+  const mat = (c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.7 });
+  const box = (w, h, d, x, y, z, c) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(c));
+    m.position.set(x, y, z);
+    g.add(m);
+    return m;
+  };
+  box(0.55, 0.8, 0.32, 0, 1.15, 0, 0x6d28d9);
+  box(0.2, 0.75, 0.2, -0.14, 0.4, 0, 0x2a3a5a);
+  box(0.2, 0.75, 0.2, 0.14, 0.4, 0, 0x2a3a5a);
+  box(0.3, 0.3, 0.3, 0, 1.75, 0, 0xf0c8a0);
+  box(0.36, 0.1, 0.36, 0, 1.92, 0, 0xff2e93);
+  box(0.16, 0.16, 0.9, -0.2, 1.25, -0.5, 0x6d28d9);
+  box(0.16, 0.16, 0.9, 0.2, 1.25, -0.5, 0x6d28d9);
+  box(0.5, 0.5, 0.7, 0, 1.25, -1.0, 0x333344);
+  const muzzle = new THREE.Object3D();
+  muzzle.position.set(0, 1.25, -1.4);
+  g.add(muzzle);
+  return { group: g, height: 1.9, setPose() {}, muzzle };
 }
 
 function resetLevel() {
@@ -188,8 +286,9 @@ function resetLevel() {
   for (const a of world.areas) for (const sp of a.spawns) spawnEnemy(a, sp);
   S.totalEnemies = S.enemies.length;
 
-  for (const def of world.pickups) {
-    const mesh = def.kind === 'weapon' ? makeWeaponPickup(def.item) : makeHealthPickup();
+  for (const raw of world.pickups) {
+    const def = raw.kind === 'health' ? { ...raw, kind: 'drink', item: 'dram' } : raw; // older levels had medkits
+    const mesh = def.kind === 'weapon' ? makeWeaponPickup(def.item) : makeDrinkMesh(def.item);
     mesh.position.set(def.x, 0, def.z);
     if (R) R.scene.add(mesh);
     S.pickups.push({ def, mesh, taken: false, phase: rand(0, TAU) });
@@ -214,6 +313,10 @@ function resetLevel() {
   S.allClear = false;
   S.currentArea = null;
   S.newBest = false;
+  S.drink = null;
+  S.laser = null;
+  S.camK = 0;
+  S.buffs.speed = S.buffs.guard = S.buffs.rapid = 0;
   flowT = 0;
   flow.update(S.player.x, S.player.z);
 }
@@ -292,6 +395,7 @@ function damageEnemy(e, amount, head, fromX, fromZ, knock) {
 }
 
 function killEnemy(e) {
+  if (R) R.fx.wreck(e.x, e.h * 0.6, e.z);
   e.dead = true;
   e.state = 'dead';
   e.deadT = 0;
@@ -309,6 +413,7 @@ function updateEnemy(e, dt) {
   const p = S.player;
   const def = e.def;
   e.animT += dt;
+  if (e.robot.update) e.robot.update(dt);
   e.cool = Math.max(0, e.cool - dt);
   e.hurtT = Math.max(0, e.hurtT - dt);
   if (e.flashT > 0) {
@@ -532,6 +637,8 @@ function fireBottle(e) {
 function hurtPlayer(amount, srcX, srcZ, melee) {
   const p = S.player;
   if (S.mode !== 'play' || p.health <= 0) return;
+  if (S.laser) return; // the spin makes Freddie untouchable
+  if (buffOn('guard')) amount = Math.max(1, Math.round(amount * DRINKS.heavy.mult));
   p.health -= amount;
   p.hurt = 1;
   p.shake = Math.max(p.shake, 0.3);
@@ -666,7 +773,8 @@ function startReload() {
   const p = S.player;
   const w = WEAPONS[p.weapon];
   if (p.reloadT > 0 || p.ammo[p.weapon] >= w.clip) return;
-  p.reloadT = w.reload;
+  p.reloadTotal = w.reload * (buffOn('rapid') ? DRINKS.energy.reload : 1);
+  p.reloadT = p.reloadTotal;
   audio.reload(false);
 }
 
@@ -732,7 +840,7 @@ function fire() {
   const w = WEAPONS[p.weapon];
   const m = mult();
   p.ammo[p.weapon]--;
-  p.fireT = w.interval / m.fire;
+  p.fireT = w.interval / m.fire / (buffOn('rapid') ? DRINKS.energy.mult : 1);
   p.kick = Math.min(1, p.kick + w.kick * 8);
   S.shots++;
   audio.shoot(w.id);
@@ -740,6 +848,8 @@ function fire() {
   if (R) {
     R.muzzleT = 0.06;
     R.flashT = 0.05;
+    const f0 = forward3(p.yaw, p.pitch);
+    R.fx.muzzle(p.x + f0.x * 0.9 + Math.cos(p.yaw) * 0.18, EYE - 0.15 + f0.y * 0.9, p.z + f0.z * 0.9 - Math.sin(p.yaw) * 0.18, f0.x, f0.y, f0.z);
   }
 
   if (w.kind === 'projectile') {
@@ -768,8 +878,10 @@ function fire() {
       const head = hit.head;
       damageEnemy(hit.enemy, w.damage * m.damage * (head ? 2 : 1), head, p.x, p.z, w.knock / w.pellets * (w.pellets > 1 ? 2 : 1));
       spark(hit.x, hit.y, hit.z);
+      fxHit(hit, d, true, w.pellets);
     } else if (hit.t < w.range - 0.01) {
       spark(hit.x - d.x * 0.05, hit.y - d.y * 0.05, hit.z - d.z * 0.05);
+      fxHit(hit, d, false, w.pellets);
     }
   }
 }
@@ -797,6 +909,7 @@ function explode(pr, x, y, z) {
   audio.boom();
   S.player.shake = Math.max(S.player.shake, 0.25);
   if (R) {
+    R.fx.explosion(x, y, z, w.splashRadius);
     const mesh = new THREE.Mesh(
       new THREE.SphereGeometry(1, 10, 8),
       new THREE.MeshBasicMaterial({ color: 0xffaa44, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false }),
@@ -815,6 +928,15 @@ function explode(pr, x, y, z) {
   alertNear(x, z, 22);
 }
 
+// Sparks, oil and smoke where a shot lands. Fewer per pellet for shotguns so the pool is never swamped.
+function fxHit(hit, d, robot, pellets) {
+  if (!R) return;
+  const n = Math.max(2, Math.round(7 / Math.sqrt(pellets)));
+  R.fx.sparks(hit.x, hit.y, hit.z, -d.x, 0.3, -d.z, n);
+  if (robot) R.fx.oil(hit.x, hit.y, hit.z, Math.max(1, Math.round(n / 2)));
+  else R.fx.smoke(hit.x - d.x * 0.05, hit.y, hit.z - d.z * 0.05, 1, 0.3, 0.3, 0.4);
+}
+
 function spark(x, y, z) {
   if (!R) return;
   const slot = R.impacts.reduce((a, b) => (b.t < a.t ? b : a));
@@ -830,6 +952,11 @@ function updateWeapon(dt, ctl) {
   p.switchT = Math.max(0, p.switchT - dt);
   p.heat = Math.max(0, p.heat - dt * 6);
   p.kick = Math.max(0, p.kick - dt * 6);
+  if (S.drink || S.laser) {
+    // hands are full: no firing, reloading or swapping until the drink is done
+    p.fireT = Math.max(p.fireT, 0.1);
+    return;
+  }
   if (ctl.swap) cycleWeapon();
   if (ctl.reload) startReload();
   if (p.reloadT > 0) {
@@ -916,11 +1043,16 @@ function updatePickups(dt) {
     pk.phase += dt;
     pk.mesh.position.y = 0.05 + Math.sin(pk.phase * 2.2) * 0.06;
     pk.mesh.rotation.y += dt * 1.4;
+    if (pk.mesh.userData.update) pk.mesh.userData.update(S.t);
     if (Math.hypot(pk.def.x - p.x, pk.def.z - p.z) > 1.2) continue;
-    if (pk.def.kind === 'health') {
-      if (p.health >= p.maxHealth) continue;
-      p.health = Math.min(p.maxHealth, p.health + PLAYER.medkit * mult().health);
-      toast('MEDKIT');
+    if (pk.def.kind === 'drink') {
+      if (S.drink) continue; // one drink at a time
+      if (pk.def.item === 'dram' && p.health >= p.maxHealth) continue; // keep it for when it is needed
+      if (DRINKS[pk.def.item].super && laserBlocked()) {
+        if (!S.toast) toast('LAST ORDERS: NOT IN HERE');
+        continue;
+      }
+      startDrink(pk.def.item);
     } else {
       const w = WEAPONS[pk.def.item];
       if (p.owned[w.id]) continue;
@@ -932,6 +1064,133 @@ function updatePickups(dt) {
     pk.taken = true;
     pk.mesh.visible = false;
     audio.pickup();
+  }
+}
+
+// ---- drinks ----
+
+function startDrink(id) {
+  const p = S.player;
+  const dr = DRINKS[id];
+  const vm = R && R.drinkVms[id];
+  S.drink = { id, t: 0, dur: vm ? vm.duration : dr.duration, opened: false, gulpT: 0, applied: false };
+  p.reloadT = 0; // reloading is interrupted, the clip stays as it was
+}
+
+function applyDrink(id) {
+  const p = S.player;
+  const dr = DRINKS[id];
+  if (dr.heal) {
+    p.health = Math.min(p.maxHealth, p.health + dr.heal * mult().health);
+    toast(`${dr.name}: +${Math.round(dr.heal * mult().health)} HEALTH`);
+  } else {
+    S.buffs[dr.buff] = dr.seconds;
+    toast(`${dr.name}: ${dr.label} FOR ${dr.seconds}S`);
+  }
+  audio.pickup();
+}
+
+function updateDrink(dt) {
+  const d = S.drink;
+  if (!d) return;
+  d.t += dt;
+  const k = d.t / d.dur;
+  if (!d.opened && k >= 0.12) {
+    d.opened = true;
+    audio.drinkOpen(d.id);
+  }
+  if (k >= 0.3 && k <= 0.72) {
+    d.gulpT -= dt;
+    if (d.gulpT <= 0) {
+      d.gulpT = 0.17;
+      audio.gulp();
+    }
+  }
+  if (!d.applied && k >= 0.65) {
+    d.applied = true;
+    audio.drinkDone(d.id);
+    if (DRINKS[d.id].super) audio.pickup(); // the super drink's effect is the laser, which starts when the animation ends
+    else applyDrink(d.id);
+  }
+  if (k >= 1) {
+    S.drink = null;
+    if (DRINKS[d.id].super) {
+      if (laserBlocked()) toast('THE LASER FIZZLES');
+      else startLaser();
+    }
+  }
+}
+
+// ---- the super power-up: Last Orders ----
+
+// The laser must never fire in a boss room, and never while a boss is awake.
+function inBossArea(x, z) {
+  const a = world.areaAt(x, z);
+  return !!a && a.spawns.some((s) => ENEMY_DEFS[s.kind].boss);
+}
+
+function laserBlocked() {
+  const p = S.player;
+  return inBossArea(p.x, p.z) || S.enemies.some((e) => e.boss && !e.dead && e.state !== 'idle');
+}
+
+function startLaser() {
+  const p = S.player;
+  const cfg = DRINKS.lastorders.laser;
+  S.camYaw = p.yaw;
+  S.laser = { t: 0, dur: cfg.seconds, charge: cfg.charge, tail: cfg.tail, yaw0: p.yaw, beam: false, len: 0, sounded: false, ended: false };
+  p.vx = p.vz = 0;
+  S.banner = { title: 'LAST ORDERS!', sub: DRINKS.lastorders.line, t: 2.4, max: 2.4 };
+  audio.laserCharge();
+}
+
+function vaporise(e, p) {
+  damageEnemy(e, 1e9, false, p.x, p.z, 0);
+  if (R) R.fx.explosion(e.x, e.h * 0.5, e.z, 1.6);
+}
+
+// Kills every non-boss robot with a clear line to Freddie inside the beam's arc (and, at the very end, any that
+// slipped through), as the view spins. Bosses are never touched.
+function updateLaser(dt) {
+  const L = S.laser;
+  const p = S.player;
+  const cfg = DRINKS.lastorders.laser;
+  L.t += dt;
+  p.vx = p.vz = 0;
+  p.pitch += (0 - p.pitch) * Math.min(1, dt * 8);
+  const spinFor = L.dur - L.charge - L.tail;
+  const k = clamp((L.t - L.charge) / spinFor, 0, 1);
+  const prev = p.yaw;
+  p.yaw = wrap(L.yaw0 + k * k * (3 - 2 * k) * cfg.turns * TAU);
+  L.beam = L.t >= L.charge && L.t < L.dur - L.tail;
+  if (L.beam && !L.sounded) {
+    L.sounded = true;
+    audio.laserBeam(spinFor + 0.2);
+  }
+  if (L.beam) {
+    const dx = -Math.sin(p.yaw);
+    const dz = -Math.cos(p.yaw);
+    L.len = Math.min(cfg.radius, world.raycast(p.x, p.z, dx, dz, cfg.radius));
+    const sweep = Math.abs(wrap(p.yaw - prev));
+    for (const e of S.enemies) {
+      if (e.dead || e.boss) continue;
+      const ex = e.x - p.x;
+      const ez = e.z - p.z;
+      const d = Math.hypot(ex, ez);
+      if (d > cfg.radius) continue;
+      const diff = Math.abs(wrap(Math.atan2(-ex, -ez) - p.yaw));
+      if (diff <= Math.max(Math.atan2(cfg.width + e.r, Math.max(d, 0.5)), sweep) && world.los(p.x, p.z, e.x, e.z)) vaporise(e, p);
+    }
+    if (R) R.fx.sparks(p.x + dx * L.len, 1.1, p.z + dz * L.len, -dx, 0.2, -dz, 4);
+  }
+  if (L.t >= L.dur) {
+    for (const e of S.enemies) {
+      if (e.dead || e.boss || Math.hypot(e.x - p.x, e.z - p.z) > cfg.radius) continue;
+      if (world.los(p.x, p.z, e.x, e.z)) vaporise(e, p);
+    }
+    audio.laserEnd();
+    S.laser = null;
+    S.player.shake = Math.max(S.player.shake, 0.4);
   }
 }
 
@@ -1016,6 +1275,8 @@ export function update(dt, input, view) {
   if (S.banner && (S.banner.t -= dt) <= 0) S.banner = null;
   if (S.toast && (S.toast.t -= dt) <= 0) S.toast = null;
   S.hitMarker = Math.max(0, S.hitMarker - dt * 5);
+  S.camK += ((S.laser && S.laser.t < S.laser.dur - 0.15 ? 1 : 0) - S.camK) * Math.min(1, dt * 7);
+  if (S.camK < 0.002) S.camK = 0;
 
   switch (S.mode) {
     case 'title':
@@ -1043,13 +1304,19 @@ function updatePlay(dt, input, view) {
   const p = S.player;
   S.runT += dt;
   const ctl = readControls(input, view, dt);
+  if (S.laser) {
+    // the spin owns the view: no walking, turning, firing, reloading or swapping
+    ctl.mx = ctl.mz = ctl.yawD = ctl.pitchD = 0;
+    ctl.firing = ctl.reload = ctl.swap = false;
+    updateLaser(dt);
+  }
 
   // look
   p.yaw = wrap(p.yaw + ctl.yawD);
   p.pitch = clamp(p.pitch + ctl.pitchD, -1.2, 1.2);
 
   // move: forward is (-sin yaw, -cos yaw), right is (cos yaw, -sin yaw)
-  const sp = PLAYER.speed;
+  const sp = PLAYER.speed * (buffOn('speed') ? DRINKS.orange.mult : 1);
   const tvx = (-Math.sin(p.yaw) * ctl.mz + Math.cos(p.yaw) * ctl.mx) * sp;
   const tvz = (-Math.cos(p.yaw) * ctl.mz - Math.sin(p.yaw) * ctl.mx) * sp;
   const k = Math.min(1, dt * 14);
@@ -1075,6 +1342,8 @@ function updatePlay(dt, input, view) {
   p.hurt = Math.max(0, p.hurt - dt * 1.6);
   p.shake = Math.max(0, p.shake - dt);
 
+  for (const name of Object.keys(S.buffs)) S.buffs[name] = Math.max(0, S.buffs[name] - dt);
+  updateDrink(dt);
   updateWeapon(dt, ctl);
 
   flowT -= dt;
@@ -1099,10 +1368,11 @@ function updatePlay(dt, input, view) {
 
 // ---- render ----
 
+const BUFF_MAX = { speed: DRINKS.orange.seconds, guard: DRINKS.heavy.seconds, rapid: DRINKS.energy.seconds };
 const hudState = {
   health: 0, maxHealth: 0, hurt: 0, damageDirs: null, weapon: { id: '', name: '', clip: 0, clipSize: 0, reload: null },
   weapons: null, hitMarker: 0, headshot: false, toast: null, banner: null, objective: '', enemiesLeft: 0, areaName: '',
-  boss: null, score: 0, timeSec: 0, debugMode: false, move: null, look: null, firing: false,
+  boss: null, score: 0, timeSec: 0, debugMode: false, move: null, look: null, firing: false, buffs: null, cinematic: 0,
 };
 
 function buildHudState() {
@@ -1113,7 +1383,7 @@ function buildHudState() {
   h.maxHealth = p.maxHealth;
   h.hurt = p.hurt;
   h.damageDirs = S.damageDirs;
-  h.weapon = { id: w.id, name: w.name, clip: p.ammo[w.id], clipSize: w.clip, reload: p.reloadT > 0 ? 1 - p.reloadT / w.reload : null };
+  h.weapon = { id: w.id, name: w.name, clip: p.ammo[w.id], clipSize: w.clip, reload: p.reloadT > 0 ? 1 - p.reloadT / (p.reloadTotal || w.reload) : null };
   h.weapons = WEAPON_ORDER.map((id) => ({ id, name: WEAPONS[id].name, owned: !!p.owned[id], active: id === p.weapon }));
   h.hitMarker = S.hitMarker;
   h.headshot = S.headshot;
@@ -1127,6 +1397,8 @@ function buildHudState() {
   h.score = S.score;
   h.timeSec = S.runT;
   h.debugMode = S.debugMode;
+  h.cinematic = S.camK;
+  h.buffs = Object.entries(S.buffs).filter(([, t]) => t > 0).map(([id, t]) => ({ id, t, max: BUFF_MAX[id] }));
   h.move = S.ui.move;
   h.look = S.ui.look;
   h.firing = S.ui.firing;
@@ -1153,9 +1425,77 @@ function placeCamera() {
     y = EYE * (1 - k) + 0.35 * k;
     roll = 0.9 * k;
   }
-  const sh = p.shake * p.shake * 0.5;
-  camera.position.set(p.x + (Math.random() - 0.5) * sh * 0.3, y, p.z + (Math.random() - 0.5) * sh * 0.3);
-  camera.rotation.set(p.pitch + (Math.random() - 0.5) * sh * 0.2, p.yaw, roll + (Math.random() - 0.5) * sh * 0.2);
+  const laser = S.laser && S.laser.beam;
+  const sh = p.shake * p.shake * 0.5 + (laser ? 0.04 : 0);
+  let cx = p.x + (Math.random() - 0.5) * sh * 0.3;
+  let cz = p.z + (Math.random() - 0.5) * sh * 0.3;
+  let yaw = p.yaw;
+  let pitch = p.pitch + (Math.random() - 0.5) * sh * 0.2;
+  roll += (Math.random() - 0.5) * sh * 0.2;
+  let fov = 85;
+
+  // Last Orders: ease out to a third-person camera behind and above Freddie, looking at him
+  const k = S.camK;
+  if (k > 0) {
+    const e = k * k * (3 - 2 * k);
+    const tx = p.x;
+    const tz = p.z;
+    const ty = 1.15;
+    const bx = Math.sin(S.camYaw);
+    const bz = Math.cos(S.camYaw);
+    const dist = Math.min(5.2, Math.max(1.6, world.raycast(tx, tz, bx, bz, 5.8) - 0.45)); // never inside a wall
+    const tpx = tx + bx * dist;
+    const tpz = tz + bz * dist;
+    const tpy = 2.7;
+    const tpYaw = Math.atan2(-(tx - tpx), -(tz - tpz));
+    const tpPitch = Math.atan2(ty - tpy, Math.hypot(tx - tpx, tz - tpz));
+    cx += (tpx - cx) * e;
+    cz += (tpz - cz) * e;
+    y += (tpy - y) * e;
+    yaw += wrap(tpYaw - yaw) * e;
+    pitch += (tpPitch - pitch) * e;
+    roll *= 1 - e;
+    fov += (72 - fov) * e;
+  }
+  if (Math.abs(R.fov - fov) > 0.02) {
+    R.fov = fov;
+    camera.fov = fov;
+    camera.updateProjectionMatrix();
+  }
+  camera.position.set(cx, y, cz);
+  camera.rotation.set(pitch, yaw, roll);
+
+  // Freddie appears once the camera is out, spinning with the cannon; the beam leaves the cannon
+  const F = R.freddie;
+  F.group.visible = S.mode === 'play' && k > 0.2;
+  if (F.group.visible) {
+    F.group.position.set(p.x, 0, p.z);
+    F.group.rotation.y = p.yaw;
+    F.setPose(S.laser ? 'spin' : 'idle', S.laser ? S.laser.t : S.t, S.laser ? clamp(S.laser.t / S.laser.dur, 0, 1) : 0);
+  }
+  const bv = R.beam;
+  bv.visible = !!laser;
+  if (laser) {
+    const L = S.laser;
+    let ox = p.x - Math.sin(p.yaw) * 0.9;
+    let oy = 1.2;
+    let oz = p.z - Math.cos(p.yaw) * 0.9;
+    if (F.muzzle) {
+      F.group.updateMatrixWorld(true);
+      const v = R.tmpV || (R.tmpV = new THREE.Vector3());
+      F.muzzle.getWorldPosition(v);
+      ox = v.x;
+      oy = v.y;
+      oz = v.z;
+    }
+    bv.position.set(ox, oy, oz);
+    bv.rotation.set(0, p.yaw, 0);
+    const pulse = 1 + Math.sin(S.t * 40) * 0.08;
+    const len = Math.max(1, L.len - 0.9);
+    R.beamParts[0].scale.set(pulse, pulse, len);
+    R.beamParts[1].scale.set(pulse * 1.1, pulse * 1.1, len);
+    R.beamParts[2].scale.set(pulse * 1.3, pulse * 1.3, len);
+  }
 }
 
 function animateWorld() {
@@ -1169,17 +1509,26 @@ function animateWorld() {
 function animateViewmodel(dt) {
   const p = S.player;
   const { models, flashes, wroot } = R;
-  for (const id of WEAPON_ORDER) models[id].visible = id === p.weapon && (S.mode === 'play' || S.mode === 'intro');
+  const drinking = S.drink && R.drinkVms[S.drink.id];
+  for (const id of WEAPON_ORDER) models[id].visible = !drinking && !S.laser && id === p.weapon && (S.mode === 'play' || S.mode === 'intro');
+  for (const id of Object.keys(R.drinkVms)) R.drinkVms[id].group.visible = !!drinking && S.drink.id === id;
   const w = WEAPONS[p.weapon];
   const bobX = Math.cos(p.bobT * 0.5) * 0.012 * p.moveMag;
   const bobY = Math.abs(Math.sin(p.bobT * 0.5)) * 0.014 * p.moveMag;
-  const reloading = p.reloadT > 0 ? 1 - p.reloadT / w.reload : 0;
+  const reloading = p.reloadT > 0 ? 1 - p.reloadT / (p.reloadTotal || w.reload) : 0;
   const dip = Math.sin(reloading * Math.PI);
   const sw = p.switchT / 0.25;
   const baseX = p.weapon === 'launcher' ? 0.12 : 0.15;
   wroot.scale.setScalar(0.68);
-  wroot.position.set(baseX + bobX, -0.24 + bobY - dip * 0.22 - sw * 0.4, -0.62 + p.kick * 0.08);
-  wroot.rotation.set(0.03 + p.kick * 0.22 + dip * 0.7, 0.07 + dip * -0.25, dip * 0.2);
+  if (drinking) {
+    // the drink animation owns the pose; the root stays at the usual resting spot
+    wroot.position.set(0.15, -0.24, -0.62);
+    wroot.rotation.set(0, 0, 0);
+    R.drinkVms[S.drink.id].setPose(S.drink.t / S.drink.dur);
+  } else {
+    wroot.position.set(baseX + bobX, -0.24 + bobY - dip * 0.22 - sw * 0.4, -0.62 + p.kick * 0.08);
+    wroot.rotation.set(0.03 + p.kick * 0.22 + dip * 0.7, 0.07 + dip * -0.25, dip * 0.2);
+  }
   R.muzzleT = Math.max(0, R.muzzleT - dt);
   for (const id of WEAPON_ORDER) {
     flashes[id].visible = id === p.weapon && R.muzzleT > 0;
@@ -1189,6 +1538,53 @@ function animateViewmodel(dt) {
   R.torch.intensity = 1.2 + (R.flashT > 0 ? 2.5 : 0);
 }
 
+// Steps the quality down when the device is clearly struggling (under about 25 fps for a few seconds).
+// Never steps up within a session, and the tier is remembered for next time. A 30 fps cap (Low Power Mode) is not
+// treated as struggling: that would lower quality without making anything faster.
+function trackFrame(dt) {
+  Q.frames++;
+  Q.ema += (dt - Q.ema) * 0.04;
+  Q.fps = 1 / Q.ema;
+  if (Q.fixed || Q.frames < 150 || Q.frames % 90 !== 0) return;
+  if (Q.ema > 0.04) {
+    const next = TIER_ORDER[TIER_ORDER.indexOf(Q.tier) + 1];
+    if (!next) return;
+    Q.tier = next;
+    Q.frames = 0;
+    Q.ema = 1 / 60;
+    R.pipeline.setTier(next);
+    R.fx.setQuality(FX_QUALITY[next]);
+    resize(S.view);
+    write(QUALITY_KEY, next);
+  }
+}
+
+let vignetteGrad = null;
+let vignetteKey = '';
+function drawVignette(ctx, view) {
+  const key = `${view.w}x${view.h}`;
+  if (key !== vignetteKey) {
+    vignetteGrad = ctx.createRadialGradient(view.w / 2, view.h / 2, Math.min(view.w, view.h) * 0.3, view.w / 2, view.h / 2, Math.hypot(view.w, view.h) * 0.55);
+    vignetteGrad.addColorStop(0, 'rgba(0,0,0,0)');
+    vignetteGrad.addColorStop(1, 'rgba(0,0,0,0.5)');
+    vignetteKey = key;
+  }
+  ctx.fillStyle = vignetteGrad;
+  ctx.fillRect(0, 0, view.w, view.h);
+}
+
+function drawPerf(ctx, view) {
+  const info = R.renderer.info;
+  ctx.font = '600 11px ui-monospace, Menlo, monospace';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.fillRect(4, view.safe.top + 70, 214, 30);
+  ctx.fillStyle = '#9dff9d';
+  ctx.fillText(`${Q.fps.toFixed(0)} fps  ${(Q.ema * 1000).toFixed(1)} ms  ${R.pipeline.tier}${Q.fixed ? ' (fixed)' : ''}`, 8, view.safe.top + 74);
+  ctx.fillText(`calls ${info.render.calls}  tris ${(info.render.triangles / 1000).toFixed(0)}k  ratio ${R.pipeline.pixelRatio}`, 8, view.safe.top + 88);
+}
+
 export function render(ctx, view, alpha) {
   const dtv = 1 / 60;
   ctx.clearRect(0, 0, view.w, view.h);
@@ -1196,12 +1592,17 @@ export function render(ctx, view, alpha) {
   placeCamera();
   animateWorld();
   animateViewmodel(dtv);
-  R.renderer.clear();
-  R.renderer.render(R.scene, R.camera);
-  if (S.mode === 'play' || S.mode === 'intro') {
-    R.renderer.clearDepth();
-    R.renderer.render(R.wscene, R.wcam);
-  }
+  const now = performance.now();
+  const dt = Math.min(0.05, Q.last ? (now - Q.last) / 1000 : 1 / 60);
+  Q.last = now;
+  trackFrame(dt);
+  R.fx.update(dt, R.camera, S.mode !== 'dead');
+  R.renderer.info.reset();
+  const showWeapon = (S.mode === 'play' || S.mode === 'intro') && S.camK < 0.05;
+  R.pipeline.render(R.scene, R.camera, showWeapon ? R.wscene : null, R.wcam, R.look, {
+    time: S.t, hurt: S.mode === 'play' ? S.player.hurt : 0, flash: R.flashT > 0 || (S.laser && S.laser.beam) ? 1 : 0,
+  });
+  if (R.pipeline.tier === 'low') drawVignette(ctx, view);
 
   switch (S.mode) {
     case 'title':
@@ -1223,6 +1624,7 @@ export function render(ctx, view, alpha) {
     default:
       hud.drawPlayHud(ctx, view, buildHudState());
   }
+  if (Q.perf) drawPerf(ctx, view);
 }
 
 // ---- tests ----
@@ -1246,9 +1648,13 @@ export function testHook(cmd, arg) {
       return undefined;
     case 'layout': return layoutFor(v);
     case 'hurt': hurtPlayer(arg, S.player.x, S.player.z + 5, false); return undefined;
+    case 'drink': startDrink(arg); return undefined;
     case 'stats': {
       const w = WEAPONS[S.player.weapon];
-      return { fireInterval: w.interval / mult().fire, damageMult: mult().damage, maxHealth: S.player.maxHealth, weapon: w.id, clip: S.player.ammo[w.id], reloading: S.player.reloadT > 0 };
+      return {
+        fireInterval: w.interval / mult().fire, damageMult: mult().damage, maxHealth: S.player.maxHealth, weapon: w.id, clip: S.player.ammo[w.id],
+        reloading: S.player.reloadT > 0, buffs: { ...S.buffs }, drinking: S.drink ? S.drink.id : null, laser: !!S.laser, yaw: S.player.yaw, third: S.camK > 0.5, camK: S.camK, health: S.player.health,
+      };
     }
     default: return undefined;
   }

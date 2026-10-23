@@ -56,11 +56,11 @@ section('1. spawn clearance');
   }
   const kinds = (id) => w.areas.find((a) => a.id === id).spawns.reduce((m, s) => ((m[s.kind] = (m[s.kind] || 0) + 1), m), {});
   const eq = (a, b) => JSON.stringify(Object.entries(a).sort()) === JSON.stringify(Object.entries(b).sort());
-  ok(eq(kinds('cloakroom'), { drpepper: 2 }), 'cloakroom: 2 drpepper');
-  ok(eq(kinds('dancefloor'), { drpepper: 4, wray: 1 }), 'dancefloor: 4 drpepper 1 wray');
-  ok(eq(kinds('bar'), { wray: 2, drpepper: 3 }), 'bar: 2 wray 3 drpepper');
-  ok(eq(kinds('vip'), { drpepper: 2, wray: 2 }), 'vip: 2 drpepper 2 wray');
-  ok(eq(kinds('backstage'), { bouncer: 1, drpepper: 2 }), 'backstage: bouncer + 2 drpepper');
+  ok(eq(kinds('cloakroom'), { fizzbang: 2 }), 'cloakroom: 2 fizzbang');
+  ok(eq(kinds('dancefloor'), { fizzbang: 4, bampot: 1 }), 'dancefloor: 4 fizzbang 1 bampot');
+  ok(eq(kinds('bar'), { bampot: 2, fizzbang: 3 }), 'bar: 2 bampot 3 fizzbang');
+  ok(eq(kinds('vip'), { fizzbang: 2, bampot: 2 }), 'vip: 2 fizzbang 2 bampot');
+  ok(eq(kinds('backstage'), { bouncer: 1, fizzbang: 2 }), 'backstage: bouncer + 2 fizzbang');
   // the bouncer needs room: clearance bigger than its radius
   const boss = w.areas[5].spawns.find((s) => s.kind === 'bouncer');
   ok(clearance(w, boss.x, boss.z) >= 1.9, 'bouncer has room');
@@ -315,7 +315,20 @@ section('7. pickups and exit');
   const w = buildWorld();
   openAll(w);
   const items = w.pickups.map((p) => `${p.kind}:${p.item}`).sort().join(',');
-  ok(items === 'health:medkit,health:medkit,health:medkit,weapon:launcher,weapon:shotgun,weapon:smg', `pickup set ${items}`);
+  const want = ['drink:dram', 'drink:dram', 'drink:dram', 'drink:dram', 'drink:energy', 'drink:energy', 'drink:heavy', 'drink:heavy', 'drink:lastorders', 'drink:lastorders', 'drink:orange', 'weapon:launcher', 'weapon:shotgun', 'weapon:smg'].sort().join(',');
+  ok(items === want, `pickup set ${items}`);
+  ok(w.pickups.every((p) => p.kind !== 'health' && p.item !== 'medkit'), 'no medkits any more');
+  ok(w.pickups.filter((p) => p.kind === 'drink').length === 11, 'eleven drinks in the level (nine power-ups and two last orders)');
+  const lo = w.pickups.filter((p) => p.item === 'lastorders');
+  ok(lo.length === 2, `exactly two lastorders (${lo.length})`);
+  w.areas.forEach((a, i) => { // the owner's hard rule: never a super laser in a boss room or its doorway
+    if (!a.spawns.some((s) => s.kind === 'bouncer')) return;
+    const entry = w.doors[i - 1];
+    for (const p of lo) {
+      ok(w.areaAt(p.x, p.z) !== a, `lastorders ${p.id} is not inside the boss room (${a.id})`);
+      ok(Math.hypot(p.x - entry.x, p.z - entry.z) >= 6, `lastorders ${p.id} is at least 6 units from the boss room door ${entry.id}`);
+    }
+  });
   const ids = new Set(w.pickups.map((p) => p.id));
   ok(ids.size === w.pickups.length, 'pickup ids are unique');
   for (const p of w.pickups) {
@@ -323,12 +336,18 @@ section('7. pickups and exit');
   }
   ok(!w.isSolidAt(w.exit.x, w.exit.z), 'exit centre is walkable');
   ok(clearance(w, w.exit.x, w.exit.z) >= w.exit.r * 0.8, 'exit circle is mostly open floor');
-  const where = (id) => w.areaAt(...(([p]) => [p.x, p.z])(w.pickups.filter((q) => q.id === id)));
-  ok(where('shotgun-1').id === 'cloakroom', 'shotgun in the cloakroom');
-  ok(where('smg-1').id === 'dancefloor', 'smg on the dancefloor');
-  ok(where('launcher-1').id === 'vip', 'launcher in the vip corridor');
-  const med = w.pickups.filter((p) => p.item === 'medkit').map((p) => w.areaAt(p.x, p.z).id).sort().join(',');
-  ok(med === 'backstage,bar,dancefloor', `medkits in dancefloor, bar, backstage (${med})`);
+  const inArea = (id) => w.pickups.filter((q) => q.id === id).map((q) => w.areaAt(q.x, q.z).id)[0];
+  ok(inArea('shotgun-1') === 'cloakroom', 'shotgun in the cloakroom');
+  ok(inArea('smg-1') === 'dancefloor', 'smg on the dancefloor');
+  ok(inArea('launcher-1') === 'vip', 'launcher in the vip corridor');
+  const drinksIn = (area) => w.pickups.filter((p) => p.kind === 'drink' && w.areaAt(p.x, p.z).id === area).map((p) => p.item).sort().join(',');
+  ok(drinksIn('stairwell') === '', 'no drinks in the stairwell');
+  ok(drinksIn('cloakroom') === 'orange', `cloakroom drinks: ${drinksIn('cloakroom')}`);
+  ok(drinksIn('dancefloor') === 'dram,energy,lastorders', `dancefloor drinks: ${drinksIn('dancefloor')}`);
+  ok(drinksIn('bar') === 'dram,heavy', `bar drinks: ${drinksIn('bar')}`);
+  ok(drinksIn('vip') === 'dram,energy,lastorders', `vip drinks: ${drinksIn('vip')}`);
+  ok(drinksIn('backstage') === 'dram,heavy', `backstage drinks: ${drinksIn('backstage')}`);
+  for (const p of w.pickups) console.log(`  ${p.id.padEnd(11)} ${w.areaAt(p.x, p.z).id.padEnd(10)} tile ${Math.floor(p.x / TILE)},${Math.floor(p.z / TILE)}`);
 }
 
 // ---------------------------------------------------------------- 8 door animation
@@ -391,57 +410,92 @@ section('9. nothing visible from the previous area when a door opens');
   lines.forEach((l) => console.log('  ' + l));
 }
 
-// ---------------------------------------------------------------- 10 render budget and geometry sanity
-section('10. render budget');
+// ---------------------------------------------------------------- 10 render budget and geometry sanity, per quality tier
+section('10. render budget, per quality tier');
 {
-  const w = buildWorld();
-  let meshes = 0;
-  let lights = 0;
-  let tris = 0;
-  let badTri = 0;
-  let nanVerts = 0;
-  const v = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
-  const e1 = new THREE.Vector3();
-  const e2 = new THREE.Vector3();
-  const n = new THREE.Vector3();
-  const sn = new THREE.Vector3();
-  w.group.traverse((o) => {
-    if (o.isMesh) {
-      meshes++;
-      const g = o.geometry;
-      const pos = g.attributes.position;
-      const nor = g.attributes.normal;
-      const idx = g.index;
-      tris += (idx ? idx.count : pos.count) / 3;
-      for (let i = 0; i < pos.count * 3; i++) if (!Number.isFinite(pos.array[i])) { nanVerts++; break; }
-      // winding must agree with the stored normals (a back-face bug is invisible in Node otherwise)
-      if (o.material && o.material.side !== THREE.DoubleSide && nor && idx && o.userData.checkWinding !== false) {
-        for (let i = 0; i < idx.count; i += 3) {
-          for (let k = 0; k < 3; k++) v[k].fromBufferAttribute(pos, idx.getX(i + k));
-          e1.subVectors(v[1], v[0]);
-          e2.subVectors(v[2], v[0]);
-          n.crossVectors(e1, e2);
-          if (n.lengthSq() < 1e-12) continue;
-          sn.fromBufferAttribute(nor, idx.getX(i));
-          if (n.normalize().dot(sn) < 0.5) badTri++;
+  const budget = { high: 130000, medium: 130000, low: 75000 };
+  const reference = buildWorld();
+  const tiers = ['high', 'medium', 'low'];
+  ok(reference.quality === 'high', 'default quality is high');
+  ok(buildWorld({ quality: 'nonsense' }).quality === 'high', 'unknown quality falls back to high');
+  ok(buildWorld({}).quality === 'high', 'empty options give high');
+  for (const q of tiers) {
+    const t0 = performance.now();
+    const w = buildWorld({ quality: q });
+    const ms = performance.now() - t0;
+    let meshes = 0;
+    let lights = 0;
+    let tris = 0;
+    let badTri = 0;
+    let nanVerts = 0;
+    let standard = 0;
+    let withNormalMap = 0;
+    const v = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
+    const e1 = new THREE.Vector3();
+    const e2 = new THREE.Vector3();
+    const n = new THREE.Vector3();
+    const sn = new THREE.Vector3();
+    w.group.traverse((o) => {
+      if (o.isMesh) {
+        meshes++;
+        const g = o.geometry;
+        const pos = g.attributes.position;
+        const nor = g.attributes.normal;
+        const idx = g.index;
+        tris += (idx ? idx.count : pos.count) / 3;
+        for (let i = 0; i < pos.count * 3; i++) if (!Number.isFinite(pos.array[i])) { nanVerts++; break; }
+        if (o.material.isMeshStandardMaterial) standard++;
+        if (o.material.normalMap) withNormalMap++;
+        // winding must agree with the stored normals (a back-face bug is invisible in Node otherwise)
+        if (o.material && o.material.side !== THREE.DoubleSide && nor && idx) {
+          for (let i = 0; i < idx.count; i += 3) {
+            for (let k = 0; k < 3; k++) v[k].fromBufferAttribute(pos, idx.getX(i + k));
+            e1.subVectors(v[1], v[0]);
+            e2.subVectors(v[2], v[0]);
+            n.crossVectors(e1, e2);
+            if (n.lengthSq() < 1e-12) continue;
+            sn.fromBufferAttribute(nor, idx.getX(i));
+            if (n.normalize().dot(sn) < 0.5) badTri++;
+          }
         }
+        const col = g.attributes.color;
+        if (col) for (let i = 0; i < col.array.length; i++) if (!Number.isFinite(col.array[i])) { nanVerts++; break; }
       }
-    }
-    if (o.isLight && o.isPointLight) lights++;
-  });
-  console.log(`  meshes (draw calls) ${meshes}, point lights ${lights}, triangles ${tris}`);
-  ok(meshes <= 40, `draw calls ${meshes} <= 40`);
-  ok(lights <= 4, `point lights ${lights} <= 4`);
-  ok(nanVerts === 0, 'no NaN vertices');
-  ok(badTri === 0, `triangle winding agrees with normals (${badTri} bad)`);
-  ok(w.fog && w.ambient && w.group, 'fog, ambient and group present');
-  // update must be cheap and safe
-  const t0 = performance.now();
-  for (let i = 0; i < 600; i++) w.update(1 / 60, i / 60);
-  console.log(`  600 update() calls: ${(performance.now() - t0).toFixed(1)} ms`);
-  const ff = w.createFlowField();
+      if (o.isPointLight) lights++;
+    });
+    console.log(`  ${q.padEnd(6)} build ${ms.toFixed(0)} ms, ${meshes} draw calls, ${lights} point lights, ${tris} triangles, ${standard} standard materials, ${withNormalMap} with normal maps`);
+    ok(meshes <= 40, `${q}: draw calls ${meshes} <= 40`);
+    ok(lights <= 4, `${q}: point lights ${lights} <= 4`);
+    ok(tris <= budget[q], `${q}: triangles ${tris} <= ${budget[q]}`);
+    ok(ms < (q === 'high' ? 2500 : 1800), `${q}: build time ${ms.toFixed(0)} ms is sane (target under 1500 for high on a quiet machine)`);
+    ok(nanVerts === 0, `${q}: no NaN vertices or colours`);
+    ok(badTri === 0, `${q}: triangle winding agrees with normals (${badTri} bad)`);
+    ok(w.fog && w.ambient && w.group && w.look, `${q}: fog, ambient, group and look present`);
+    ok(q === 'low' ? standard === 0 : standard > 10, `${q}: material model (${standard} standard)`);
+    ok(q === 'low' ? withNormalMap === 0 : withNormalMap >= 8, `${q}: normal maps (${withNormalMap})`);
+    // the level itself must not depend on the tier
+    let diff = 0;
+    for (let r = 0; r < w.size.rows; r++) for (let c = 0; c < w.size.cols; c++) if (w.tileSolid(c, r) !== reference.tileSolid(c, r)) diff++;
+    ok(diff === 0 && JSON.stringify(w.pickups) === JSON.stringify(reference.pickups) && JSON.stringify(w.areas) === JSON.stringify(reference.areas), `${q}: same level data as high`);
+    // every animated thing stays finite and cheap over a long run
+    const t1 = performance.now();
+    for (let i = 0; i < 600; i++) w.update(1 / 60, i / 60);
+    const upd = performance.now() - t1;
+    let dyn = 0;
+    w.group.traverse((o) => { if (o.isMesh && o.geometry.attributes.position.usage === THREE.DynamicDrawUsage) for (const x of o.geometry.attributes.position.array) if (!Number.isFinite(x)) dyn++; });
+    console.log(`  ${q.padEnd(6)} 600 update() calls: ${upd.toFixed(1)} ms`);
+    ok(dyn === 0, `${q}: dynamic vertices stay finite`);
+    ok(upd < 400, `${q}: update() is cheap (${upd.toFixed(1)} ms for 600)`);
+  }
+  const look = reference.look;
+  ok(look.exposure > 0.5 && look.exposure < 2 && look.bloom > 0 && look.vignette >= 0 && Array.isArray(look.grade.lift) && Array.isArray(look.grade.gamma) && Array.isArray(look.grade.gain), 'look hints are sane');
+  // HDR emissive parts exist (vertex colours above 1 on basic materials) and ordinary surfaces stay at 0 to ~3
+  let hdr = 0;
+  reference.group.traverse((o) => { if (o.isMesh && o.material.isMeshBasicMaterial && o.geometry.attributes.color) for (const x of o.geometry.attributes.color.array) if (x > 1.5) { hdr++; break; } });
+  ok(hdr >= 4, `HDR glow meshes present (${hdr})`);
+  const ff = reference.createFlowField();
   const t1 = performance.now();
-  for (let i = 0; i < 20; i++) ff.update(w.start.x, w.start.z);
+  for (let i = 0; i < 20; i++) ff.update(reference.start.x, reference.start.z);
   console.log(`  flow field update: ${((performance.now() - t1) / 20).toFixed(2)} ms each`);
 }
 

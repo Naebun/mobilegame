@@ -518,6 +518,32 @@ function drawHealth(ctx, view, h, top, t) {
   outlined(ctx, n.str, bx + bw + 7, y + 0.5, n.size, low ? '#ff8a8a' : '#ffffff', 'left', 800);
 }
 
+const BUFF_COLOURS = { speed: '#fb923c', guard: '#d6a45a', rapid: '#e879f9' };
+const BUFF_LABELS = { speed: 'FAST', guard: 'TOUGH', rapid: 'RAPID' };
+
+// Timed drink effects: small pills stacked above the move box, each draining as its effect runs out.
+function drawBuffs(ctx, L, buffs) {
+  const x = L.moveBox.x;
+  const w = L.moveBox.w;
+  let y = L.moveBox.y - 30;
+  for (const b of buffs) {
+    const colour = BUFF_COLOURS[b.id] || AMBER;
+    const f = clamp(num(b.t) / Math.max(0.001, num(b.max, 1)), 0, 1);
+    rrect(ctx, x, y, w, 20, 10);
+    ctx.fillStyle = 'rgba(4,2,8,0.62)';
+    ctx.fill();
+    if (f > 0.02) {
+      rrect(ctx, x + 2, y + 2, (w - 4) * f, 16, 8);
+      ctx.globalAlpha = f < 0.2 ? 0.45 + 0.35 * Math.sin(now() * 14) : 0.78;
+      ctx.fillStyle = colour;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+    outlined(ctx, `${BUFF_LABELS[b.id] || str(b.id).toUpperCase()}  ${Math.ceil(num(b.t))}s`, x + w / 2, y + 10.5, 10.5, '#ffffff', 'center', 800);
+    y -= 24;
+  }
+}
+
 function drawWeapons(ctx, view, ws, top) {
   const n = Math.min(ws.length, 6);
   if (!n) return;
@@ -751,15 +777,20 @@ export function drawPlayHud(ctx, view, h) {
 
   if (num(h.hurt) > 0) drawVignette(ctx, view, h.hurt);
   if (dirs.length) drawDamageArcs(ctx, cx, cy, clamp(Math.min(view.w, view.h) * 0.2, 66, 104), dirs);
-  drawCrosshair(ctx, cx, cy);
-  drawHitMarker(ctx, cx, cy, clamp(num(h.hitMarker), 0, 1), !!h.headshot);
+  // Last Orders pulls the game into third person: the aiming furniture steps aside
+  const cine = clamp(num(h.cinematic), 0, 1);
+  const furniture = cine < 0.3;
+  if (furniture) {
+    drawCrosshair(ctx, cx, cy);
+    drawHitMarker(ctx, cx, cy, clamp(num(h.hitMarker), 0, 1), !!h.headshot);
+  }
 
   // top left: health, then score and time
   drawHealth(ctx, view, h, top, t);
   outlined(ctx, `SCORE ${Math.floor(clamp(num(h.score), 0, 1e12))}   ${fmtTime(h.timeSec)}`, 18, top + 40, 11, 'rgba(255,255,255,0.8)', 'left', 700);
 
   // top right: weapon row, then the debug badge
-  drawWeapons(ctx, view, Array.isArray(h.weapons) ? h.weapons : EMPTY, top);
+  if (furniture) drawWeapons(ctx, view, Array.isArray(h.weapons) ? h.weapons : EMPTY, top);
   if (h.debugMode) drawDebugBadge(ctx, view, top + 40);
 
   // top centre: area, objective, status
@@ -794,11 +825,14 @@ export function drawPlayHud(ctx, view, h) {
   if (h.toast) drawToast(ctx, view, h.toast, y + 18);
 
   // controls
-  drawMoveBox(ctx, L.moveBox, h.move, t);
-  drawLookBox(ctx, L.lookBox, h.look, !!h.firing, t);
-  drawReload(ctx, L.reloadBtn, w, t);
-  drawSwap(ctx, L.swapBtn);
-  drawAmmo(ctx, view, L, w, t);
+  if (furniture) {
+    drawMoveBox(ctx, L.moveBox, h.move, t);
+    drawLookBox(ctx, L.lookBox, h.look, !!h.firing, t);
+    drawReload(ctx, L.reloadBtn, w, t);
+    drawSwap(ctx, L.swapBtn);
+    drawAmmo(ctx, view, L, w, t);
+  }
+  if (Array.isArray(h.buffs) && h.buffs.length) drawBuffs(ctx, L, h.buffs);
 
   if (h.banner) drawBanner(ctx, view, h.banner);
   ctx.restore();

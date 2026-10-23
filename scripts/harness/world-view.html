@@ -6,18 +6,23 @@
 // Coordinates are tile units when tile is true (default), else world units. window.open(ids) opens doors.
 import * as THREE from '../../vendor/three.module.min.js';
 import { buildWorld } from '../../src/world.js';
+import { makeEnvironment } from '../../src/gfx-env.js';
 const T = 2;
 const r = new THREE.WebGLRenderer({ canvas: document.getElementById('c'), antialias: true });
 r.setPixelRatio(1);
 r.setSize(innerWidth, innerHeight, false);
-const world = buildWorld();
+const quality = new URLSearchParams(location.search).get('q') || 'high';
+const world = buildWorld({ quality });
+r.toneMapping = THREE.ACESFilmicToneMapping;
+r.toneMappingExposure = world.look.exposure;
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(world.fog.colour);
 scene.fog = new THREE.Fog(world.fog.colour, world.fog.near, world.fog.far);
+scene.environment = makeEnvironment(r);
 scene.add(world.group);
 scene.add(new THREE.HemisphereLight(world.ambient.sky, world.ambient.ground, world.ambient.intensity));
 const cam = new THREE.PerspectiveCamera(90, innerWidth / innerHeight, 0.05, 300);
-const torch = new THREE.PointLight(0xffd8a8, 6, 12, 1.6); // stand-in for the integrator's camera light
+const torch = new THREE.PointLight(0xffd8a8, 9, 14, 2); // stand-in for the integrator's camera light
 cam.add(torch);
 scene.add(cam);
 cam.rotation.order = 'YXZ';

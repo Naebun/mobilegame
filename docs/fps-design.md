@@ -12,7 +12,7 @@ linear: a chain of rooms ("areas") joined by doors. Every enemy is placed in the
 when it notices Freddie. Killing an enemy removes it for good. When every enemy in an area is dead the area is
 clear, and the door out of it unlocks. Nothing spawns out of walls. Weapons are picked up on the floor and each has
 a different effect. Ammo is unlimited but each clip is limited, so Freddie reloads (automatically when empty, or
-with a button). Enemies are robots: "Dr Pepper" robots only fight in melee; "Wray and Nephew" robots can shoot.
+with a button). Enemies are robots: "Dr Fizzbang" robots only fight in melee; "Bampot and Nephew" robots can shoot.
 
 Controls: two grey boxes on screen. Left box moves (virtual stick). Right box aims by dragging; while a thumb is down
 in the right box the weapon fires automatically. There is no aim assist: shots go where the crosshair points. A small
@@ -69,7 +69,7 @@ export function buildWorld() -> World
     name,                            // 'THE COWGATE: CLOAKROOM'
     objective,                       // short HUD text, e.g. 'Clear the cloakroom'
     rect: { c0, r0, c1, r1 },        // inclusive tile rectangle; every walkable tile belongs to exactly one area
-    spawns: [ { kind, x, z, yaw } ], // kind: 'drpepper' | 'wray' | 'bouncer'
+    spawns: [ { kind, x, z, yaw } ], // kind: 'fizzbang' | 'bampot' | 'bouncer'
     unlocks: [ doorId ],             // doors that open when this area's enemies are all dead (may be empty)
   } ],
   doors: [ { id, x, z, axis, open } ],  // axis 'x' = door slab runs along x (you pass through along z); 'z' = the reverse
@@ -112,13 +112,13 @@ bigger. Target size roughly 36 x 48 tiles. Use real turns and doorways so that l
 
 1. `stairwell` (start, no enemies). Short concrete stairwell/entrance. Objective: 'Head into the club'. Its exit door
    starts open (set `open: true` in `doors`).
-2. `cloakroom`: 2 x `drpepper`. A shotgun pickup (`item: 'shotgun'`) in plain sight near the entrance.
+2. `cloakroom`: 2 x `fizzbang`. A shotgun pickup (`item: 'shotgun'`) in plain sight near the entrance.
 3. `dancefloor`: the main room, large, with speaker stacks / pillars as cover and a DJ booth at the far end.
-   4 x `drpepper` and 1 x `wray` (the wray bot stands back, near the DJ booth). A `medkit`, and an `smg` pickup in a nook.
-4. `bar`: a long bar counter (low cover) across the room. 2 x `wray` behind the counter and 3 x `drpepper`. A `medkit`.
-5. `vip`: a long VIP corridor with a couple of booths. 2 x `drpepper` midway and 2 x `wray` at the far end. A
+   4 x `fizzbang` and 1 x `bampot` (the bampot bot stands back, near the DJ booth). A `medkit`, and an `smg` pickup in a nook.
+4. `bar`: a long bar counter (low cover) across the room. 2 x `bampot` behind the counter and 3 x `fizzbang`. A `medkit`.
+5. `vip`: a long VIP corridor with a couple of booths. 2 x `fizzbang` midway and 2 x `bampot` at the far end. A
    `launcher` pickup at its start.
-6. `backstage`: a big open room with an exit at the far end. 1 x `bouncer` (the boss) and 2 x `drpepper`. A `medkit`
+6. `backstage`: a big open room with an exit at the far end. 1 x `bouncer` (the boss) and 2 x `fizzbang`. A `medkit`
    by the entrance. `exit` is just past the far door.
 
 Doors: the door at the end of each of areas 2 to 6 is listed in that area's `unlocks`, closed at the start. The door
@@ -132,7 +132,7 @@ Pure mesh builders and pose animation. All models face -z at yaw 0, origin at th
 hand grip (weapon viewmodels). Exports:
 
 ```js
-export function makeRobot(kind) -> Robot          // kind: 'drpepper' | 'wray' | 'bouncer'
+export function makeRobot(kind) -> Robot          // kind: 'fizzbang' | 'bampot' | 'bouncer'
 export function makeWeaponModel(id) -> THREE.Group  // first-person viewmodel
 export function makeWeaponPickup(id) -> THREE.Group // floor pickup
 export function makeHealthPickup() -> THREE.Group
@@ -147,8 +147,8 @@ export const WEAPON_IDS = ['pistol', 'shotgun', 'smg', 'launcher'];
 ```js
 {
   group,            // THREE.Group, origin at the feet, facing -z
-  height,           // total height in world units (drpepper ~2.1, wray ~2.0, bouncer ~3.3)
-  radius,           // collision radius (drpepper 0.55, wray 0.5, bouncer 0.95)
+  height,           // total height in world units (fizzbang ~2.1, bampot ~2.0, bouncer ~3.3)
+  radius,           // collision radius (fizzbang 0.55, bampot 0.5, bouncer 0.95)
   headY,            // y above which a hit counts as a headshot
   eyes,             // array of the glowing eye meshes (so the integrator can brighten them when alerted)
   setPose(state, t, k),  // state: 'idle' | 'walk' | 'windup' | 'swing' | 'aim' | 'shoot' | 'hurt' | 'dead'
@@ -161,13 +161,13 @@ export const WEAPON_IDS = ['pistol', 'shotgun', 'smg', 'launcher'];
 Look of the robots (they are enemies of a dark-comedy Edinburgh game, so they should be funny and menacing, built
 from simple primitives: boxes, cylinders, spheres, cones):
 
-- `drpepper` ("Dr Pepper bot", melee only): a tall cylindrical can-shaped body in dark maroon with a silver rim and
+- `fizzbang` ("Dr Fizzbang bot", melee only): a tall cylindrical can-shaped body in dark maroon with a silver rim and
   a lighter band, a boxy head with a visor and two glowing orange-red eyes, thick pneumatic piston arms ending in
   big fists, short stubby legs that actually walk (alternate swing). Swing = one arm raised then slammed down.
-- `wray` ("Wray and Nephew bot", can shoot): a tall bottle-shaped body (wide base, narrow neck) in off-white/cream
+- `bampot` ("Bampot and Nephew bot", can shoot): a tall bottle-shaped body (wide base, narrow neck) in off-white/cream
   with a dark label band, a head that is the bottle neck with a cap, glowing cyan or yellow eyes, one arm replaced by
   a short cannon barrel. `aim` raises the cannon, `shoot` recoils it.
-- `bouncer`: a large, wide `drpepper` variant: black "dinner jacket" slab shoulders, a bow-tie-shaped detail, earpiece
+- `bouncer`: a large, wide `fizzbang` variant: black "dinner jacket" slab shoulders, a bow-tie-shaped detail, earpiece
   light, bigger fists. Same states.
 - No logos, no lettering, no copies of real packaging. Evoke only: colour, silhouette, silliness.
 - ≤ 12 meshes per robot. Shared geometries and materials via module-level caches (clone materials only if you need
