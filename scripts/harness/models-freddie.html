@@ -1,0 +1,52 @@
+<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><body style="margin:0;background:#000"><canvas id="c" style="width:100vw;height:100vh;display:block"></canvas>
+<script type="module">
+import { THREE, M, setup } from './models-harness.js';
+const S = setup({ fov: 75 });
+const { renderer, scene, camera } = S;
+// show({ cells: [{ state, t, k, angle, dist, h, aim }], cols }): the third-person camera is about 5 back and 2 up, portrait.
+const laser = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 14, 12, 1, true), new THREE.MeshBasicMaterial({ color: new THREE.Color(0xff3aa0).multiplyScalar(2.5), transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false }));
+laser.rotation.x = Math.PI / 2;
+laser.visible = false;
+scene.add(laser);
+window.show = (cfg = {}) => {
+  const cells = cfg.cells || [
+    { state: 'idle', angle: Math.PI }, { state: 'idle', angle: 0.7 }, { state: 'idle', angle: 0 },
+    { state: 'spin', t: 0.5, k: 0.5, angle: Math.PI }, { state: 'spin', t: 0.5, k: 0.5, angle: 0.7 }, { state: 'spin', t: 0.5, k: 0.5, angle: 0 },
+  ];
+  const cols = cfg.cols || 3;
+  const rows = Math.ceil(cells.length / cols);
+  const W = innerWidth;
+  const H = innerHeight;
+  const cw = W / cols;
+  const ch = H / rows;
+  renderer.setScissorTest(true);
+  const f = M.makeFreddie();
+  S.content.add(f.group);
+  cells.forEach((c, i) => {
+    f.setPose(c.state || 'idle', c.t ?? 1, c.k ?? 0);
+    const a = c.angle ?? Math.PI; // angle of the camera around Freddie: PI = behind him, 0 = in front
+    const d = c.dist ?? 5;
+    const h = c.h ?? 2;
+    camera.position.set(Math.sin(a) * -d * -1, h, Math.cos(a) * d * -1 * -1);
+    camera.position.set(-Math.sin(a) * d, h, -Math.cos(a) * d);
+    camera.lookAt(0, c.aim ?? 1.1, 0);
+    camera.aspect = cw / ch;
+    camera.updateProjectionMatrix();
+    laser.visible = !!cfg.laser && c.state === 'spin';
+    if (laser.visible) {
+      f.group.updateMatrixWorld(true);
+      const m = f.muzzle.getWorldPosition(new THREE.Vector3());
+      laser.position.set(m.x, m.y, m.z - 7);
+    }
+    const x = (i % cols) * cw;
+    const y = (rows - 1 - Math.floor(i / cols)) * ch;
+    renderer.setViewport(x, y, cw, ch);
+    renderer.setScissor(x, y, cw, ch);
+    renderer.setClearColor(0x0b0807);
+    renderer.clear();
+    renderer.render(scene, camera);
+  });
+  S.content.remove(f.group);
+};
+window.show();
+</script>

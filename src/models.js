@@ -38,7 +38,7 @@ const sstep = (a, b, x) => smooth(clamp((x - a) / (b - a), 0, 1));
 // `fine` adds extra rings across each bevel for the hero parts.
 function rbox(w, h, d, r = 0.03, fine = false) {
   const a = [w / 2, h / 2, d / 2];
-  const sharp = r < 0.006 || Math.min(a[0], a[1], a[2]) < 0.014; // tiny parts are plain boxes: 12 triangles
+  const sharp = r < 0.006 || Math.min(a[0], a[1], a[2]) < 0.03; // thin parts are plain boxes: 12 triangles
   r = sharp ? 0 : Math.min(r, Math.min(a[0], a[1], a[2]) * 0.98);
   const ticks = a.map((x) => (sharp ? [-x, x] : fine ? [-x, -x + r * 0.4, -x + r, x - r, x - r * 0.4, x] : [-x, -x + r, x - r, x]));
   const pos = [];
@@ -114,7 +114,7 @@ const lathe = (pts, seg = 20) => withEdge(new THREE.LatheGeometry(pts.map(([x, y
 // Rounded cylinder (bevelled rims), axis y, centred. `hs` adds rings along the side for dents.
 function rcyl(rt, rb, h, r = 0.02, seg = 20, hs = 1) {
   r = Math.min(r, Math.min(rt, rb) * 0.95, h * 0.48);
-  seg = Math.min(seg, Math.max(10, Math.round(Math.max(rt, rb) * 48)));
+  seg = Math.min(seg, Math.max(10, Math.round(Math.max(rt, rb) * 38)));
   const pts = [[0, -h / 2]];
   const N = r > 0.03 ? 2 : 1;
   for (let i = 0; i <= N; i++) {
@@ -395,7 +395,7 @@ function fizzbangGeo(v) {
   const HIP = 0.45;
   const NECK = 1.62;
   const o = { seed: v, tint: [0, 0.05, -0.04][v] };
-  const can = dent(rcyl(0.48, 0.48, 1.1, 0.06, 24, 6), [[0, 0.1, -0.48, 0.24, 0.05], [0.47, -0.2, -0.06, 0.2, 0.045], [-0.4, 0.28, -0.26, 0.2, 0.04]]);
+  const can = dent(rcyl(0.48, 0.48, 1.1, 0.06, 22, 5), [[0, 0.1, -0.48, 0.24, 0.05], [0.47, -0.2, -0.06, 0.2, 0.045], [-0.4, 0.28, -0.26, 0.2, 0.04]]);
   const btn = once('fz:btn', () => rcyl(0.03, 0.03, 0.03, 0.008, 12));
   const slat = once('fz:slat', () => rbox(0.05, 0.025, 0.22, 0.01));
   return {
@@ -490,7 +490,7 @@ function bampotGeo(v) {
   const HIP = 0.42;
   const NECK = 1.5;
   const o = { seed: v, tint: [0, 0.04, -0.05][v] };
-  const bottle = dent(lathe(bottleProfile(), 24), [[-0.2, 0.35, -0.46, 0.2, 0.05], [0.4, 0.5, -0.15, 0.17, 0.04], [-0.1, 0.9, -0.3, 0.13, 0.03]]);
+  const bottle = dent(lathe(bottleProfile(), 22), [[-0.2, 0.35, -0.46, 0.2, 0.05], [0.4, 0.5, -0.15, 0.17, 0.04], [-0.1, 0.9, -0.3, 0.13, 0.03]]);
   return {
     leg: bake([
       P(rcyl(0.1, 0.09, 0.3, 0.03, 14), C.steel, 'metal', [0, -0.16, 0]),
@@ -562,7 +562,7 @@ function bouncerGeo(v) {
   const HIP = 0.8;
   const NECK = 2.62;
   const o = { seed: v, tint: [0, 0.04, -0.04][v] };
-  const skirt = dent(rcyl(0.82, 0.82, 0.95, 0.07, 28, 6), [[0, 0.0, -0.82, 0.3, 0.07], [-0.8, 0.1, -0.2, 0.25, 0.06], [0.78, -0.2, 0.2, 0.25, 0.05]]);
+  const skirt = dent(rcyl(0.82, 0.82, 0.95, 0.07, 24, 5), [[0, 0.0, -0.82, 0.3, 0.07], [-0.8, 0.1, -0.2, 0.25, 0.06], [0.78, -0.2, 0.2, 0.25, 0.05]]);
   return {
     leg: bake([
       P(rcyl(0.21, 0.19, 0.62, 0.05, 16, 2), C.black, 'cloth', [0, -0.33, 0]),
@@ -1360,7 +1360,7 @@ export const DRINK_IDS = ['dram', 'orange', 'heavy', 'energy', 'lastorders'];
 
 const SKIN = 0xc89b82;
 const glassMat = () => once('drinkGlass', () => new THREE.MeshStandardMaterial({
-  color: 0xdfeaf0, roughness: 0.06, metalness: 0, transparent: true, opacity: 0.3, depthWrite: false, side: THREE.DoubleSide,
+  color: 0xa8bcc6, roughness: 0.05, metalness: 0, transparent: true, opacity: 0.16, depthWrite: false, side: THREE.DoubleSide,
 }));
 const darkGlassMat = () => once('drinkGlassDark', () => new THREE.MeshStandardMaterial({
   color: 0x0c1812, roughness: 0.05, metalness: 0.1, transparent: true, opacity: 0.62, depthWrite: false,
@@ -1392,6 +1392,8 @@ const cluster = (n, spread, size, seed) => bake(Array.from({ length: n }, (_, i)
   return P(ball(size * (0.6 + hash3(i, seed, 3) * 0.8), 6, 4), 0xffffff, 'plastic', [Math.cos(a) * r, hash3(i, seed, 4) * spread * 1.4, Math.sin(a) * r]);
 }), GW);
 
+const softMat = () => once('softAdd', () => new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false }));
+
 // Each recipe returns named meshes: geometry, material and position in the drink's own frame
 // (origin at the grip centre, axis along y, rim at +y).
 const DRINK_BUILD = {
@@ -1400,7 +1402,7 @@ const DRINK_BUILD = {
     const inner = [[0.062, 0.075], [0.0605, 0.07], [0.054, 0], [0.048, -0.035], [0, -0.035]];
     return {
       glass: { geo: lathe([...outer, ...inner], 28), mat: glassMat(), pos: [0, 0, 0], order: 2 },
-      liquid: { geo: liquidGeo([[0, 0], [0.047, 0], [0.0595, 0.085], [0, 0.085]], 0x8a4210, 0xffb040, 0.9, 1.6), mat: liquidMat(), pos: [0, -0.035, 0] },
+      liquid: { geo: liquidGeo([[0, 0], [0.047, 0], [0.0595, 0.085], [0, 0.085]], 0x6a2c06, 0xf08a14, 0.8, 1.0), mat: liquidMat(), pos: [0, -0.035, 0] },
     };
   },
   orange() {
@@ -1412,10 +1414,10 @@ const DRINK_BUILD = {
     });
     return {
       glass: { geo: lathe([...outer, ...inner], 28), mat: glassMat(), pos: [0, 0, 0], order: 2 },
-      liquid: { geo: liquidGeo([[0, 0], [0.0485, 0], [0.0495, 0.19], [0.043, 0.217], [0, 0.217]], 0xd04a00, 0xff9a20, 0.9, 1.5), mat: liquidMat(), pos: [0, -0.105, 0] },
+      liquid: { geo: liquidGeo([[0, 0], [0.0485, 0], [0.0495, 0.19], [0.043, 0.217], [0, 0.217]], 0xb83000, 0xff7a0a, 0.8, 1.0), mat: liquidMat(), pos: [0, -0.105, 0] },
       label: { geo: bake([P(rcyl(0.0548, 0.0548, 0.1, 0.003, 24), 0xf0e8d0, 'paper'), P(rcyl(0.0553, 0.0553, 0.03, 0.002, 24), 0xe86a10, 'gloss', [0, 0.02, 0]), P(rcyl(0.0553, 0.0553, 0.012, 0.002, 24), 0x1a1a1a, 'gloss', [0, -0.03, 0])], { ...GW, seed: 2 }), mat: pbrMat(), pos: [0, -0.02, 0] },
       cap: { geo: bake([P(rcyl(0.0265, 0.0265, 0.032, 0.006, 18), 0xd9701a, 'gloss'), ...knurl], { ...GW, seed: 4 }), mat: pbrMat(), pos: [0, 0.281, 0] },
-      fizz: { geo: cluster(9, 0.02, 0.006, 5), mat: addHdr(0xffffff, 1.6, 0.7), pos: [0, 0.27, 0], hidden: true },
+      fizz: { geo: radialDisc(0.05, 0xfff0d8, 0.45), mat: softMat(), pos: [0, 0.27, 0.03], hidden: true },
     };
   },
   heavy() {
@@ -1423,28 +1425,28 @@ const DRINK_BUILD = {
     const inner = [[0.0585, 0.13], [0.0575, 0.1], [0.0525, 0.02], [0.047, 0.02 - 0.08], [0.041, -0.1], [0.037, -0.115], [0, -0.115]];
     return {
       glass: { geo: lathe([...outer, ...inner], 28), mat: glassMat(), pos: [0, 0, 0], order: 2 },
-      liquid: { geo: liquidGeo([[0, 0], [0.038, 0], [0.0545, 0.2], [0, 0.2]], 0x1e0c04, 0x7a3a10, 0.9, 1.2), mat: liquidMat(), pos: [0, -0.113, 0] },
-      foam: { geo: liquidGeo([[0, 0], [0.0545, 0], [0.0568, 0.012], [0.053, 0.03], [0.03, 0.042], [0, 0.046]], 0xd8c498, 0xfaf0d0, 1.0, 1.25), mat: liquidMat(), pos: [0, 0.087, 0] },
+      liquid: { geo: liquidGeo([[0, 0], [0.038, 0], [0.0545, 0.2], [0, 0.2]], 0x120802, 0x4a2008, 0.9, 1.0), mat: liquidMat(), pos: [0, -0.113, 0] },
+      foam: { geo: liquidGeo([[0, 0], [0.0545, 0], [0.0568, 0.012], [0.053, 0.03], [0.03, 0.042], [0, 0.046]], 0xcdb888, 0xefe2bc, 0.9, 1.05), mat: liquidMat(), pos: [0, 0.087, 0] },
     };
   },
   energy() {
     const body = lathe([[0, -0.135], [0.026, -0.135], [0.031, -0.128], [0.0345, -0.115], [0.0355, -0.1], [0.0355, 0.1], [0.0345, 0.118], [0.028, 0.128], [0.0265, 0.132], [0, 0.132]], 24);
     return {
-      can: { geo: bake([P(body, 0x15151a, 'gloss', [0, 0, 0], [0, 0, 0], [1, 1, 1], { rust: 0.05 }), P(rcyl(0.0275, 0.0275, 0.008, 0.002, 20), C.chrome, 'chrome', [0, 0.133, 0]), P(rcyl(0.0285, 0.0285, 0.01, 0.003, 20), C.chrome, 'chrome', [0, -0.132, 0]), P(rcyl(0.0135, 0.0135, 0.002, 0.0005, 12), 0x050505, 'plastic', [0, 0.1375, -0.008])], { ...GW, seed: 6 }), mat: pbrMat(), pos: [0, 0, 0] },
-      stripeM: { geo: rcyl(0.0362, 0.0362, 0.016, 0.002, 22), mat: glowBasic(COLOURS.magenta, 2.2, false), pos: [0, 0.045, 0] },
-      stripeC: { geo: rcyl(0.0362, 0.0362, 0.016, 0.002, 22), mat: glowBasic(COLOURS.cyan, 2.2, false), pos: [0, 0.018, 0] },
+      can: { geo: bake([P(body, 0x5a5a6a, 'metal', [0, 0, 0], [0, 0, 0], [1, 1, 1], { rust: 0.05 }), P(rcyl(0.0275, 0.0275, 0.008, 0.002, 20), C.chrome, 'chrome', [0, 0.133, 0]), P(rcyl(0.0285, 0.0285, 0.01, 0.003, 20), C.chrome, 'chrome', [0, -0.132, 0]), P(rcyl(0.0135, 0.0135, 0.002, 0.0005, 12), 0x050505, 'plastic', [0, 0.1375, -0.008])], { ...GW, seed: 6 }), mat: pbrMat(), pos: [0, 0, 0] },
+      stripeM: { geo: lathe([[0.0372, -0.008], [0.0372, 0.008]], 28), mat: glowBasic(COLOURS.magenta, 1.8, false), pos: [0, 0.045, 0] },
+      stripeC: { geo: lathe([[0.0372, -0.008], [0.0372, 0.008]], 28), mat: glowBasic(COLOURS.cyan, 1.8, false), pos: [0, 0.018, 0] },
       tab: { geo: bake([P(torus(0.011, 0.003, 12, 4), C.chrome, 'chrome', [0, 0, 0.012], [HALF, 0, 0]), P(rbox(0.014, 0.003, 0.03, 0.001), C.chrome, 'chrome', [0, 0, -0.004])], GW), mat: pbrMat(), pos: [0, 0.138, 0.012] },
-      puff: { geo: cluster(10, 0.015, 0.008, 9), mat: addHdr(0xffffff, 1.4, 0.55), pos: [0, 0.14, 0], hidden: true },
+      puff: { geo: radialDisc(0.06, 0xdde8ff, 0.4), mat: softMat(), pos: [0, 0.14, 0.03], hidden: true },
     };
   },
   lastorders() {
     const outer = [[0, -0.16], [0.045, -0.16], [0.057, -0.15], [0.062, -0.12], [0.062, 0.07], [0.058, 0.1], [0.045, 0.13], [0.03, 0.16], [0.024, 0.19], [0.023, 0.26], [0.026, 0.275], [0.026, 0.29], [0, 0.29]];
     return {
       glass: { geo: lathe(outer, 30), mat: darkGlassMat(), pos: [0, 0, 0], order: 2 },
-      liquid: { geo: liquidGeo([[0, 0], [0.0575, 0], [0.0585, 0.2], [0.05, 0.23], [0.032, 0.255], [0, 0.255]], 0xb06a00, 0xffd050, 1.0, 2.2), mat: liquidMat(), pos: [0, -0.15, 0] },
+      liquid: { geo: liquidGeo([[0, 0], [0.0575, 0], [0.0585, 0.2], [0.05, 0.23], [0.032, 0.255], [0, 0.255]], 0x9a5a00, 0xffc030, 0.9, 1.5), mat: liquidMat(), pos: [0, -0.15, 0] },
       foil: { geo: bake([P(rcyl(0.027, 0.036, 0.1, 0.004, 22), 0xd4a52a, 'brass', [0, 0.165, 0]), P(rcyl(0.0265, 0.0265, 0.13, 0.004, 22), 0xd4a52a, 'brass', [0, 0.225, 0]), P(rcyl(0.031, 0.031, 0.014, 0.003, 22), 0xe6bc40, 'brass', [0, 0.285, 0]), P(torus(0.0275, 0.003, 20, 4), 0xb88a20, 'brass', [0, 0.11, 0], [HALF, 0, 0])], { ...GW, seed: 8 }), mat: pbrMat(), pos: [0, 0, 0] },
       label: { geo: bake([P(rcyl(0.0628, 0.0628, 0.12, 0.004, 26), 0xd4a52a, 'gloss', [0, 0, 0], [0, 0, 0], [1, 1, 1], { rust: 0.08 }), P(rcyl(0.0634, 0.0634, 0.026, 0.002, 26), 0x1a1208, 'gloss', [0, -0.03, 0]), P(rcyl(0.0634, 0.0634, 0.01, 0.002, 26), 0x1a1208, 'gloss', [0, 0.04, 0]), P(rbox(0.045, 0.045, 0.006, 0.002), 0x1a1208, 'metal', [0, 0.0, 0.0638], [0, 0, 0.785]), P(rbox(0.03, 0.03, 0.007, 0.002), 0xe6bc40, 'brass', [0, 0.0, 0.0645], [0, 0, 0.785])], { ...GW, seed: 9 }), mat: pbrMat(), pos: [0, -0.03, 0] },
-      halo: { geo: new THREE.SphereGeometry(0.1, 14, 10), mat: addHdr(0xffc040, 2.2, 0.1), pos: [0, 0.06, 0], scale: [1, 2.4, 1] },
+      halo: { geo: radialDisc(0.16, 0xffb030, 0.8), mat: new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false }), pos: [0, 0.06, 0.07], scale: [1, 2.2, 1] },
     };
   },
 };
@@ -1544,9 +1546,8 @@ function forearmGeo() {
     P(rcyl(0.062, 0.044, 1.0, 0.02, 14, 3), SKIN, 'leather', [0, 0.5, 0]),
     P(rcyl(0.078, 0.074, 0.07, 0.012, 16), C.shirt, 'cloth', [0, 0.23, 0]),
     P(rcyl(0.108, 0.1, 0.7, 0.03, 18, 2), C.jacket, 'cloth', [0, 0.62, 0]),
-    P(rcyl(0.052, 0.052, 0.042, 0.01, 16), C.rubber, 'rubber', [0, 0.085, 0]),
-    P(rbox(0.05, 0.044, 0.014, 0.005), C.chrome, 'chrome', [0, 0.085, 0.055]),
-    P(rbox(0.036, 0.03, 0.004, 0.002), 0x0a0b0d, 'glass', [0, 0.085, 0.063]),
+    P(rcyl(0.049, 0.049, 0.03, 0.008, 16), C.rubber, 'rubber', [0, 0.09, 0]),
+    P(rcyl(0.024, 0.024, 0.012, 0.004, 14), C.chrome, 'chrome', [0, 0.09, 0.05], [HALF, 0, 0]),
   ], { ...GW, seed: 11 });
 }
 
@@ -1630,7 +1631,7 @@ export function makeDrinkViewmodel(id) {
       const col = new Float32Array(P2.count * 3);
       for (let i = 0; i < P2.count; i++) {
         const f = Math.max(0, 1 - Math.hypot(P2.getX(i), P2.getY(i)) / 0.5);
-        _c.set(0xffc040).multiplyScalar(2.4 * f * f);
+        _c.set(0xffb030).multiplyScalar(0.42 * f * f);
         col.set([_c.r, _c.g, _c.b], i * 3);
       }
       g.setAttribute('color', new THREE.BufferAttribute(col, 3));
@@ -1643,10 +1644,12 @@ export function makeDrinkViewmodel(id) {
   }
   if (id === 'heavy') {
     moustache = new THREE.Mesh(once('moustache', () => bake([
-      P(capsule(0.022, 0.12), 0xf6ead0, 'plastic', [-0.045, 0, 0], [0, 0, HALF - 0.25]),
-      P(capsule(0.022, 0.12), 0xf6ead0, 'plastic', [0.045, 0, 0], [0, 0, HALF + 0.25]),
-      P(ball(0.028, 8, 6), 0xf6ead0, 'plastic', [0, 0.01, 0.0]),
-    ], GW)), glowBasic(0xf6ead0, 1.0, false));
+      P(capsule(0.014, 0.07), 0xe8d8b0, 'plastic', [-0.04, -0.004, 0], [0, 0, HALF + 0.3]),
+      P(capsule(0.014, 0.07), 0xe8d8b0, 'plastic', [0.04, -0.004, 0], [0, 0, HALF - 0.3]),
+      P(ball(0.02, 8, 6), 0xe8d8b0, 'plastic', [0, 0.004, 0.0]),
+      P(ball(0.013, 6, 4), 0xe8d8b0, 'plastic', [-0.08, 0.012, 0.0]),
+      P(ball(0.013, 6, 4), 0xe8d8b0, 'plastic', [0.08, 0.012, 0.0]),
+    ], GW)), glowBasic(0xe8d8b0, 0.85, false));
     moustache.position.set(-0.22, 0.045, 0.4);
     moustache.visible = false;
     moustache.renderOrder = 9;
@@ -1712,7 +1715,7 @@ export function makeDrinkViewmodel(id) {
       const f = sstep(0.16, 0.2, k) * (1 - sstep(0.26, 0.4, k));
       fz.visible = f > 0.01;
       fz.position.set(px + 0, py + Math.cos(th) * 0.27, pz + Math.sin(th) * 0.27);
-      fz.scale.setScalar(0.4 + 2.2 * (1 - f) * f * 4 + f);
+      fz.scale.setScalar(0.35 + 0.7 * f + 0.6 * (1 - f) * f);
     } else if (id === 'heavy') {
       const g1 = sstep(0.28, 0.36, k);
       const g2 = sstep(0.42, 0.5, k);
@@ -1732,7 +1735,7 @@ export function makeDrinkViewmodel(id) {
       parts.tab.rotation.x = -1.35 * sstep(0.06, 0.16, k);
       const p = clamp((k - 0.1) / 0.28, 0, 1);
       parts.puff.visible = p > 0 && p < 1;
-      parts.puff.scale.setScalar(0.3 + 1.6 * Math.sin(p * Math.PI * 0.6) + p);
+      parts.puff.scale.setScalar(0.25 + 0.8 * Math.sin(p * Math.PI * 0.6) + 0.3 * p);
       parts.puff.position.y = 0.14 + 0.03 * p;
       const sq = sstep(0.7, 0.8, k);
       parts.can.scale.set(1 - 0.24 * sq, 1 - 0.06 * sq, 1 - 0.14 * sq);
@@ -1745,10 +1748,9 @@ export function makeDrinkViewmodel(id) {
     } else if (id === 'lastorders') {
       const glug = sstep(0.24, 0.32, k) * (1 - sstep(0.6, 0.66, k));
       parts.liquid.scale.set(1, Math.max(0.001, 1 - 0.95 * sstep(0.3, 0.62, k)), 1);
-      parts.halo.material.opacity = 0.1;
-      glowDisc.visible = glug > 0.01 || k > 0.62 && k < 0.78;
+            glowDisc.visible = glug > 0.01 || k > 0.62 && k < 0.78;
       const roar = sstep(0.62, 0.68, k) * (1 - sstep(0.76, 0.8, k));
-      glowDisc.scale.setScalar(0.7 + 0.8 * glug + 0.5 * roar);
+      glowDisc.scale.setScalar(0.45 + 0.5 * glug + 0.3 * roar);
       glowDisc.material.opacity = 1;
       px += Math.sin(sec * 55) * 0.012 * roar;
       py += Math.cos(sec * 47) * 0.01 * roar;
@@ -1841,7 +1843,6 @@ function freddieGeo() {
       P(rbox(0.15, 0.26, 0.04, 0.015), F.tee, 'cloth', [0, 1.33, -0.125]),
       P(rbox(0.012, 0.34, 0.012, 0.004), C.chrome, 'chrome', [0.09, 1.2, -0.138]),
       P(rbox(0.52, 0.04, 0.285, 0.015), F.pink, 'gloss', [0, 1.2, 0]),
-      P(rbox(0.04, 0.45, 0.02, 0.008), F.pink, 'gloss', [0, 1.2, 0.135]),
       ...[-1, 1].map((s) => P(ball(0.105, 12, 8), F.purple, 'leather', [s * F_SHOULDER[0], 1.38, 0])),
       ...[-1, 1].map((s) => P(rbox(0.1, 0.07, 0.02, 0.01), F.purpleD, 'leather', [s * 0.14, 1.09, -0.128])),
       P(rcyl(0.1, 0.12, 0.08, 0.03, 16), F.purpleD, 'rubber', [0, 1.5, 0]),

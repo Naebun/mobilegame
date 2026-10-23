@@ -592,7 +592,7 @@ function genBrick(S, N, paint, o) {
         pr += dirt; pg += dirt; pb += dirt * 1.1;
         const peel = N.mid[(idx + 7919) % N.mid.length] * 0.55 + N.f2[idx] * 0.45 + gr * 0.06;
         let m = 0;
-        if (peel > 0.64) m = Math.min(0.6, (peel - 0.64) / 0.12);
+        if (peel > 0.67) m = Math.min(0.6, (peel - 0.67) / 0.12);
         r = pr + (r - pr) * m; g = pg + (g - pg) * m; b = pb + (b - pb) * m;
         h = h * (0.35 + 0.65 * m) + 0.3 * (1 - m) * (mortar ? 0 : 1) + (mortar ? 0 : 0.06);
         rough = 0.7 + m * 0.2 + N.lo[idx] * 0.1; // eggshell paint

@@ -64,7 +64,7 @@ window.showPickups = (cfg = {}) => {
   });
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
-  camera.position.set(0, 1.2, 6.5);
+  camera.position.set(0, 1.0, cfg.dist ?? 6.5);
   camera.lookAt(0, 0.8, 0);
   S.scene.add(S.lights[0], S.lights[1]);
   renderer.setViewport(0, 0, innerWidth, innerHeight);
