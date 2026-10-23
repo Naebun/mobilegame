@@ -413,6 +413,7 @@ function updateEnemy(e, dt) {
   const p = S.player;
   const def = e.def;
   e.animT += dt;
+  if (e.robot.update) e.robot.update(dt);
   e.cool = Math.max(0, e.cool - dt);
   e.hurtT = Math.max(0, e.hurtT - dt);
   if (e.flashT > 0) {
@@ -1042,6 +1043,7 @@ function updatePickups(dt) {
     pk.phase += dt;
     pk.mesh.position.y = 0.05 + Math.sin(pk.phase * 2.2) * 0.06;
     pk.mesh.rotation.y += dt * 1.4;
+    if (pk.mesh.userData.update) pk.mesh.userData.update(S.t);
     if (Math.hypot(pk.def.x - p.x, pk.def.z - p.z) > 1.2) continue;
     if (pk.def.kind === 'drink') {
       if (S.drink) continue; // one drink at a time

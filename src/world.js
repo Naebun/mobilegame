@@ -442,7 +442,7 @@ export function buildWorld(opts = {}) {
     group: visuals.group,
     fog: { colour: 0x0b0608, near: 6, far: 40 },
     ambient: { sky: 0xb0a09a, ground: 0x6e5c54, intensity: 2.2 },
-    look: { exposure: 1.0, bloom: 0.55, vignette: 0.35, grade: { lift: [0.012, 0.004, 0.016], gamma: [1.0, 0.98, 0.95], gain: [1.05, 1.0, 0.94] } },
+    look: { exposure: 1.3, bloom: 0.55, vignette: 0.35, grade: { lift: [0.012, 0.004, 0.016], gamma: [1.0, 0.98, 0.95], gain: [1.05, 1.0, 0.94] } },
     quality,
     start,
     exit,
