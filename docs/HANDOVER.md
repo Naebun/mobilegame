@@ -166,3 +166,13 @@ upgrades, ten collectible records and the SETLIST screen): `docs/arsenal.md`, `s
 `src/arsenal-meshes.js`), `src/arsenal.js`, `src/arsenal-play.js`, `scripts/harness/arsenal-check.mjs`. Every number is a first
 guess; nothing has been played by a person or heard. The sim bots cannot dodge a laser, run from a Shaken, hunt a Nurse or
 use the new weapons, so they need teaching before these go into a level. Level 3 and later are still not to be built.
+
+## The owner's test devices
+An iPhone 16 Pro and a MacBook Air M4. Both are much faster than the plan's floor (an A15, so an iPhone 14), which means a
+smooth frame rate on either says nothing about an older phone: keep the pixel ratio cap, the light count and the triangle
+budget as they are, and use the `?perf` readout (see `docs/playtest.md` once the playtest branch is merged) to look at
+frame time, not just whether it feels smooth. The iPhone's display is 120 Hz in Safari (30 or 60 in Low Power Mode), so
+nothing may assume 60 frames a second; the loop is fixed-step and reads taps from events, but test it. The Mac is PC mode
+with a trackpad: two-finger scroll sends wheel events that keep coming as the scroll coasts, so the wheel swap only counts
+an event after a quiet gap of 180 ms (`engine.js`); the right button (alt-fire) is a two-finger click or a control-click.
+Not tested on either: real pointer lock in Safari, trackpad swap, the iPhone safe areas with Safari's bottom tab bar.
