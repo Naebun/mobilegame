@@ -147,9 +147,10 @@ try {
   // the launcher: a rocket flies, explodes and hurts a robot; the render path for explosions must not error
   await hook('play');
   await hook('giveWeapons');
-  for (let i = 0; i < 4 && (await state()).weapon !== 'launcher'; i++) {
+  for (let i = 0; i < 6 && (await state()).weapon !== 'launcher'; i++) {
+    const was = (await state()).weapon;
     await tap(...center(L.swapBtn));
-    await page.waitForTimeout(400);
+    await until('s.player.weapon !== a', was, 10000); // software WebGL is slow: wait for the swap, not the clock
   }
   check((await state()).weapon === 'launcher', 'the Reverb Launcher can be selected');
   await ptr('pointerdown', 2, lx, ly);
@@ -371,6 +372,71 @@ try {
   const fovP = await hook('stats');
   check(LP.moveBox.y > 500 && fovP.fov === 85, `rotating back restores the portrait layout and 85 degrees (${fovP.fov})`);
   await shot('port-after-rotate');
+
+  // saved progress: finishing the levels above wrote a cookie, and a reload offers CONTINUE
+  const cookie = await page.evaluate(() => document.cookie.split('; ').find((c) => c.startsWith('fls=')) || '');
+  const saved = cookie ? JSON.parse(decodeURIComponent(cookie.slice(4))) : null;
+  check(saved && saved.unlocked === 2 && saved.done.join() === '1,2' && saved.best[1] > 0, `progress is saved in a cookie (${cookie ? decodeURIComponent(cookie).slice(0, 80) : 'none'})`);
+  await page.goto(`http://localhost:${port}/?test&q=low&pc`);
+  await page.waitForFunction(() => window.__game && window.__game.getState().player, null, { timeout: 60000 });
+  await page.waitForTimeout(1200);
+  const tb = await hook('buttons');
+  check(tb.map((b) => b.id).join() === 'resume,new,settings,debug' && tb[0].label === 'CONTINUE: LEVEL 2', `after a reload the title offers ${tb.map((b) => b.label).join(' | ')}`);
+  await shot('title-continue');
+  await pressButton('resume');
+  check(await until("s.mode === 'voicemail' && s.level === 2"), 'CONTINUE goes to level 2 behind its voicemail');
+  await page.waitForFunction(() => window.__game.getWorld().id === 'vaults', null, { timeout: 60000 });
+  await hook('title');
+  await page.waitForFunction(() => window.__game.getWorld().id === 'cowgate', null, { timeout: 60000 });
+
+  // settings page, on a computer (the ?pc flag stands in for a mouse)
+  await pressButton('settings');
+  check(await until("s.mode === 'settings'"), 'SETTINGS opens from the title');
+  check((await hook('buttons')).map((b) => b.id).join() === 'mouse,sens,reset,back', 'the page offers mouse look, sensitivity, reset and back');
+  await page.waitForTimeout(800);
+  await shot('settings');
+  await pressButton('mouse');
+  check(await until('s.settings.mouseLook === true'), 'MOUSE LOOK turns on');
+  await pressButton('sens');
+  check(await until('s.settings.sens === 2'), 'SENSITIVITY steps to HIGH');
+  const settingsSaved = await page.evaluate(() => JSON.parse(localStorage.getItem('mobilegame.settings')));
+  check(settingsSaved && settingsSaved.mouseLook === true, 'the settings are remembered');
+  await pressButton('sens');
+  await until('s.settings.sens === 0');
+  await pressButton('sens');
+  await until('s.settings.sens === 1');
+  // mouse look in play: moving the mouse aims, the left button fires, the touch boxes go
+  await pressButton('back');
+  await until("s.mode === 'title'");
+  await pressButton('new');
+  await until("s.mode === 'controls'");
+  await pressButton('start');
+  await until("s.mode === 'intro'");
+  await tap(195, 400);
+  check(await until("s.mode === 'play'"), 'play begins with mouse look on');
+  const my0 = (await state()).yaw;
+  await hook('mouse', { dx: 150, dy: 0 });
+  check(await until('Math.abs(s.player.yaw - a) > 0.2', my0), 'moving the mouse turns the view with no button held');
+  const mshots = (await state()).shots;
+  await hook('mouse', { down: true });
+  check(await until('s.shots > a', mshots), 'the left button fires');
+  await hook('mouse', null);
+  await page.waitForTimeout(1500);
+  await shot('mouse-look');
+  // reset: two taps
+  await hook('title');
+  await pressButton('settings');
+  await until("s.mode === 'settings'");
+  await pressButton('reset');
+  await until('s.resetArmed > 0');
+  check((await hook('buttons')).find((b) => b.id === 'reset').label === 'TAP AGAIN TO ERASE', 'the first tap on RESET PROGRESS only arms it');
+  await pressButton('reset');
+  await until('s.save.done.length === 0');
+  const cleared = await page.evaluate(() => document.cookie.split('; ').find((c) => c.startsWith('fls=')) || '');
+  check(!cleared || JSON.parse(decodeURIComponent(cleared.slice(4))).unlocked === 1, 'the second tap erases the saved progress');
+  await pressButton('back');
+  await until("s.mode === 'title'");
+  check((await hook('buttons')).map((b) => b.id).join() === 'new,settings,debug', 'with nothing saved the title is back to NEW GAME');
 
   check(errors.length === 0, `no console errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
 } finally {

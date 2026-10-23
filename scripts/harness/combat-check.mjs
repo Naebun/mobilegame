@@ -201,5 +201,70 @@ function setEnemy(S, e, x, z, yaw) { e.x = x; e.z = z; e.yaw = yaw; e.kx = e.kz 
   ok(hurt === def.slam.damage, `the pole slam hits for ${def.slam.damage} (took ${hurt})`);
 }
 
+// ---- mouse look: moving the mouse aims, the left button fires, only on a computer with the setting on ----
+{
+  const { S } = fresh();
+  S.enemies.forEach((q) => { q.dead = true; q.state = 'dead'; q.robot.group.visible = false; });
+  game.testHook('play'); // this makes a new player object, so take it afterwards
+  const p = S.player;
+  const yaw0 = p.yaw;
+  game.testHook('mouse', { dx: 200, dy: 0 });
+  run(S, 0.1);
+  ok(p.yaw === yaw0, 'a phone (no mouse) ignores mouse movement');
+  game.testHook('pc', true);
+  game.testHook('mouse', { dx: 200, dy: 0 });
+  run(S, 0.1);
+  ok(p.yaw === yaw0, 'with a mouse but mouse look off, mouse movement does nothing (the default: hold and drag)');
+  game.testHook('setting', { mouseLook: true, sens: 1 });
+  game.testHook('mouse', { dx: 200, dy: 0 });
+  run(S, 0.1);
+  const turned = yaw0 - p.yaw;
+  ok(near(turned, 200 * 0.0022, 0.01), `mouse look: 200 counts turn the view right by ${(200 * 0.0022).toFixed(2)} rad (${turned.toFixed(3)})`);
+  const pitch0 = p.pitch;
+  game.testHook('mouse', { dx: 0, dy: -100 });
+  run(S, 0.1);
+  ok(p.pitch - pitch0 > 0.1, 'moving the mouse up looks up');
+  game.testHook('setting', { sens: 2 });
+  const y1 = p.yaw;
+  game.testHook('mouse', { dx: 100, dy: 0 });
+  run(S, 0.1);
+  ok(near(y1 - p.yaw, 100 * 0.0022 * 1.7, 0.01), 'HIGH sensitivity turns further for the same movement');
+  game.testHook('setting', { sens: 1 });
+  const shots0 = S.shots;
+  game.testHook('mouse', { dx: 0, dy: 0, down: true });
+  run(S, 0.6);
+  ok(S.shots > shots0, 'holding the left button fires');
+  game.testHook('mouse', { down: false });
+  const shots1 = S.shots;
+  run(S, 0.6);
+  ok(S.shots === shots1, 'letting go stops firing (no touch box involved)');
+  game.testHook('giveWeapons');
+  const w0 = p.weapon;
+  game.testHook('mouse', { wheel: 1 });
+  run(S, 0.1);
+  ok(p.weapon !== w0, 'the wheel swaps weapon');
+  game.testHook('mouse', null);
+  game.testHook('pc', false);
+  game.testHook('setting', { mouseLook: false });
+}
+
+// ---- saved progress: the format a cookie can carry ----
+{
+  const store = await import('../../src/save.js');
+  const { LEVELS } = await import('../../src/data.js');
+  ok(store.MAX_LEVELS === LEVELS.length, `the save knows how many levels there are (${store.MAX_LEVELS} of ${LEVELS.length})`);
+  const f = store.fresh();
+  ok(f.unlocked === 1 && f.done.length === 0, 'a fresh save has level 1 unlocked and nothing done');
+  ok(store.clean(null).unlocked === 1 && store.clean('x').unlocked === 1 && store.clean({ unlocked: 'nope' }).unlocked === 1, 'junk becomes a fresh save');
+  ok(store.clean({ unlocked: 99 }).unlocked === store.MAX_LEVELS, 'unlocked cannot pass the last level');
+  ok(store.clean({ done: [1] }).unlocked === 2, 'finishing level 1 unlocks level 2');
+  ok(JSON.stringify(store.clean({ done: [2, 1, 1, 7, -3, 'a'] }).done) === '[1,2]', 'done is a clean sorted set of real levels');
+  ok(JSON.stringify(store.clean({ best: { 1: 500, 2: -4, 9: 100, x: 5 } }).best) === '{"1":500}', 'only real positive best scores survive');
+  const m = store.merge(store.clean({ unlocked: 2, best: { 1: 100 } }), store.clean({ done: [1], best: { 1: 300, 2: 50 } }));
+  ok(m.unlocked === 2 && m.best[1] === 300 && m.best[2] === 50 && m.done.join() === '1', 'two copies merge to whichever is further on');
+  ok(JSON.stringify(store.load()) === JSON.stringify(f), 'under plain Node (no cookie or storage) load() is a fresh save, and save() does not throw');
+  store.save(f);
+}
+
 console.log(`\ncombat-check: ${checks - failures}/${checks} checks passed`);
 process.exit(failures ? 1 : 0);

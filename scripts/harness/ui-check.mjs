@@ -2,7 +2,7 @@
 // Run: node scripts/harness/ui-check.mjs
 import assert from 'node:assert/strict';
 import { layout, drawPlayHud } from '../../src/hud.js';
-import { buttons, drawTitle, drawControls, drawIntro, drawDead, drawComplete, drawVoicemail } from '../../src/screens.js';
+import { buttons, drawTitle, drawControls, drawIntro, drawDead, drawComplete, drawVoicemail, drawSettings } from '../../src/screens.js';
 
 let calls = 0;
 function fakeCtx() {
@@ -92,8 +92,8 @@ for (const v of views) {
   for (const h of hudStates) drawPlayHud(ctx, v, h);
 
   // every menu button stays on screen, clear of the side insets, and nothing overlaps, in both orientations
-  const bstates = [undefined, null, {}, { t: -1 }, { t: 0.5 }, { t: 5, debugMode: true }, { t: huge }, { t: NaN }, { t: 3, hasNext: true }];
-  for (const mode of ['title', 'controls', 'dead', 'complete', 'voicemail', 'bogus']) {
+  const bstates = [undefined, null, {}, { t: -1 }, { t: 0.5 }, { t: 5, debugMode: true }, { t: huge }, { t: NaN }, { t: 3, hasNext: true }, { t: 3, hasMouse: true, mouseLook: true, sensLabel: 'MEDIUM', debugMode: true, resumeLevel: 2, resetArmed: true }];
+  for (const mode of ['title', 'controls', 'settings', 'dead', 'complete', 'voicemail', 'bogus']) {
     for (const s of bstates) {
       const list = buttons(mode, v, s);
       assert.ok(Array.isArray(list));
@@ -106,7 +106,14 @@ for (const v of views) {
       for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) assert.ok(!overlap(list[i], list[j]), `buttons overlap in ${mode}`);
     }
   }
-  assert.deepEqual(buttons('title', v, { t: 0 }).map((b) => b.id), ['new', 'debug']);
+  assert.deepEqual(buttons('title', v, { t: 0 }).map((b) => b.id), ['new', 'settings', 'debug']);
+  assert.deepEqual(buttons('title', v, { t: 0, resumeLevel: 2 }).map((b) => b.id), ['resume', 'new', 'settings', 'debug']);
+  assert.equal(buttons('title', v, { t: 0, resumeLevel: 2 })[0].label, 'CONTINUE: LEVEL 2');
+  assert.deepEqual(buttons('settings', v, { t: 0 }).map((b) => b.id), ['reset', 'back']);
+  assert.deepEqual(buttons('settings', v, { t: 0, hasMouse: true }).map((b) => b.id), ['mouse', 'sens', 'reset', 'back']);
+  assert.equal(buttons('settings', v, { resetArmed: true })[0].label, 'TAP AGAIN TO ERASE');
+  assert.equal(buttons('settings', v, { hasMouse: true, mouseLook: true })[0].label, 'MOUSE LOOK: ON');
+  assert.equal(buttons('settings', v, { hasMouse: true, mouseLook: false })[0].label, 'MOUSE LOOK: OFF');
   assert.deepEqual(buttons('controls', v, { t: 0 }).map((b) => b.id), ['start', 'back']);
   assert.deepEqual(buttons('dead', v, { t: 0.9 }).map((b) => b.id), []);
   assert.deepEqual(buttons('dead', v, { t: 0.91 }).map((b) => b.id), ['retry', 'menu']);
@@ -115,8 +122,8 @@ for (const v of views) {
   assert.deepEqual(buttons('complete', v, { t: 1.01, hasNext: true }).map((b) => b.id), ['next', 'again', 'menu']);
   assert.deepEqual(buttons('voicemail', v, { t: 0.8 }).map((b) => b.id), []);
   assert.deepEqual(buttons('voicemail', v, { t: 0.81 }).map((b) => b.id), ['continue']);
-  assert.equal(buttons('title', v, { debugMode: true })[1].label, 'DEBUG MODE: ON');
-  assert.equal(buttons('title', v, { debugMode: false })[1].label, 'DEBUG MODE: OFF');
+  assert.equal(buttons('title', v, { debugMode: true }).find((b) => b.id === 'debug').label, 'DEBUG MODE: ON');
+  assert.equal(buttons('title', v, { debugMode: false }).find((b) => b.id === 'debug').label, 'DEBUG MODE: OFF');
 
   const ts = [undefined, null, {}, { t: 0 }, { t: 3.3, debugMode: true, best: huge }, { t: huge }, { t: NaN, best: NaN }];
   for (const s of ts) {
@@ -126,7 +133,9 @@ for (const v of views) {
     drawDead(ctx, v, s);
     drawComplete(ctx, v, s);
     drawVoicemail(ctx, v, s);
+    drawSettings(ctx, v, s);
   }
+  drawSettings(ctx, v, { t: 1, hasMouse: true, mouseLook: true, sensLabel: long, saved: long, resetArmed: true });
   drawVoicemail(ctx, v, { t: 4, mail: { from: long, lines: [long, '', null, 'Do not shake anything.', long, long, long] } });
   drawVoicemail(ctx, v, { t: 0.2, mail: { from: 'CHERYL (AGENT)', lines: 'not an array' } });
   drawComplete(ctx, v, { t: 3, hasNext: true, title: long, line: long, sub: long, score: 5, kills: 2, totalEnemies: 2 });

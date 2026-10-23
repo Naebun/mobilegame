@@ -16,17 +16,23 @@ import {
 import * as hud from './hud.js';
 import * as screens from './screens.js';
 import * as M from './models.js';
+import * as store from './save.js';
 import { WEAPONS, WEAPON_ORDER, ENEMY_DEFS, PLAYER, LEVELS, DEATH_LINES, DRINKS, DRINK_ORDER } from './data.js';
 
 const TAU = Math.PI * 2;
 const HURT_DUR = 0.38; // matches the hurt animation length in models.js
-const BEST_KEY = 'mobilegame.fps.best'; // level 1; later levels append their number
+const BEST_KEY = 'mobilegame.fps.best'; // the older, localStorage-only best scores: level 1; later levels append their number
 const bestKey = (n) => (n > 1 ? `${BEST_KEY}.${n}` : BEST_KEY);
 const DEBUG_KEY = 'mobilegame.debugMode';
 const QUALITY_KEY = 'mobilegame.quality';
+const SETTINGS_KEY = 'mobilegame.settings';
+// Mouse sensitivity steps, as a multiple of PLAYER.mouse (radians per mouse count).
+const MOUSE_SENS = [{ label: 'LOW', k: 0.6 }, { label: 'MEDIUM', k: 1 }, { label: 'HIGH', k: 1.7 }];
 const FX_QUALITY = { high: 1, medium: 0.7, low: 0.4 };
 const DEFAULT_LOOK = { exposure: 1, bloom: 0.5, vignette: 0.35, grade: { lift: [0, 0, 0], gamma: [1, 1, 1], gain: [1, 1, 1] } };
 const query = typeof location !== 'undefined' ? new URLSearchParams(location.search) : new URLSearchParams('');
+// A computer with a mouse (not a phone): the Settings page and mouse look are offered only here. ?pc forces it, for tests.
+let hasMouse = query.has('pc') || (typeof matchMedia !== 'undefined' && matchMedia('(hover: hover) and (pointer: fine)').matches);
 // Quality: ?q=low|medium|high forces a tier (used by tests); otherwise start from the saved tier (default high)
 // and step down automatically if the device is clearly struggling. ?perf shows a frame-rate overlay.
 const Q = { tier: 'high', fixed: false, ema: 1 / 60, frames: 0, last: 0, perf: query.has('perf'), fps: 60 };
@@ -36,7 +42,12 @@ const DEBUG_MULT = { fire: 2, damage: 2, health: 2 };
 const NORMAL_MULT = { fire: 1, damage: 1, health: 1 };
 
 const S = {
-  mode: 'title', // title | controls | voicemail | intro | play | dead | complete
+  mode: 'title', // title | controls | settings | voicemail | intro | play | dead | complete
+  settings: { mouseLook: false, sens: 1 }, // saved; sens indexes MOUSE_SENS
+  save: store.fresh(), // progress: unlocked level, levels done, best scores (src/save.js: a cookie, mirrored in localStorage)
+  resetArmed: 0, // seconds left in which a second tap on RESET PROGRESS erases the save
+  mouseLocked: false,
+  mouseTest: null, // tests inject mouse input here: { dx, dy, down, wheel }
   level: 1, // the level being played (or about to be)
   mailT: 0,
   pendingLoad: false,
@@ -124,8 +135,15 @@ const inRect = (x, y, r) => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y +
 
 export function init(view) {
   S.view = view;
+  const savedSettings = read(SETTINGS_KEY);
+  if (savedSettings && typeof savedSettings === 'object') S.settings = { mouseLook: savedSettings.mouseLook === true, sens: clamp(Math.round(Number(savedSettings.sens)) || 1, 0, MOUSE_SENS.length - 1) };
+  S.save = store.load();
+  for (let n = 1; n <= store.MAX_LEVELS; n++) { // scores from before the cookie save existed
+    const old = Number(read(bestKey(n))) || 0;
+    if (old > (S.save.best[n] || 0)) S.save.best[n] = old;
+  }
   S.level = startLevel();
-  S.best = Number(read(bestKey(S.level))) || 0;
+  S.best = bestFor(S.level);
   S.debugMode = read(DEBUG_KEY) === true;
   const forced = query.get('q');
   const saved = read(QUALITY_KEY);
@@ -145,6 +163,8 @@ function startLevel() {
   return n >= 1 && n <= LEVELS.length ? Math.floor(n) : 1;
 }
 
+const bestFor = (n) => S.save.best[n] || 0;
+
 function rememberDoors() {
   for (const k of Object.keys(initialOpen)) delete initialOpen[k];
   for (const d of world.doors) initialOpen[d.id] = d.open;
@@ -155,7 +175,7 @@ const levelInfo = () => LEVELS[S.level - 1];
 // Swap the world for another level. The scene keeps its lights; only the level group, fog, ambient and looks change.
 function loadLevel(n) {
   S.level = n;
-  S.best = Number(read(bestKey(n))) || 0;
+  S.best = bestFor(n);
   if (world && world.level === n) return;
   const old = world;
   world = buildWorld({ quality: Q.tier, level: n });
@@ -216,6 +236,20 @@ export function resize(view) {
   R.wcam.aspect = view.w / view.h;
   R.wcam.updateProjectionMatrix();
   R.fx.setScale((view.h * R.pipeline.pixelRatio) / (2 * Math.tan((R.camera.fov * Math.PI) / 360)));
+}
+
+// Mouse look is wanted only while playing, on a computer, with the setting on. The engine asks every frame, so it also
+// lets go of the pointer when we stop wanting it (death, the level-complete screen).
+export function wantsMouseLock() {
+  return hasMouse && S.settings.mouseLook && S.mode === 'play';
+}
+
+export function pointerLock(locked) {
+  S.mouseLocked = locked;
+}
+
+function saveSettings() {
+  write(SETTINGS_KEY, S.settings);
 }
 
 export function gesture() {
@@ -415,6 +449,22 @@ function beginRun() {
   S.mode = 'intro';
   S.introT = 0;
   audio.setLevel(S.level - 1);
+}
+
+// Title, CONTINUE: back to the furthest level unlocked, behind its voicemail (a returning player has heard the first level's story).
+function resumeGame() {
+  const n = Math.min(S.save.unlocked, LEVELS.length);
+  audio.unlock();
+  if (world.level !== n || S.pendingLoad) requestLevel(n);
+  else { S.level = n; resetLevel(); }
+  audio.setLevel(n - 1);
+  if (n > 1 && LEVELS[n - 1].voicemail) {
+    S.mode = 'voicemail';
+    S.mailT = 0;
+  } else {
+    S.mode = 'intro';
+    S.introT = 0;
+  }
 }
 
 // Level complete, NEXT LEVEL: load the next level behind a voicemail card (or straight to its intro if it has none).
@@ -820,7 +870,8 @@ function die() {
   if (!S.debugMode && S.score > S.best) {
     S.best = S.score;
     S.newBest = true;
-    write(bestKey(S.level), S.best);
+    S.save.best[S.level] = S.best;
+    store.save(S.save);
   }
   audio.gameOver();
 }
@@ -830,10 +881,16 @@ function completeLevel() {
   S.completeT = 0;
   S.newBest = false;
   S.score += Math.max(0, Math.round((300 - S.runT) * 10));
+  if (!S.debugMode) { // a debug run neither records a score nor counts as progress
+    if (!S.save.done.includes(S.level)) S.save.done.push(S.level);
+    S.save.unlocked = Math.max(S.save.unlocked, Math.min(store.MAX_LEVELS, S.level + 1));
+    store.save(S.save);
+  }
   if (!S.debugMode && S.score > S.best) {
     S.best = S.score;
     S.newBest = true;
-    write(bestKey(S.level), S.best);
+    S.save.best[S.level] = S.best;
+    store.save(S.save);
   }
   audio.dawn();
 }
@@ -919,6 +976,16 @@ function readControls(input, view, dt) {
     const len = Math.hypot(kx, kz);
     if (len) { out.mx = kx / len; out.mz = kz / len; }
   }
+  // mouse look: moving the mouse aims, the left button fires, the wheel swaps weapons
+  const mouse = S.mouseTest || input.mouse;
+  if (wantsMouseLock() && (mouse === S.mouseTest || mouse.locked)) {
+    const sens = PLAYER.mouse * MOUSE_SENS[S.settings.sens].k;
+    out.yawD -= mouse.dx * sens;
+    out.pitchD -= mouse.dy * sens;
+    if (mouse.down) out.firing = true;
+    if (mouse.wheel) out.swap = true;
+  }
+  if (S.mouseTest) S.mouseTest = { ...S.mouseTest, dx: 0, dy: 0, wheel: 0 };
   const ky = (k.has('arrowleft') ? 1 : 0) - (k.has('arrowright') ? 1 : 0);
   const kp = (k.has('arrowup') ? 1 : 0) - (k.has('arrowdown') ? 1 : 0);
   out.yawD += ky * 2.2 * dt;
@@ -1436,9 +1503,16 @@ function updateAreas() {
 
 // ---- update ----
 
+// One line for the Settings page: how far the saved game is and the best scores.
+function progressText() {
+  const best = Object.keys(S.save.best).map((n) => `L${n} ${S.save.best[n]}`).join('  ');
+  return `Furthest level: ${S.save.unlocked}${S.save.done.length ? `   Done: ${S.save.done.join(', ')}` : ''}${best ? `   Best: ${best}` : ''}`;
+}
+
 function stateFor(mode) {
   switch (mode) {
-    case 'title': return { t: S.t, debugMode: S.debugMode, best: S.best, levelNumber: LEVELS[startLevel() - 1].number, levelName: LEVELS[startLevel() - 1].name };
+    case 'settings': return { t: S.t, mouseLook: S.settings.mouseLook, sensLabel: MOUSE_SENS[S.settings.sens].label, hasMouse: hasMouse, resetArmed: S.resetArmed > 0, saved: progressText() };
+    case 'title': return { t: S.t, resumeLevel: S.save.unlocked > 1 ? Math.min(S.save.unlocked, LEVELS.length) : 0, debugMode: S.debugMode, best: S.best, levelNumber: LEVELS[startLevel() - 1].number, levelName: LEVELS[startLevel() - 1].name };
     case 'controls': return { t: S.t };
     case 'dead': return { t: S.deadT, line: S.deadLine, score: S.score, best: S.best, newBest: S.newBest, debugMode: S.debugMode, levelName: levelInfo().name };
     case 'complete':
@@ -1462,6 +1536,17 @@ function handlePresses(input, view) {
     switch (b.id) {
       case 'new': S.mode = 'controls'; break;
       case 'back': S.mode = 'title'; break;
+      case 'settings': S.mode = 'settings'; S.resetArmed = 0; break;
+      case 'resume': resumeGame(); break;
+      case 'reset': // two taps: the first arms it, the second erases the saved progress and scores
+        if (S.resetArmed > 0) {
+          S.save = store.reset();
+          S.best = 0;
+          S.resetArmed = 0;
+        } else S.resetArmed = 4;
+        break;
+      case 'mouse': S.settings.mouseLook = !S.settings.mouseLook; saveSettings(); break;
+      case 'sens': S.settings.sens = (S.settings.sens + 1) % MOUSE_SENS.length; saveSettings(); break;
       case 'start': S.level = startLevel(); beginRun(); break;
       case 'next': nextLevel(); break;
       case 'continue': S.mode = 'intro'; S.introT = 0; break;
@@ -1494,12 +1579,14 @@ export function update(dt, input, view) {
   if (S.banner && (S.banner.t -= dt) <= 0) S.banner = null;
   if (S.toast && (S.toast.t -= dt) <= 0) S.toast = null;
   S.hitMarker = Math.max(0, S.hitMarker - dt * 5);
+  if (S.resetArmed > 0) S.resetArmed = Math.max(0, S.resetArmed - dt);
   S.camK += ((S.laser && S.laser.t < S.laser.dur - 0.15 ? 1 : 0) - S.camK) * Math.min(1, dt * 7);
   if (S.camK < 0.002) S.camK = 0;
 
   switch (S.mode) {
     case 'title':
     case 'controls':
+    case 'settings':
     case 'dead':
     case 'complete':
       if (S.mode === 'dead') S.deadT += dt;
@@ -1508,7 +1595,7 @@ export function update(dt, input, view) {
         for (const e of S.enemies) if (e.state === 'dead') updateEnemy(e, dt);
       }
       handlePresses(input, view);
-      audio.setMood(S.mode === 'title' || S.mode === 'controls' ? 0.1 : 0.4, S.mode === 'dead');
+      audio.setMood(S.mode === 'title' || S.mode === 'controls' || S.mode === 'settings' ? 0.1 : 0.4, S.mode === 'dead');
       break;
     case 'voicemail':
       S.mailT += dt;
@@ -1626,13 +1713,15 @@ function buildHudState() {
   h.move = S.ui.move;
   h.look = S.ui.look;
   h.firing = S.ui.firing;
+  h.compact = wantsMouseLock(); // mouse look: the touch boxes and buttons are not needed
+  h.hint = wantsMouseLock() && !S.mouseLocked && !S.mouseTest ? 'CLICK TO AIM WITH THE MOUSE   ESC TO LET GO' : null;
   return h;
 }
 
 function placeCamera() {
   const { camera } = R;
   const p = S.player;
-  if (S.mode === 'title' || S.mode === 'controls') {
+  if (S.mode === 'title' || S.mode === 'controls' || S.mode === 'settings') {
     // slow drift through the dance floor as a backdrop for the menus
     const a = world.areas.find((x) => x.id === levelInfo().titleArea) || world.areas[0];
     const cx = ((a.rect.c0 + a.rect.c1 + 1) / 2) * 2;
@@ -1837,6 +1926,9 @@ export function render(ctx, view, alpha) {
     case 'controls':
       screens.drawControls(ctx, view, stateFor('controls'));
       break;
+    case 'settings':
+      screens.drawSettings(ctx, view, stateFor('settings'));
+      break;
     case 'voicemail':
       screens.drawVoicemail(ctx, view, stateFor('voicemail'));
       break;
@@ -1884,12 +1976,17 @@ export function testHook(cmd, arg) {
     case 'screen': // jump to a menu screen, for screenshots: title | controls | intro | voicemail | dead | complete
       if (arg === 'title') toTitle();
       else if (arg === 'controls') S.mode = 'controls';
+      else if (arg === 'settings') S.mode = 'settings';
       else if (arg === 'intro') beginRun();
       else if (arg === 'voicemail') { S.level = 2; S.mode = 'voicemail'; S.mailT = 0; }
       else if (arg === 'dead') { resetLevel(); S.mode = 'play'; die(); }
       else if (arg === 'complete') { resetLevel(); S.mode = 'play'; completeLevel(); }
       return undefined;
     case 'drink': startDrink(arg); return undefined;
+    case 'save': S.save = store.clean({ ...S.save, ...arg }); store.save(S.save); return undefined; // set progress for tests
+    case 'pc': hasMouse = !!arg; return undefined; // pretend there is (or is not) a mouse
+    case 'setting': Object.assign(S.settings, arg); return undefined; // { mouseLook, sens }
+    case 'mouse': S.mouseTest = arg ? { dx: 0, dy: 0, wheel: 0, down: false, ...arg } : null; return undefined; // inject mouse input
     case 'hitEnemy': { // headless combat checks: damage enemy arg.i as if shot from (arg.fx, arg.fz); returns the hp it lost
       const e = S.enemies[arg.i];
       const hp0 = e.hp;
@@ -1900,7 +1997,7 @@ export function testHook(cmd, arg) {
       const w = WEAPONS[S.player.weapon];
       return {
         fireInterval: w.interval / mult().fire, damageMult: mult().damage, maxHealth: S.player.maxHealth, weapon: w.id, clip: S.player.ammo[w.id],
-        reloading: S.player.reloadT > 0, fov: R ? R.camera.fov : null, aspect: R ? R.camera.aspect : null, buffs: { ...S.buffs }, drinking: S.drink ? S.drink.id : null, laser: !!S.laser, yaw: S.player.yaw, third: S.camK > 0.5, camK: S.camK, health: S.player.health,
+        mouseLook: S.settings.mouseLook, sens: S.settings.sens, reloading: S.player.reloadT > 0, fov: R ? R.camera.fov : null, aspect: R ? R.camera.aspect : null, buffs: { ...S.buffs }, drinking: S.drink ? S.drink.id : null, laser: !!S.laser, yaw: S.player.yaw, third: S.camK > 0.5, camK: S.camK, health: S.player.health,
       };
     }
     default: return undefined;

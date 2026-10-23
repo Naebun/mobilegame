@@ -860,13 +860,26 @@ export function drawPlayHud(ctx, view, h) {
   }
   if (h.toast) drawToast(ctx, view, h.toast, y + 18);
 
-  // controls
+  // controls (with mouse look the boxes and buttons go: the mouse and keys do their jobs)
   if (furniture) {
-    drawMoveBox(ctx, L.moveBox, h.move, t);
-    drawLookBox(ctx, L.lookBox, h.look, !!h.firing, t);
-    drawReload(ctx, L.reloadBtn, w, t);
-    drawSwap(ctx, L.swapBtn);
+    if (!h.compact) {
+      drawMoveBox(ctx, L.moveBox, h.move, t);
+      drawLookBox(ctx, L.lookBox, h.look, !!h.firing, t);
+      drawReload(ctx, L.reloadBtn, w, t);
+      drawSwap(ctx, L.swapBtn);
+    }
     drawAmmo(ctx, view, L, w, t);
+  }
+  if (h.hint) {
+    const f = fit(ctx, str(h.hint), view.w - 48, 15, 800, 10);
+    const bw = f.w + 30;
+    rrect(ctx, cx - bw / 2, cy + 52, bw, 32, 16);
+    ctx.fillStyle = 'rgba(4,2,8,0.7)';
+    ctx.fill();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = CYAN;
+    ctx.stroke();
+    outlined(ctx, f.str, cx, cy + 68, f.size, '#ffffff', 'center', 800, 'rgba(4,2,8,0)');
   }
   if (Array.isArray(h.buffs) && h.buffs.length) drawBuffs(ctx, L, h.buffs);
 

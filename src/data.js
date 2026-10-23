@@ -68,6 +68,8 @@ export const PLAYER = {
   health: 100, speed: 4.4,
   // drag sensitivity in radians per pixel, and the continuous turn rate (rad/s) when the thumb rests at the box edge
   lookX: 0.009, lookY: 0.0075, edgeTurn: 2.4,
+  // mouse look, radians per mouse count at MEDIUM sensitivity
+  mouse: 0.0022,
 };
 
 // One entry per level. `hints` is the banner under an area's name when Freddie first steps into it (keyed by area id),

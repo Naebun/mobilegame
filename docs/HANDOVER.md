@@ -95,6 +95,14 @@ extrude, bevel and primitive operators (they order output by pointer hash). The 
 are still code. About 19k triangles for all five drinks and 370 KB of source; trim segment counts in `drinks.py` first
 if load time matters.
 
+**Weapons and hands.** `scripts/blender/weapons.py` models the five weapons and Freddie's hands and forearms and writes
+`src/weapon-meshes.js` (same packed format, about 620 KB, byte-for-byte reproducible). Parts: `body`, `pump` (shotgun fore-end,
+with the left hand as its child), `cradle` (vinyl platter; the record is still code so it can spin) and `hands`. Muzzle
+and lamp positions travel in the data. `makeWeaponModel(id, { hands: false })` leaves the hands off (pickups use it);
+the procedural `WEAPON_PARTS` in `models.js` stay as the fallback for a weapon missing from the data. `kit.py` gained
+`loft` (a section swept along a path: grips, fingers, sleeves), `sweep`/`curve`, more surface types and a per-part
+smoothing angle; `drinks.py` output is unchanged (checked with `cmp`). Previews: `weapons.py --preview smg --view fp`.
+
 Still not decided: how Blender *textures* would reach the game. `world.js` and `models.js` are procedural only (no
 image files, run under plain Node). Baked textures would need either committed image files or more data embedded in
 modules, which changes that rule. Raise it with the owner before starting.
@@ -112,3 +120,15 @@ the vertical field of view as the screen widens (85 degrees in portrait, about 5
 viewmodel out to the right. Tested by `ui-check` (12 view sizes, side insets), the smoke test (rotate to 844 x 390 and
 back) and screenshots from `scripts/harness/screen-views.mjs`. Not tested: a real phone rotating, iOS reporting a stale
 size after rotation (the engine re-measures at 0, 120 and 450 ms to cover it), real thumb reach on the landscape boxes.
+
+## Mouse look, settings page and saved progress
+`src/save.js` keeps the furthest level unlocked, levels done and best scores in a cookie (name `fls`, a year, this page's
+path) and in localStorage, merging both on load; older `mobilegame.fps.best*` scores are picked up once. `game3d.js`
+shows a CONTINUE button on the title once level 2 is unlocked, and a Settings page (`screens.drawSettings`): MOUSE LOOK,
+SENSITIVITY (computers only: `matchMedia('(hover: hover) and (pointer: fine)')`, `?pc` forces it for tests) and RESET
+PROGRESS (two taps). Mouse look: `engine.js` handles pointer lock, movement, the left button and the wheel
+(`input.mouse`), and `wantsMouseLock()` in `game3d.js` says when it is wanted (playing, on a computer, setting on), so the
+engine lets go in the menus. Tested headless by `combat-check` (aim, fire, wheel, sensitivity, the save format) and in the
+smoke test (cookie written, reload offers CONTINUE, settings, reset). Not tested: a real mouse and real pointer lock (the
+tests inject input), Safari's cookie expiry rules (it may drop script-set cookies after about a week without a visit; local
+storage has the same limit for sites not added to the home screen, which is why both are written).

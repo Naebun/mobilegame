@@ -1,8 +1,8 @@
 // Network-first so edits always show up on reload; cache is only an offline fallback.
-const CACHE = 'mobilegame-v6';
+const CACHE = 'mobilegame-v7';
 const ASSETS = [
   './', 'index.html', 'manifest.webmanifest', 'icons/icon.svg', 'src/style.css', 'src/main.js', 'src/engine.js',
-  'src/game3d.js', 'src/audio.js', 'src/data.js', 'src/consts.js', 'src/draw.js', 'src/world.js', 'src/levels/cowgate.js', 'src/levels/vaults.js', 'src/levels/vaults-decor.js', 'src/models.js', 'src/drink-meshes.js',
+  'src/game3d.js', 'src/save.js', 'src/audio.js', 'src/data.js', 'src/consts.js', 'src/draw.js', 'src/world.js', 'src/levels/cowgate.js', 'src/levels/vaults.js', 'src/levels/vaults-decor.js', 'src/models.js', 'src/drink-meshes.js',
   'src/hud.js', 'src/screens.js', 'vendor/three.module.min.js',
 ];
 

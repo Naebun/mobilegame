@@ -71,7 +71,14 @@ export function buttons(mode, view, state) {
   if (F.land) {
     // landscape: a stack in the right-hand column, centred on the screen (the controls page uses a bottom row instead)
     const specs = [];
-    if (mode === 'title') specs.push(['new', 'NEW GAME', true, 52, null], ['debug', `DEBUG MODE: ${st.debugMode ? 'ON' : 'OFF'}`, false, 40, st.debugMode ? AMBER : null]);
+    if (mode === 'title') {
+      if (st.resumeLevel) specs.push(['resume', `CONTINUE: LEVEL ${st.resumeLevel}`, true, 52, null]);
+      specs.push(['new', 'NEW GAME', !st.resumeLevel, st.resumeLevel ? 44 : 52, null], ['settings', 'SETTINGS', false, 44, null]);
+      specs.push(['debug', `DEBUG MODE: ${st.debugMode ? 'ON' : 'OFF'}`, false, 40, st.debugMode ? AMBER : null]);
+    } else if (mode === 'settings') {
+      if (st.hasMouse) specs.push(['mouse', `MOUSE LOOK: ${st.mouseLook ? 'ON' : 'OFF'}`, true, 52, null], ['sens', `SENSITIVITY: ${str(st.sensLabel) || 'MEDIUM'}`, false, 44, null]);
+      specs.push(['reset', st.resetArmed ? 'TAP AGAIN TO ERASE' : 'RESET PROGRESS', false, 44, st.resetArmed ? AMBER : null], ['back', 'BACK', !st.hasMouse, 44, null]);
+    }
     else if (mode === 'dead' && t > 0.9) specs.push(['retry', 'RETRY LEVEL', true, 52, null], ['menu', 'MAIN MENU', false, 44, null]);
     else if (mode === 'complete' && t > 1) {
       if (st.hasNext) specs.push(['next', 'NEXT LEVEL', true, 52, null]);
@@ -101,8 +108,29 @@ export function buttons(mode, view, state) {
   }
   if (mode === 'title') {
     const y = Math.max(view.h * 0.46, titleGeom(view).bottom);
-    add('new', 'NEW GAME', y);
-    add('debug', `DEBUG MODE: ${st.debugMode ? 'ON' : 'OFF'}`, y + 68, false, 40, st.debugMode ? AMBER : null);
+    let yy = y;
+    if (st.resumeLevel) {
+      add('resume', `CONTINUE: LEVEL ${st.resumeLevel}`, yy);
+      yy += 62;
+      add('new', 'NEW GAME', yy, false, 44);
+      yy += 56;
+    } else {
+      add('new', 'NEW GAME', yy);
+      yy += 64;
+    }
+    add('settings', 'SETTINGS', yy, false, 44);
+    add('debug', `DEBUG MODE: ${st.debugMode ? 'ON' : 'OFF'}`, yy + 52, false, 40, st.debugMode ? AMBER : null);
+  } else if (mode === 'settings') {
+    const y = view.h - sb - 24 - (st.hasMouse ? 52 + 12 + 44 * 3 + 12 * 2 + 8 : 44 * 2 + 12 + 8); // a stack at the bottom, words above
+    let yy = y;
+    if (st.hasMouse) {
+      add('mouse', `MOUSE LOOK: ${st.mouseLook ? 'ON' : 'OFF'}`, yy);
+      yy += 64;
+      add('sens', `SENSITIVITY: ${str(st.sensLabel) || 'MEDIUM'}`, yy, false, 44);
+      yy += 56;
+    }
+    add('reset', st.resetArmed ? 'TAP AGAIN TO ERASE' : 'RESET PROGRESS', yy, false, 44, st.resetArmed ? AMBER : null);
+    add('back', 'BACK', yy + 56, !st.hasMouse, 44);
   } else if (mode === 'controls') {
     if (view.h < 560) {
       const y = view.h - sb - 100;
@@ -207,11 +235,47 @@ export function drawTitle(ctx, view, state) {
   const list = buttons('title', view, st);
   drawButtons(ctx, list);
   if (st.debugMode) {
-    const d = list[1];
+    const d = list.find((b) => b.id === 'debug') || list[list.length - 1];
     outlined(ctx, '2x fire rate, 2x damage, 2x health', d.x + d.w / 2, d.y + d.h + 18, 12, AMBER, 'center', 600);
     outlined(ctx, 'Scores are not recorded', d.x + d.w / 2, d.y + d.h + 36, 12, 'rgba(251,191,36,0.75)', 'center', 500);
   }
-  outlined(ctx, 'Left thumb moves. Right thumb aims and fires. Drag anywhere else to aim.', view.w / 2, view.h - num(safe(view).bottom) - 16, 12, 'rgba(255,255,255,0.6)', 'center', 500);
+  const hint = fit(ctx, 'Left thumb moves. Right thumb aims and fires. Drag anywhere else to aim.', view.w - 24, 12, 500, 8);
+  outlined(ctx, hint.str, view.w / 2, view.h - num(safe(view).bottom) - 16, hint.size, 'rgba(255,255,255,0.6)', 'center', 500);
+}
+
+// ---- settings ----
+
+// What each mouse setting does, in words. The page is offered only on a computer with a mouse.
+const MOUSE_HELP = [
+  ['MOUSE LOOK', 'Off: hold the left button and drag to aim, as on a phone. On: just move the mouse to aim, left click to fire, wheel to swap weapon.'],
+  ['CAPTURING THE MOUSE', 'With mouse look on, click the game once to capture the mouse. Esc lets go; click again to take it back.'],
+  ['KEYS STILL WORK', 'WASD to move, arrow keys to aim, space to fire, R to reload, Q to swap.'],
+];
+
+export function drawSettings(ctx, view, state) {
+  const st = state || {};
+  const t = num(st.t);
+  const F = frame(view);
+  const top = num(safe(view).top);
+  dim(ctx, view, 0.8);
+  const titleY = top + Math.max(F.land ? 28 : 36, view.h * 0.07);
+  heavy(ctx, 'SETTINGS', F.cx, titleY, F.land ? 26 : 30, MAGENTA);
+  const list = buttons('settings', view, st);
+  const w = F.w - (F.land ? 16 : 56);
+  let y = titleY + 38;
+  const size = view.h < 600 ? 13 : 14;
+  const limit = F.land ? view.h - num(safe(view).bottom) - 10 : list[0].y - 10;
+  const sections = [...(st.hasMouse ? MOUSE_HELP : []), ['SAVED PROGRESS', 'Your furthest level and best scores are kept in a cookie in this browser (and local storage). Clearing the site data clears them.']];
+  for (const [head, body] of sections) {
+    outlined(ctx, head, F.cx, y, 12, CYAN, 'center', 800);
+    y += 10 + size * 0.9;
+    const lines = wrapLines(ctx, body, w, size, 500, 6).length;
+    if (y + lines * (size + 4) > limit) break; // never run under the buttons on a short screen
+    y += paragraph(ctx, body, F.cx, y, w, size, '#e5e0f5', 'center', 500, size + 4) + 12;
+  }
+  if (st.saved) outlined(ctx, fit(ctx, str(st.saved), w, 12, 600, 8).str, F.cx, Math.min(y + 4, limit - 4), 12, '#9fb3c8', 'center', 600);
+  void t;
+  drawButtons(ctx, list);
 }
 
 // ---- controls ----
@@ -422,7 +486,7 @@ const CELLS = [
 ];
 const TIP = 'Clear every robot in an area to unlock the next door.';
 // Keyboard play on a computer (the same keys as readControls in game3d.js).
-const KEYS = 'PC:  WASD move   ARROWS aim   SPACE fire   R reload   Q swap';
+const KEYS = 'PC:  WASD move   ARROWS aim   SPACE fire   R reload   Q swap   (mouse aim: SETTINGS)';
 
 // The tip strip with the keyboard line under it, in one rounded box. h is the whole box height.
 function tipStrip(ctx, x, y, w, h, cx, keys = true) {
