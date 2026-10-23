@@ -62,8 +62,8 @@ no checkpoints yet. The code is `src/save.js`.
 Home screen, NEW GAME, the difficulty screen, the controls screen, then the level intro. The run starts only when START GAME is
 pressed on the controls screen. CONTINUE resumes in the difficulty the saved run used (its button says so when it is not Normal).
 
-**Difficulty.** NORMAL is the game as designed. HARD (robots deal 1.5x damage, have 1.25x health, move 1.1x faster and wind up
-10 percent quicker) and EXTRA HARD (2x, 1.5x, 1.2x, 20 percent quicker) change the robots and nothing else: same maps, same
+**Difficulty.** NORMAL is the game as designed. HARD (robots deal 1.35x damage, have 1.2x health, move 1.1x faster and wind up
+10 percent quicker) and EXTRA HARD (1.75x, 1.35x, 1.15x, 15 percent quicker) change the robots and nothing else: same maps, same
 pickups, nothing about Naebun. All three are open from the start. The pick is made once on the difficulty screen (tap a card,
 or press 1, 2 or 3; Up and Down move the highlight, Enter picks it, Esc goes back), applies to the whole run and is never changed
 mid-run. Best scores are kept separately for each mode and level. The numbers are in `DIFFICULTY` in `src/data.js`; the rules,

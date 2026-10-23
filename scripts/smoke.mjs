@@ -317,8 +317,9 @@ try {
   await toControls('normal');
   await pressButton('start');
   await until("s.mode === 'intro'");
+  await page.waitForTimeout(1500); // a tap only skips the intro after 0.8 s of game time
   await tap(195, 400);
-  await until("s.mode === 'play'");
+  check(await until("s.mode === 'play'", null, 60000), 'a Normal run starts');
   check((await state()).difficulty === 'normal' && (await hps('fizzbang')).every((h) => h === 60), 'a Normal run has the plain 60 hp Dr Fizzbang bots');
   check((await readSave()).difficulty === 'normal', 'starting it saves Normal as the mode');
   await page.evaluate(() => { window.__game.getState().score = 321; });

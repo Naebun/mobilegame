@@ -166,3 +166,34 @@ upgrades, ten collectible records and the SETLIST screen): `docs/arsenal.md`, `s
 `src/arsenal-meshes.js`), `src/arsenal.js`, `src/arsenal-play.js`, `scripts/harness/arsenal-check.mjs`. Every number is a first
 guess; nothing has been played by a person or heard. The sim bots cannot dodge a laser, run from a Shaken, hunt a Nurse or
 use the new weapons, so they need teaching before these go into a level. Level 3 and later are still not to be built.
+
+## Difficulty (Hard and Extra Hard)
+Built at the owner's request: three modes, all open from the start, picked on a new screen on the NEW GAME path (title, difficulty,
+controls, START GAME), saved so CONTINUE resumes in the same mode, never changed mid-run. Full write-up, the telegraph floor and
+every bot number: `docs/difficulty.md`.
+
+- **Where the table is.** `DIFFICULTY` (damage, health, speed, wind-up per mode), `TELEGRAPH_FLOOR` and `defFor(kind, mode)` are in one
+  block at the end of `src/data.js`. `spawnEnemy` in `game3d.js` calls `defFor`, so a robot's `e.def` already carries the scaled
+  numbers and no attack code changed. Normal returns the base `ENEMY_DEFS` entry itself.
+- **What it touches.** Robot damage (melee, slam, bottles, Longshot shot, Shaken blast on Naebun), hp (so boss bars, the Nurse's 60
+  percent revive and the enrage threshold follow), walk speed (and the Shaken's lunge) and wind-ups (melee windup, Bampot aim, slam,
+  Longshot track and lock, Shaken fuse, Mimic unfold), none below 0.35 s. Not Naebun, not pickups, not stun, not score, not
+  projectile speed, not cooldowns. Debug mode is independent and stacks.
+- **Screens and flow.** `screens.buttons('difficulty', ...)` and `drawDifficulty`; `game3d.js` has the `difficulty` mode, the key
+  handler (1 to 3, Up, Down, Enter, Escape), `setDifficulty`/`startMode` and the `?difficulty=hard|extra` shortcut. The mode shows on
+  CONTINUE, the title's level line, the HUD score line, and the death and completion screens.
+- **Save.** `src/save.js` is version 2: `difficulty` and `best[mode][level]`. Version 1 saves load (their scores are the normal-mode
+  bests), and so do the older `mobilegame.fps.best*` scores. The mode is written when a non-debug run starts.
+- **Tuning.** The owner's first guess was Hard 1.5 / 1.25 / 1.1 / 0.9 and Extra Hard 2 / 1.5 / 1.2 / 0.8. On level 2 the good bot won
+  53 and 13 percent of runs with those, so they are now Hard 1.35 / 1.2 / 1.1 / 0.9 and Extra Hard 1.75 / 1.35 / 1.15 / 0.85.
+  Bot results (30 runs, sloppy / casual / good, win percent), normal then Hard then Extra Hard: level 1 97 / 100 / 100, 80 / 93 / 100,
+  57 / 90 / 100; level 2 83 / 90 / 97, 13 / 70 / 73, 3 / 13 / 17. A 60-run replicate on level 2 gave the good bot 78 (Hard) and 33
+  (Extra Hard). Damage taken roughly doubles on level 1 on Hard. One table cannot fit both levels: it is set from level 2, so level 1
+  Extra Hard is still easy for the good bot. Bots aim far better than a thumb, so people will do worse in every mode.
+- **Sim caveat.** The sim bots are not deterministic across a process: `S.t` (game time since the module loaded, which the ranged
+  robots' strafe uses) is not reset by `init`, so the same seed gives a different run depending on what ran before it. The 30-run
+  numbers are therefore samples, about plus or minus 9 points at 50 percent. `--difficulty` is in `scripts/sim3d.mjs`.
+- **Checks.** `combat-check` (multipliers, floors, every kind, debug stacking), `difficulty-check` (save, flow, keys, debug writes
+  nothing), `ui-check` (the screen at 12 sizes), the smoke test (the flow in a browser).
+- **Open.** A human playtest of both modes. The Longshot's shot is 67 on Extra Hard (it is not placed in any level yet), which is
+  two thirds of Naebun's health in one hit, so re-read it when it is placed.
