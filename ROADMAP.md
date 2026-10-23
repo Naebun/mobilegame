@@ -20,9 +20,24 @@ collision; a headless bot beats the level every time at three aim skills.
 - **Audio.** Synthesised, never heard by a person. Weapon sounds are new.
 - **The look.** The brick, stone and timber basement was checked in screenshots only.
 
-## Names and brands
-"Dr Pepper" and "Wray and Nephew" are real brands, used in text only; the robots are generic battered machines with no
-logos. The GitHub Pages site is public, so rename them in `src/data.js` before sharing widely if that matters.
+## Names
+The robots use invented names: "Dr Fizzbang" (melee) and "Bampot and Nephew" (ranged). They replaced two real brand
+names at the owner's request. The earlier names still appear in the public git history (old commit messages and
+pull request text); rewriting history was not requested, so it was left alone. No trademark search has been done on
+the new names.
+
+## Decisions for the full game
+- Length: about two hours to complete.
+- Orientation: portrait only.
+- Devices: any iOS device released in the past four years (as of October 2026: iPhone 14 and newer, plus iPads of the
+  same age). That means Safari 16 or later, WebGL 2, and an A15-class GPU as the performance floor. Consequences:
+  - iOS has no Vibration API, so no haptics.
+  - Audio only starts after a tap (already handled in `gesture()`).
+  - Gyro aiming would need a permission prompt; not planned.
+  - Low Power Mode caps the frame rate at 30; the fixed-step loop already copes, but test it.
+  - iPads count, so layouts must work at about 820 x 1180 in portrait. It works today, but the control boxes keep
+    their phone size (180 px cap in `hud.layout`) and look small there. Scale them up on large screens.
+- Still to decide: story weight, and how many levels two hours means (probably 8 to 10 levels of 12 to 15 minutes).
 
 ## Parked
 - **Top-down version.** Replaced by this rebuild. It is in git history on `main` (squash commits up to PR #2).

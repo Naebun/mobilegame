@@ -56,11 +56,11 @@ section('1. spawn clearance');
   }
   const kinds = (id) => w.areas.find((a) => a.id === id).spawns.reduce((m, s) => ((m[s.kind] = (m[s.kind] || 0) + 1), m), {});
   const eq = (a, b) => JSON.stringify(Object.entries(a).sort()) === JSON.stringify(Object.entries(b).sort());
-  ok(eq(kinds('cloakroom'), { drpepper: 2 }), 'cloakroom: 2 drpepper');
-  ok(eq(kinds('dancefloor'), { drpepper: 4, wray: 1 }), 'dancefloor: 4 drpepper 1 wray');
-  ok(eq(kinds('bar'), { wray: 2, drpepper: 3 }), 'bar: 2 wray 3 drpepper');
-  ok(eq(kinds('vip'), { drpepper: 2, wray: 2 }), 'vip: 2 drpepper 2 wray');
-  ok(eq(kinds('backstage'), { bouncer: 1, drpepper: 2 }), 'backstage: bouncer + 2 drpepper');
+  ok(eq(kinds('cloakroom'), { fizzbang: 2 }), 'cloakroom: 2 fizzbang');
+  ok(eq(kinds('dancefloor'), { fizzbang: 4, bampot: 1 }), 'dancefloor: 4 fizzbang 1 bampot');
+  ok(eq(kinds('bar'), { bampot: 2, fizzbang: 3 }), 'bar: 2 bampot 3 fizzbang');
+  ok(eq(kinds('vip'), { fizzbang: 2, bampot: 2 }), 'vip: 2 fizzbang 2 bampot');
+  ok(eq(kinds('backstage'), { bouncer: 1, fizzbang: 2 }), 'backstage: bouncer + 2 fizzbang');
   // the bouncer needs room: clearance bigger than its radius
   const boss = w.areas[5].spawns.find((s) => s.kind === 'bouncer');
   ok(clearance(w, boss.x, boss.z) >= 1.9, 'bouncer has room');

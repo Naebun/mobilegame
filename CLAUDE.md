@@ -13,8 +13,9 @@ Level 1 only for now. Read `README.md` for the layout and `docs/fps-design.md` f
   its neon pink and cyan.
 - Mobile performance: share geometries and materials, merge static geometry (about 30 draw calls for the level),
   at most 4 point lights in the world plus one on the camera, no shadows, pixel ratio capped at 1.5.
-- Content and tuning live in `src/data.js`. Enemies: "Dr Pepper" robots are melee only, "Wray and Nephew" robots can
-  shoot. These are real brand names used in text only (no logos, no packaging in the models); keep it that way.
+- Content and tuning live in `src/data.js`. Enemies: "Dr Fizzbang" robots are melee only, "Bampot and Nephew" robots can
+  shoot. The names are invented, in the spirit of a fizzy-drink brand and a family-firm spirits brand. Do not use real
+  brand names, logos or packaging in names, text or models.
 - Controls: two grey boxes (move left, aim right). A thumb in the right box auto-fires. There is no aim assist.
   Ammo is unlimited, clips are not; reload is automatic when empty or via RELOAD. Button taps are read from press
   events, not live touches, so they work at any frame rate. `hud.layout(view)` is the single source of truth for the

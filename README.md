@@ -11,7 +11,7 @@ Level 1 is the Cowgate: a real brick-and-stone basement club, played as one line
 wakes when it notices Freddie; a robot that dies stays dead. Clear every robot in an area and the door out unlocks.
 Beat the Bouncer at the end and walk out to finish the level.
 
-- **Enemies:** "Dr Pepper" robots only fight in melee. "Wray and Nephew" robots throw bottles. The Bouncer is a big
+- **Enemies:** "Dr Fizzbang" robots only fight in melee. "Bampot and Nephew" robots throw bottles. The Bouncer is a big
   melee brute.
 - **Weapons:** found on the floor, each different. Bass Pistol (accurate, starting weapon), Subwoofer Shotgun
   (pellets and knockback), Tweeter SMG (fast, spread grows), Reverb Launcher (explosive).

@@ -13,7 +13,7 @@ const ok = (cond, msg) => {
 const STATES = ['idle', 'walk', 'windup', 'swing', 'aim', 'shoot', 'hurt', 'dead'];
 const TS = [0, 0.3, 5];
 const KS = [0, 0.5, 1, -1, 2];
-const MAX_HEIGHT = { drpepper: 2.2, wray: 2.1, bouncer: 3.4 };
+const MAX_HEIGHT = { fizzbang: 2.2, bampot: 2.1, bouncer: 3.4 };
 
 function meshCount(o) {
   let n = 0;
@@ -33,7 +33,7 @@ function finiteTransforms(o, label) {
 
 ok(JSON.stringify(M.WEAPON_IDS) === '["pistol","shotgun","smg","launcher"]', 'WEAPON_IDS');
 
-for (const kind of ['drpepper', 'wray', 'bouncer']) {
+for (const kind of ['fizzbang', 'bampot', 'bouncer']) {
   const r = M.makeRobot(kind);
   ok(r.group instanceof THREE.Group, `${kind}: group`);
   ok(r.height > 1.5 && r.height <= MAX_HEIGHT[kind], `${kind}: height ${r.height}`);
@@ -68,8 +68,8 @@ for (const kind of ['drpepper', 'wray', 'bouncer']) {
 }
 
 // Shared geometry between instances.
-const a = M.makeRobot('wray');
-const b = M.makeRobot('wray');
+const a = M.makeRobot('bampot');
+const b = M.makeRobot('bampot');
 ok(a.group.children[0].children[0].geometry === b.group.children[0].children[0].geometry, 'geometry shared');
 let sharedMat = true;
 a.group.traverse((c) => { if (c.isMesh && c.userData.base === a.eyes[0].userData.base) sharedMat = false; });

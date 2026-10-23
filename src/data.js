@@ -24,14 +24,14 @@ export const WEAPONS = {
 };
 export const WEAPON_ORDER = ['pistol', 'shotgun', 'smg', 'launcher'];
 
-// Dr Pepper robots only ever fight in melee. Wray and Nephew robots can shoot. The Bouncer is a big Dr Pepper variant.
+// Dr Fizzbang robots only ever fight in melee. Bampot and Nephew robots can shoot. The Bouncer is a big Dr Fizzbang variant.
 export const ENEMY_DEFS = {
-  drpepper: {
-    name: 'DR PEPPER BOT', hp: 60, speed: 3.4, ranged: false, reach: 1.8, windup: 0.55, swing: 0.4, cooldown: 1.1,
+  fizzbang: {
+    name: 'DR FIZZBANG BOT', hp: 60, speed: 3.4, ranged: false, reach: 1.8, windup: 0.55, swing: 0.4, cooldown: 1.1,
     damage: 12, score: 100, wakeRange: 16,
   },
-  wray: {
-    name: 'WRAY AND NEPHEW BOT', hp: 45, speed: 2.6, ranged: true, damage: 10, score: 150, wakeRange: 18,
+  bampot: {
+    name: 'BAMPOT AND NEPHEW BOT', hp: 45, speed: 2.6, ranged: true, damage: 10, score: 150, wakeRange: 18,
     shotInterval: [1.9, 2.8], aim: 0.55, shoot: 0.35, projSpeed: 11, keepMin: 7, keepMax: 13, range: 24,
   },
   bouncer: {
@@ -57,9 +57,9 @@ export const LEVEL = {
 // Shown as a banner when Freddie first steps into an area (keyed by area id); falls back to the area objective.
 export const AREA_HINTS = {
   stairwell: 'Walk over weapons to pick them up.',
-  cloakroom: 'Dr Pepper bots: all fists, no manners.',
+  cloakroom: 'Dr Fizzbang bots: all fists, no manners.',
   dancefloor: 'Use the speaker stacks for cover.',
-  bar: 'Wray and Nephew bots throw bottles. Keep moving.',
+  bar: 'Bampot and Nephew bots throw bottles. Keep moving.',
   vip: 'Long corridor. Short temper.',
   backstage: 'Not in those trainers.',
 };

@@ -146,19 +146,19 @@ try {
   await ptr('pointerup', 2, lx, ly);
   check(await until('s.projectiles.length === 0', null, 15000), 'rockets explode on impact and clean up');
 
-  // enemy bottles: a Wray and Nephew bot with a clear line of sight throws one
+  // enemy bottles: a Bampot and Nephew bot with a clear line of sight throws one
   await hook('play');
   await page.evaluate(() => {
     const g = window.__game;
     const w = g.getWorld();
-    const e = g.getState().enemies.find((x) => x.kind === 'wray');
+    const e = g.getState().enemies.find((x) => x.kind === 'bampot');
     for (const d of [8, 7, 6, 5, 4]) {
       const x = e.x - Math.sin(e.yaw) * d;
       const z = e.z - Math.cos(e.yaw) * d;
       if (!w.isSolidAt(x, z) && w.los(x, z, e.x, e.z)) { g.testHook('teleport', { x, z, yaw: e.yaw + Math.PI }); break; }
     }
   });
-  check(await until("s.projectiles.some((p) => p.owner === 'enemy')", null, 30000), 'a Wray and Nephew bot throws bottles when it sees Freddie');
+  check(await until("s.projectiles.some((p) => p.owner === 'enemy')", null, 30000), 'a Bampot and Nephew bot throws bottles when it sees Freddie');
   await shot('bottles');
 
   // the linear route: kill each area in order, doors open, the dead stay dead

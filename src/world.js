@@ -11,7 +11,7 @@ const ROWS = 48;
 // Legend. Solid: # wall, P pillar, S speaker stack, T stairs. Low cover (blocks walking, not bullets):
 // b bar counter, j DJ booth, v booth, x crate or flight case, r coat or costume rail, o round table.
 // 1-6 door tiles (two per door), . floor. Markers that sit on floor: @ start, E exit (two tiles),
-// d drpepper, w wray, K bouncer, G shotgun, M smg, L launcher, H medkit.
+// d fizzbang, w bampot, K bouncer, G shotgun, M smg, L launcher, H medkit.
 // <map>
 const MAP = [
   '####################################',
@@ -154,7 +154,7 @@ export function buildWorld() {
   const counts = {};
   let start = { x: 7, z: 89, yaw: -Math.PI / 2 };
   const exitTiles = [];
-  const KIND_OF = { d: 'drpepper', w: 'wray', K: 'bouncer' };
+  const KIND_OF = { d: 'fizzbang', w: 'bampot', K: 'bouncer' };
   const PICK_OF = { G: ['weapon', 'shotgun'], M: ['weapon', 'smg'], L: ['weapon', 'launcher'], H: ['health', 'medkit'] };
   for (const m of marks) {
     const [x, z] = tileCentre(m.c, m.r);

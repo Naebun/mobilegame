@@ -112,13 +112,13 @@ const smooth = (t) => t * t * (3 - 2 * t);
 
 // Per-kind rig numbers. Positions are absolute heights above the feet; geometry is built relative to its pivot.
 const SPEC = {
-  drpepper: {
+  fizzbang: {
     height: 2.1, radius: 0.55, headY: 1.62, hip: 0.45, neck: 1.62, bodyR: 0.5,
     legX: 0.26, shoulderX: 0.64, shoulderY: 1.38, eyeEmissive: 0xff5a22, emissive: 0x1a0d0a, lamp: [0.14, 1.36, -0.512, 0xffa030],
     walkRate: 6.5, bob: 0.05, stride: 0.75, eyeX: 0.17, eyeY: 1.84, eyeZ: -0.31, eyeTilt: 0.2,
     cannon: false, bothArms: false,
   },
-  wray: {
+  bampot: {
     height: 2.0, radius: 0.5, headY: 1.5, hip: 0.42, neck: 1.5, bodyR: 0.47,
     legX: 0.22, shoulderX: 0.54, shoulderY: 1.05, eyeEmissive: 0x35e6ff, emissive: 0x15120e, lamp: [0.26, 0.75, -0.46, 0xffa030],
     walkRate: 7.5, bob: 0.04, stride: 0.7, eyeX: 0.11, eyeY: 1.68, eyeZ: -0.235, eyeTilt: 0,
@@ -138,7 +138,7 @@ const RUST = 0x6b3a1c;
 const RUBBER = 0x141414;
 const CHROME = 0x9a9c98;
 
-function drPepperGeo() {
+function fizzbangGeo() {
   const HIP = 0.45;
   const NECK = 1.62;
   const maroon = 0x6e222c;
@@ -209,7 +209,7 @@ function drPepperGeo() {
   };
 }
 
-function wrayGeo() {
+function bampotGeo() {
   const HIP = 0.42;
   const NECK = 1.5;
   const cream = 0xc9bd9c;
@@ -325,7 +325,7 @@ function bouncerGeo() {
   };
 }
 
-const ROBOT_GEO = { drpepper: drPepperGeo, wray: wrayGeo, bouncer: bouncerGeo };
+const ROBOT_GEO = { fizzbang: fizzbangGeo, bampot: bampotGeo, bouncer: bouncerGeo };
 let robotCount = 0;
 
 export function makeRobot(kind) {
@@ -368,7 +368,7 @@ export function makeRobot(kind) {
   const eyeMat = new THREE.MeshBasicMaterial({ color: spec.eyeEmissive, fog: false });
   const eyes = [-1, 1].map((side) => {
     const e = mk(geo.eye, eyeMat, headG, side * spec.eyeX, spec.eyeY - spec.neck, spec.eyeZ);
-    if (kind === 'wray') e.rotation.x = Math.PI / 2;
+    if (kind === 'bampot') e.rotation.x = Math.PI / 2;
     else e.rotation.z = -side * spec.eyeTilt;
     return e;
   });
@@ -601,7 +601,7 @@ export function makeRobot(kind) {
   setPose('idle', 0, 0);
   return {
     group, height: spec.height, radius: spec.radius, headY: spec.headY, eyes, setPose, flash,
-    muzzle, // wray only: the cannon tip, for spawning shots (getWorldPosition)
+    muzzle, // bampot only: the cannon tip, for spawning shots (getWorldPosition)
   };
 }
 
