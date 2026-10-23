@@ -127,9 +127,9 @@ export const LEVELS = [
     titleArea: 'dancefloor',
     hints: {
       stairwell: 'Walk over weapons to pick them up.',
-      cloakroom: 'Dr Fizzbang bots: all fists, no manners.',
-      dancefloor: 'Use the speaker stacks for cover.',
-      bar: 'Bampot and Nephew bots throw bottles. Keep moving.',
+      cloakroom: 'Dr Fizzbang bots: all fists, no manners. Nobody ordered that vending machine.',
+      dancefloor: 'Stacks and pillars are cover. A red line means move. A rattling can means range.',
+      bar: 'Bampot and Nephew bots throw bottles. The nurse gets them back up.',
       vip: 'Long corridor. Short temper.',
       backstage: 'Not in those trainers.',
     },
@@ -148,7 +148,7 @@ export const LEVELS = [
     hints: {
       steps: 'Pitch black down here. Fit the torch to the pistol.',
       longvault: 'Dark between the torches. Stay out of it.',
-      casks: 'Shields stop shots from the front. Go round the back.',
+      casks: 'Shields stop shots from the front. Rattling cans: shoot them from afar.',
       close: 'Tight corners. Check them before you turn them.',
       plague: 'The Vinyl Disc bounces. Use the walls.',
       tour: 'The last tour of the night.',
