@@ -61,7 +61,7 @@ function setEnemy(S, e, x, z, yaw) { e.x = x; e.z = z; e.yaw = yaw; e.kx = e.kz 
   e.hp = e.maxHp;
 }
 
-// ---- the shielded robot turns slowly, so Freddie can get behind it ----
+// ---- the shielded robot turns slowly, so Naebun can get behind it ----
 {
   const { S } = fresh();
   const e = S.enemies.find((q) => q.kind === 'shielded');
@@ -208,14 +208,28 @@ function setEnemy(S, e, x, z, yaw) { e.x = x; e.z = z; e.yaw = yaw; e.kx = e.kz 
   game.testHook('play'); // this makes a new player object, so take it afterwards
   const p = S.player;
   const yaw0 = p.yaw;
+  game.testHook('setting', { input: 'mobile', sens: 1 });
   game.testHook('mouse', { dx: 200, dy: 0 });
   run(S, 0.1);
-  ok(p.yaw === yaw0, 'a phone (no mouse) ignores mouse movement');
-  game.testHook('pc', true);
+  ok(p.yaw === yaw0, 'mobile mode ignores mouse movement (touch boxes only)');
+  game.testHook('setting', { input: null });
+  game.testHook('mobile', false);
   game.testHook('mouse', { dx: 200, dy: 0 });
   run(S, 0.1);
-  ok(p.yaw === yaw0, 'with a mouse but mouse look off, mouse movement does nothing (the default: hold and drag)');
-  game.testHook('setting', { mouseLook: true, sens: 1 });
+  ok(yaw0 - p.yaw > 0.3, 'PC is the default mode: the mouse aims with no button held');
+  const yawA = p.yaw;
+  game.testHook('mobile', true);
+  game.testHook('mouse', { dx: 200, dy: 0 });
+  run(S, 0.1);
+  ok(p.yaw === yawA, 'a mobile browser switches to mobile mode on its own (no saved choice)');
+  game.testHook('setting', { input: 'pc' });
+  ok(game.getState().settings.input === 'pc', 'a saved choice wins over detection');
+  game.testHook('mouse', { dx: 100, dy: 0 });
+  run(S, 0.1);
+  ok(p.yaw < yawA - 0.15, 'PC chosen by hand works on a mobile browser too');
+  game.testHook('mobile', false);
+  game.testHook('setting', { input: 'pc', sens: 1 });
+  p.yaw = yaw0;
   game.testHook('mouse', { dx: 200, dy: 0 });
   run(S, 0.1);
   const turned = yaw0 - p.yaw;
@@ -244,8 +258,7 @@ function setEnemy(S, e, x, z, yaw) { e.x = x; e.z = z; e.yaw = yaw; e.kx = e.kz 
   run(S, 0.1);
   ok(p.weapon !== w0, 'the wheel swaps weapon');
   game.testHook('mouse', null);
-  game.testHook('pc', false);
-  game.testHook('setting', { mouseLook: false });
+  game.testHook('setting', { input: null });
 }
 
 // ---- saved progress: the format a cookie can carry ----

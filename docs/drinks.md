@@ -1,6 +1,6 @@
 # Power-up drinks
 
-The owner's rule: **power-ups are drinks**. When Freddie walks onto one, there is a first-person drinking animation of
+The owner's rule: **power-ups are drinks**. When Naebun walks onto one, there is a first-person drinking animation of
 that drink, then the effect applies. All drink names are invented (no real brands, logos or packaging). This replaces
 the old medkit.
 
@@ -13,18 +13,18 @@ the old medkit.
 | `heavy` | Pint of Heavy | a pint glass of dark ale with a foam head | Takes 50 percent less damage for 20 s ("liquid courage") | 2.0 s: raise, big gulp (foam moustache), sigh, lower |
 | `energy` | Bassline Energy | a slim energy can, black with a magenta and cyan stripe | 50 percent faster fire rate and much faster reloads for 15 s | 1.7 s: crack the tab (pssht), chug, crush the can slightly, lower |
 
-| `lastorders` | Last Orders (the super power-up) | a big, dark-glass bottle with a gold foil neck and a gold label, glowing like it should not be touched, with embers rising off it | Freddie spins on the spot, unable to walk, while a huge laser sweeps round and wipes out every robot around him (never in a boss room) | about 2.2 s: both hands raise the bottle, a long glug (gold light spills over his face), a roar, the bottle is thrown away, then the spin begins |
+| `lastorders` | Last Orders (the super power-up) | a big, dark-glass bottle with a gold foil neck and a gold label, glowing like it should not be touched, with embers rising off it | Naebun spins on the spot, unable to walk, while a huge laser sweeps round and wipes out every robot around him (never in a boss room) | about 2.2 s: both hands raise the bottle, a long glug (gold light spills over his face), a roar, the bottle is thrown away, then the spin begins |
 
 **Third person.** When the spin starts the game switches to a third-person camera: the view pulls back behind and above
-Freddie so the player sees him spinning on the spot with the laser, then pulls back in to first person when it ends.
-That needs a model of Freddie himself (see `makeFreddie` below).
+Naebun so the player sees him spinning on the spot with the laser, then pulls back in to first person when it ends.
+That needs a model of Naebun himself (see `makeNaebun` below).
 
 The super power-up does **not** stop time. It is a rare drink: two in the level, on the dance floor and in the VIP
 corridor, and never in a boss room. The laser never fires in a boss room, never hurts a boss, and is not available
 while a boss is awake.
 
 Effects are applied at the moment the drink is finished (about 65 percent through the animation), and the toast says
-what it did. Freddie cannot fire during the animation (it is short), but can still move.
+what it did. Naebun cannot fire during the animation (it is short), but can still move.
 
 ## For the models agent (`src/models.js`)
 
@@ -46,14 +46,14 @@ export function makeDrinkViewmodel(id) -> { group, setPose(k), duration }
   amber, orange, deep brown with a cream head, magenta and cyan), slightly larger than life so it reads from across a
   room. The integrator bobs and spins it. It must be recognisably the drink at 10 metres in dim light. Replaces
   `makeHealthPickup()` in the game (keep that function; it is harmless).
-- `makeDrinkViewmodel`: Freddie's right hand and forearm (a sleeve cuff, a bare or gloved hand, a wristband is fine)
+- `makeDrinkViewmodel`: Naebun's right hand and forearm (a sleeve cuff, a bare or gloved hand, a wristband is fine)
   holding the drink, as a first-person viewmodel in the same convention as the weapon viewmodels: the `group` is
   added to the weapon-scene root, which the integrator positions at camera-local about (0.15, -0.24, -0.62) scaled
   0.68; build it around that. `setPose(k)` takes k from 0 to 1 over the whole drinking animation and must be safe for
   any value (clamp). `duration` is the seconds the integrator should play it over (use the table, a bit of
   tuning is fine).
 - The animation timeline for every drink: 0 to 0.2 the drink rises from the lower right resting position to the lower
-  centre of the view, near the camera (roughly x 0, y -0.18, z -0.4, this is "Freddie's mouth" just below the frame);
+  centre of the view, near the camera (roughly x 0, y -0.18, z -0.4, this is "Naebun's mouth" just below the frame);
   0.2 to 0.75 it tilts back (rotation about x towards the camera, up to about 1.3 rad, bottles and cans further than
   glasses) while the liquid level (a scaled inner mesh) falls; 0.75 to 1 it lowers and returns to the start. Flavour
   details per the table (the orange's cap twists off early and is held in the other hand or dropped; the can's tab
@@ -83,12 +83,12 @@ export function makeDrinkViewmodel(id) -> { group, setPose(k), duration }
   and none within its doorway.** Make them stand out (a taller pickup) but not easy to grab by accident while passing.
 - Pickups do not need extra meshes in the world; the integrator creates the models from `makeDrinkPickup`.
 
-## Freddie himself (for the models agent): third-person model
+## Naebun himself (for the models agent): third-person model
 
-The first-person game never shows Freddie, but the Last Orders spin does. New export:
+The first-person game never shows Naebun, but the Last Orders spin does. New export:
 
 ```js
-export function makeFreddie() -> { group, height, setPose(state, t, k), muzzle }
+export function makeNaebun() -> { group, height, setPose(state, t, k), muzzle }
 // group: origin at the feet, faces -z at yaw 0, about 1.8 tall. state: 'idle' | 'spin'. muzzle: Object3D at the laser cannon tip.
 ```
 

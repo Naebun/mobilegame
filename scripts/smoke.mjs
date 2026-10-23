@@ -96,7 +96,7 @@ try {
   await tap(195, 400);
   check(await until("s.mode === 'play'"), 'tap skips the intro and play begins');
   const s0 = await state();
-  check(s0.weapon === 'pistol' && s0.clip === 12 && s0.owned.length === 1, 'Freddie starts with a full Bass Pistol clip and nothing else');
+  check(s0.weapon === 'pistol' && s0.clip === 12 && s0.owned.length === 1, 'Naebun starts with a full Bass Pistol clip and nothing else');
   check(s0.total >= 12 && s0.alive === s0.total, `enemies are pre-placed in the level (${s0.total}) and all alive`);
   await page.waitForTimeout(1000);
   await shot('play-start');
@@ -109,7 +109,7 @@ try {
   await ptr('pointermove', 1, mx, my - L.moveBox.h * 0.4);
   const walked = await until('Math.hypot(s.player.x - a.x, s.player.z - a.z) > 1.5', { x: s0.x, z: s0.z });
   const s1 = await state();
-  check(walked, `the move box walks Freddie (${Math.hypot(s1.x - s0.x, s1.z - s0.z).toFixed(1)} units)`);
+  check(walked, `the move box walks Naebun (${Math.hypot(s1.x - s0.x, s1.z - s0.z).toFixed(1)} units)`);
   await ptr('pointerup', 1, mx, my - L.moveBox.h * 0.4);
   const yaw0 = (await state()).yaw;
   await ptr('pointerdown', 2, lx, ly);
@@ -170,7 +170,7 @@ try {
       if (!w.isSolidAt(x, z) && w.los(x, z, e.x, e.z)) { g.testHook('teleport', { x, z, yaw: e.yaw + Math.PI }); break; }
     }
   });
-  check(await until("s.projectiles.some((p) => p.owner === 'enemy')", null, 30000), 'a Bampot and Nephew bot throws bottles when it sees Freddie');
+  check(await until("s.projectiles.some((p) => p.owner === 'enemy')", null, 30000), 'a Bampot and Nephew bot throws bottles when it sees Naebun');
   await shot('bottles');
 
   // Last Orders: drink, switch to third person, spin with the laser, clear the room, return to first person
@@ -240,7 +240,7 @@ try {
     return { id: w.id, level: w.level, kinds: [...new Set(S.enemies.map((e) => e.kind))].sort(), weapons: S.pickups.filter((p) => p.def.kind === 'weapon').map((p) => p.def.item), areas: S.areas.map((a) => a.def.id) };
   });
   check(v.id === 'vaults' && v.level === 2, 'the world is now the Vaults');
-  check(v0.weapon === 'pistol' && v0.owned.length === 1 && v0.health === v0.maxHealth, 'Freddie starts level 2 with the pistol only and full health');
+  check(v0.weapon === 'pistol' && v0.owned.length === 1 && v0.health === v0.maxHealth, 'Naebun starts level 2 with the pistol only and full health');
   check(v.kinds.includes('shielded') && v.kinds.includes('tourguide') && v.kinds.includes('fizzbang') && v.kinds.includes('bampot'), `level 2 has its robots (${v.kinds.join(', ')})`);
   check(v.weapons.includes('vinyl') && v.weapons.includes('launcher'), `the Vinyl Disc and the launcher lie on the floor (${v.weapons.join(', ')})`);
   await page.waitForTimeout(1500);
@@ -340,7 +340,7 @@ try {
   const [llx, lly] = center(LL.lookBox);
   await ptr('pointerdown', 1, lmx, lmy);
   await ptr('pointermove', 1, lmx, lmy - LL.moveBox.h * 0.4);
-  check(await until('Math.hypot(s.player.x - a.x, s.player.z - a.z) > 1.5', { x: l0.x, z: l0.z }), 'landscape: the move box walks Freddie');
+  check(await until('Math.hypot(s.player.x - a.x, s.player.z - a.z) > 1.5', { x: l0.x, z: l0.z }), 'landscape: the move box walks Naebun');
   await ptr('pointerup', 1, lmx, lmy - LL.moveBox.h * 0.4);
   const ly0 = (await state()).yaw;
   const lshots = (await state()).shots;
@@ -389,37 +389,44 @@ try {
   await hook('title');
   await page.waitForFunction(() => window.__game.getWorld().id === 'cowgate', null, { timeout: 60000 });
 
-  // settings page, on a computer (the ?pc flag stands in for a mouse)
+  // control modes. The phone-sized test browser was detected as mobile above (touch boxes); ?pc forces PC mode
+  const modes = await hook('stats');
+  check(modes.input === 'pc', `?pc gives PC mode (${modes.input})`);
   await pressButton('settings');
   check(await until("s.mode === 'settings'"), 'SETTINGS opens from the title');
-  check((await hook('buttons')).map((b) => b.id).join() === 'mouse,sens,reset,back', 'the page offers mouse look, sensitivity, reset and back');
+  check((await hook('buttons')).map((b) => b.id).join() === 'input,sens,reset,back', 'the page offers the controls mode, mouse sensitivity, reset and back');
   await page.waitForTimeout(800);
   await shot('settings');
-  await pressButton('mouse');
-  check(await until('s.settings.mouseLook === true'), 'MOUSE LOOK turns on');
   await pressButton('sens');
-  check(await until('s.settings.sens === 2'), 'SENSITIVITY steps to HIGH');
-  const settingsSaved = await page.evaluate(() => JSON.parse(localStorage.getItem('mobilegame.settings')));
-  check(settingsSaved && settingsSaved.mouseLook === true, 'the settings are remembered');
+  check(await until('s.settings.sens === 2'), 'MOUSE SENSITIVITY steps to HIGH');
   await pressButton('sens');
   await until('s.settings.sens === 0');
   await pressButton('sens');
   await until('s.settings.sens === 1');
-  // mouse look in play: moving the mouse aims, the left button fires, the touch boxes go
+  await pressButton('input');
+  check(await until("s.settings.input === 'mobile'"), 'CONTROLS switches to MOBILE');
+  check((await hook('buttons')).map((b) => b.id).join() === 'input,reset,back', 'mobile mode has no mouse sensitivity');
+  const settingsSaved = await page.evaluate(() => JSON.parse(localStorage.getItem('mobilegame.settings')));
+  check(settingsSaved && settingsSaved.input === 'mobile', 'the choice is remembered');
+  await pressButton('input');
+  check(await until("s.settings.input === 'pc'"), 'CONTROLS switches back to PC');
+  await page.waitForTimeout(600);
   await pressButton('back');
   await until("s.mode === 'title'");
   await pressButton('new');
   await until("s.mode === 'controls'");
+  await page.waitForTimeout(800);
+  await shot('controls-pc');
   await pressButton('start');
   await until("s.mode === 'intro'");
   await tap(195, 400);
-  check(await until("s.mode === 'play'"), 'play begins with mouse look on');
+  check(await until("s.mode === 'play'"), 'play begins in PC mode');
   const my0 = (await state()).yaw;
   await hook('mouse', { dx: 150, dy: 0 });
-  check(await until('Math.abs(s.player.yaw - a) > 0.2', my0), 'moving the mouse turns the view with no button held');
+  check(await until('Math.abs(s.player.yaw - a) > 0.2', my0), 'PC mode: moving the mouse turns the view with no button held');
   const mshots = (await state()).shots;
   await hook('mouse', { down: true });
-  check(await until('s.shots > a', mshots), 'the left button fires');
+  check(await until('s.shots > a', mshots), 'PC mode: the left button fires');
   await hook('mouse', null);
   await page.waitForTimeout(1500);
   await shot('mouse-look');
@@ -437,6 +444,11 @@ try {
   await pressButton('back');
   await until("s.mode === 'title'");
   check((await hook('buttons')).map((b) => b.id).join() === 'new,settings,debug', 'with nothing saved the title is back to NEW GAME');
+  // detection: a phone-sized touch browser with no saved choice starts in mobile mode
+  await page.evaluate(() => localStorage.removeItem('mobilegame.settings'));
+  await page.goto(`http://localhost:${port}/?test&q=low`);
+  await page.waitForFunction(() => window.__game && window.__game.getState().player, null, { timeout: 60000 });
+  check((await hook('stats')).input === 'mobile', 'a mobile browser starts in mobile mode on its own');
 
   check(errors.length === 0, `no console errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
 } finally {

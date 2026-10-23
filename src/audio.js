@@ -216,7 +216,7 @@ export function door() {
   noise(t, 0.5, 0.2, sfxBus, { type: 'bandpass', freq: 300, to: 900 });
 }
 
-// A heavy robot fist landing on Freddie.
+// A heavy robot fist landing on Naebun.
 export function melee() {
   if (!running()) return;
   const t = ac.currentTime;

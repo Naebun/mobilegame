@@ -72,7 +72,7 @@ export const PLAYER = {
   mouse: 0.0022,
 };
 
-// One entry per level. `hints` is the banner under an area's name when Freddie first steps into it (keyed by area id),
+// One entry per level. `hints` is the banner under an area's name when Naebun first steps into it (keyed by area id),
 // `done*` is the level-complete text, `voicemail` plays before the level starts (Cheryl, his agent), `titleArea` is the
 // area the menu backdrop drifts through.
 export const LEVELS = [
@@ -93,7 +93,7 @@ export const LEVELS = [
     },
     doneTitle: 'CLEARED.',
     doneLine: 'The Cowgate is quiet. Mostly.',
-    doneSub: 'Freddie gets paid in exposure.',
+    doneSub: 'Naebun gets paid in exposure.',
     voicemail: null,
   },
   {
@@ -117,7 +117,7 @@ export const LEVELS = [
     voicemail: {
       from: 'CHERYL (AGENT)',
       lines: [
-        'Freddie, good news. The venue is paying in cash.',
+        'Naebun, good news. The venue is paying in cash.',
         'Bad news, the cash is also a robot.',
         'Your bag went down into the Vaults under South Bridge. I have booked you on the 3am tour. Group rate.',
         'Do not shake anything.',
@@ -132,7 +132,7 @@ export const AREA_HINTS = LEVELS[0].hints;
 export const DEATH_LINES = [
   'Reviewed: one star. "Robotic, and not in a good way."',
   'Not the first DJ to get booed off in Edinburgh.',
-  'Last orders, Freddie.',
+  'Last orders, Naebun.',
   'You have had worse Fringe gigs.',
   'The robots were not feeling it.',
   'Turns out the warranty does not cover you.',
@@ -154,8 +154,8 @@ export const DRINKS = {
   },
 };
 // The super power-up. Drinking it (the usual animation) is followed by a spin on the spot with a huge laser that
-// wipes out every robot around Freddie. It does not stop time. Rules: never in a boss room, never hurts a boss, and is
-// refused while a boss is awake. Freddie cannot move or fire during the spin and cannot be hurt.
+// wipes out every robot around Naebun. It does not stop time. Rules: never in a boss room, never hurts a boss, and is
+// refused while a boss is awake. Naebun cannot move or fire during the spin and cannot be hurt.
 DRINKS.lastorders = {
   id: 'lastorders', name: 'LAST ORDERS', super: true, duration: 2.2, line: 'Time, gentlemen, please.',
   laser: { seconds: 3.4, charge: 0.45, tail: 0.3, turns: 2, radius: 26, width: 0.9 },

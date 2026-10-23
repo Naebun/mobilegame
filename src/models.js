@@ -2420,7 +2420,7 @@ const WEAPON_PARTS = {
 };
 
 // The weapons are modelled in Blender (scripts/blender/weapons.py) and stored as packed arrays in weapon-meshes.js:
-// the body, the shotgun's pump, the vinyl's platter ('cradle') and Freddie's hands and forearms ('hands', plus
+// the body, the shotgun's pump, the vinyl's platter ('cradle') and Naebun's hands and forearms ('hands', plus
 // 'handsPump' for the left hand that rides on the pump). A weapon missing from the data falls back to the procedural
 // WEAPON_PARTS above, without hands.
 function weaponFromData(w) {
@@ -2450,7 +2450,7 @@ function weaponFromCode(id) {
   };
 }
 
-// `hands: false` leaves Freddie's hands and forearms off (a floor pickup is just the gun).
+// `hands: false` leaves Naebun's hands and forearms off (a floor pickup is just the gun).
 export function makeWeaponModel(id, { hands = true } = {}) {
   if (!WEAPON_MESHES[id] && !WEAPON_PARTS[id]) throw new Error(`makeWeaponModel: unknown weapon "${id}"`);
   const parts = once(`weapon:${id}`, () => (WEAPON_MESHES[id] ? weaponFromData(WEAPON_MESHES[id]) : weaponFromCode(id)));
@@ -2893,7 +2893,7 @@ export function makeDrinkPickup(id) {
   return g;
 }
 
-// Freddie's hand: fingers (tubes) wrap round the drink at radius R, height gy; palm and back of the hand sit on +x.
+// Naebun's hand: fingers (tubes) wrap round the drink at radius R, height gy; palm and back of the hand sit on +x.
 function handGeo(R, gy, seed) {
   const rr = R + 0.012;
   const ring = (y, a0, a1, rad, lift = 0) => {
@@ -2947,7 +2947,7 @@ function aimForearm(mesh, w, e) {
   mesh.scale.set(1, len, 1);
 }
 
-const MOUTH = [-0.22, 0.09, 0.32]; // "Freddie's mouth" in viewmodel space (camera-local about 0, -0.18, -0.4)
+const MOUTH = [-0.22, 0.09, 0.32]; // "Naebun's mouth" in viewmodel space (camera-local about 0, -0.18, -0.4)
 const REST = [0.0, 0.03, 0.0];
 const ELBOW_R = [0.62, -0.62, 0.85];
 const ELBOW_L = [-0.7, -0.62, 0.85];
@@ -3178,7 +3178,7 @@ export function makeDrinkViewmodel(id) {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Freddie himself (third-person model for the Last Orders spin)
+// Naebun himself (third-person model for the Last Orders spin)
 // ---------------------------------------------------------------------------------------------
 
 const F = {
@@ -3191,7 +3191,7 @@ const F_L1 = 0.3;
 const F_L2 = 0.36;
 const F_SHOULDER = [0.265, 1.38 - F_HIP, 0];
 
-function freddieGeo() {
+function naebunGeo() {
   const o = { seed: 21 };
   const arm = (hex) => bake([
     P(ball(0.085, 12, 8), hex, 'leather'),
@@ -3294,8 +3294,8 @@ function freddieGeo() {
   };
 }
 
-export function makeFreddie() {
-  const geo = once('freddie', freddieGeo);
+export function makeNaebun() {
+  const geo = once('naebun', naebunGeo);
   const mat = pbrMat();
   const meshes = [];
   const mk = (g, m, parent, x = 0, y = 0, z = 0) => {
@@ -3306,7 +3306,7 @@ export function makeFreddie() {
     return mesh;
   };
   const group = new THREE.Group();
-  group.name = 'freddie';
+  group.name = 'naebun';
   const root = new THREE.Group();
   group.add(root);
   const legL = mk(geo.leg, mat, root, -0.105, F_HIP, 0);

@@ -216,7 +216,7 @@ ok(rs[0].muzzle && rs[0].muzzle.name === 'muzzle', 'bampot muzzle');
   }
 }
 
-// Weapons. The gun alone first (hands: false): muzzle, length, the record and the pump. Then Freddie's hands.
+// Weapons. The gun alone first (hands: false): muzzle, length, the record and the pump. Then Naebun's hands.
 const MAX_WEAPON_TRIS = 6000; // gun and hands together
 const nameCount = (o, name) => { let n = 0; o.traverse((c) => { if (c.name === name) n++; }); return n; };
 // triangles of a weapon without its record (the spinning disc is code, the same for every build of the vinyl)
@@ -281,7 +281,7 @@ for (const id of M.WEAPON_IDS) {
   ok(nameCount(p, 'hands') === 0, `${id} pickup: no hands on a floor pickup`);
   finiteTransforms(p, `${id} pickup`);
 
-  // Freddie's hands and forearms: present on the viewmodel, a gripping pose, nothing through the camera
+  // Naebun's hands and forearms: present on the viewmodel, a gripping pose, nothing through the camera
   const wh = M.makeWeaponModel(id);
   const hs = [];
   wh.traverse((c) => { if (c.name === 'hands') hs.push(c); });
@@ -399,30 +399,30 @@ for (const id of M.DRINK_IDS) {
   ok(tris > 500 && tris < 8000, `${id} drink triangles ${tris}`);
 }
 
-// Freddie.
+// Naebun.
 {
-  const f = M.makeFreddie();
-  ok(f.group instanceof THREE.Group && f.muzzle && typeof f.setPose === 'function', 'freddie fields');
-  ok(Math.abs(f.height - 1.8) < 0.05, `freddie height ${f.height}`);
+  const f = M.makeNaebun();
+  ok(f.group instanceof THREE.Group && f.muzzle && typeof f.setPose === 'function', 'naebun fields');
+  ok(Math.abs(f.height - 1.8) < 0.05, `naebun height ${f.height}`);
   const st = stats(f.group);
-  ok(st.meshes <= 18, `freddie ${st.meshes} meshes`);
+  ok(st.meshes <= 18, `naebun ${st.meshes} meshes`);
   for (const s of ['idle', 'spin', 'nonsense']) {
     for (const t of TS) {
       for (const k of KS) {
-        try { f.setPose(s, t, k); } catch (e) { ok(false, `freddie ${s}: ${e.message}`); }
-        finiteTransforms(f.group, `freddie ${s} t=${t} k=${k}`);
+        try { f.setPose(s, t, k); } catch (e) { ok(false, `naebun ${s}: ${e.message}`); }
+        finiteTransforms(f.group, `naebun ${s} t=${t} k=${k}`);
       }
     }
   }
   f.setPose('idle', 0, 0);
   const bb = new THREE.Box3().setFromObject(f.group);
-  ok(Math.abs(bb.max.y - 1.8) < 0.12, `freddie top ${bb.max.y.toFixed(2)}`);
-  ok(Math.abs(bb.min.y) < 0.03, `freddie feet ${bb.min.y.toFixed(3)}`);
+  ok(Math.abs(bb.max.y - 1.8) < 0.12, `naebun top ${bb.max.y.toFixed(2)}`);
+  ok(Math.abs(bb.min.y) < 0.03, `naebun feet ${bb.min.y.toFixed(3)}`);
   f.setPose('spin', 1, 0.5);
   f.group.updateMatrixWorld(true);
   const mp = f.muzzle.getWorldPosition(new THREE.Vector3());
-  ok(mp.z < -0.8 && mp.y > 1 && mp.y < 1.7, `freddie muzzle ${mp.toArray().map((v) => v.toFixed(2))}`);
-  console.log(`freddie: height ${f.height} meshes ${st.meshes} tris ${st.tris} muzzle (spin) ${mp.toArray().map((v) => v.toFixed(2))}`);
+  ok(mp.z < -0.8 && mp.y > 1 && mp.y < 1.7, `naebun muzzle ${mp.toArray().map((v) => v.toFixed(2))}`);
+  console.log(`naebun: height ${f.height} meshes ${st.meshes} tris ${st.tris} muzzle (spin) ${mp.toArray().map((v) => v.toFixed(2))}`);
 }
 
 for (const kind of ['bottle', 'rocket', 'disc']) {

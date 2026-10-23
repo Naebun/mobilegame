@@ -1,4 +1,4 @@
-// Level 2, the Vaults: the arched stone cellars under South Bridge and Mary King's Close. Nearly dark, so Freddie's torch
+// Level 2, the Vaults: the arched stone cellars under South Bridge and Mary King's Close. Nearly dark, so Naebun's torch
 // and the wall torches matter. Pure data (no three.js), so it also loads under plain Node. src/levels/vaults-decor.js
 // dresses it and src/world.js builds it.
 

@@ -92,7 +92,7 @@ for (const v of views) {
   for (const h of hudStates) drawPlayHud(ctx, v, h);
 
   // every menu button stays on screen, clear of the side insets, and nothing overlaps, in both orientations
-  const bstates = [undefined, null, {}, { t: -1 }, { t: 0.5 }, { t: 5, debugMode: true }, { t: huge }, { t: NaN }, { t: 3, hasNext: true }, { t: 3, hasMouse: true, mouseLook: true, sensLabel: 'MEDIUM', debugMode: true, resumeLevel: 2, resetArmed: true }];
+  const bstates = [undefined, null, {}, { t: -1 }, { t: 0.5 }, { t: 5, debugMode: true }, { t: huge }, { t: NaN }, { t: 3, hasNext: true }, { t: 3, input: 'pc', sensLabel: 'MEDIUM', debugMode: true, resumeLevel: 2, resetArmed: true }, { t: 3, input: 'mobile' }];
   for (const mode of ['title', 'controls', 'settings', 'dead', 'complete', 'voicemail', 'bogus']) {
     for (const s of bstates) {
       const list = buttons(mode, v, s);
@@ -109,11 +109,11 @@ for (const v of views) {
   assert.deepEqual(buttons('title', v, { t: 0 }).map((b) => b.id), ['new', 'settings', 'debug']);
   assert.deepEqual(buttons('title', v, { t: 0, resumeLevel: 2 }).map((b) => b.id), ['resume', 'new', 'settings', 'debug']);
   assert.equal(buttons('title', v, { t: 0, resumeLevel: 2 })[0].label, 'CONTINUE: LEVEL 2');
-  assert.deepEqual(buttons('settings', v, { t: 0 }).map((b) => b.id), ['reset', 'back']);
-  assert.deepEqual(buttons('settings', v, { t: 0, hasMouse: true }).map((b) => b.id), ['mouse', 'sens', 'reset', 'back']);
-  assert.equal(buttons('settings', v, { resetArmed: true })[0].label, 'TAP AGAIN TO ERASE');
-  assert.equal(buttons('settings', v, { hasMouse: true, mouseLook: true })[0].label, 'MOUSE LOOK: ON');
-  assert.equal(buttons('settings', v, { hasMouse: true, mouseLook: false })[0].label, 'MOUSE LOOK: OFF');
+  assert.deepEqual(buttons('settings', v, { t: 0, input: 'pc' }).map((b) => b.id), ['input', 'sens', 'reset', 'back']);
+  assert.deepEqual(buttons('settings', v, { t: 0, input: 'mobile' }).map((b) => b.id), ['input', 'reset', 'back']);
+  assert.equal(buttons('settings', v, { input: 'pc' })[0].label, 'CONTROLS: PC');
+  assert.equal(buttons('settings', v, { input: 'mobile' })[0].label, 'CONTROLS: MOBILE');
+  assert.equal(buttons('settings', v, { resetArmed: true }).find((b) => b.id === 'reset').label, 'TAP AGAIN TO ERASE');
   assert.deepEqual(buttons('controls', v, { t: 0 }).map((b) => b.id), ['start', 'back']);
   assert.deepEqual(buttons('dead', v, { t: 0.9 }).map((b) => b.id), []);
   assert.deepEqual(buttons('dead', v, { t: 0.91 }).map((b) => b.id), ['retry', 'menu']);
@@ -135,7 +135,9 @@ for (const v of views) {
     drawVoicemail(ctx, v, s);
     drawSettings(ctx, v, s);
   }
-  drawSettings(ctx, v, { t: 1, hasMouse: true, mouseLook: true, sensLabel: long, saved: long, resetArmed: true });
+  drawSettings(ctx, v, { t: 1, input: 'pc', sensLabel: long, saved: long, resetArmed: true });
+  drawSettings(ctx, v, { t: 1, input: 'mobile', saved: long });
+  for (const input of ['pc', 'mobile']) { drawControls(ctx, v, { t: 2, input }); drawTitle(ctx, v, { t: 2, input }); }
   drawVoicemail(ctx, v, { t: 4, mail: { from: long, lines: [long, '', null, 'Do not shake anything.', long, long, long] } });
   drawVoicemail(ctx, v, { t: 0.2, mail: { from: 'CHERYL (AGENT)', lines: 'not an array' } });
   drawComplete(ctx, v, { t: 3, hasNext: true, title: long, line: long, sub: long, score: 5, kills: 2, totalEnemies: 2 });

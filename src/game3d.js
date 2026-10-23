@@ -1,4 +1,4 @@
-// Freddie's Last Set, first-person edition. Level 1: the Cowgate.
+// Naebun's Last Set, first-person edition. Level 1: the Cowgate.
 // Owns the state machine, player, weapons, robots, projectiles, areas and doors, and the three.js renderer.
 // Content lives in data.js, the level in world.js, meshes in models.js, 2D drawing in hud.js and screens.js.
 // Contract for all of those: docs/fps-design.md.
@@ -31,19 +31,31 @@ const MOUSE_SENS = [{ label: 'LOW', k: 0.6 }, { label: 'MEDIUM', k: 1 }, { label
 const FX_QUALITY = { high: 1, medium: 0.7, low: 0.4 };
 const DEFAULT_LOOK = { exposure: 1, bloom: 0.5, vignette: 0.35, grade: { lift: [0, 0, 0], gamma: [1, 1, 1], gain: [1, 1, 1] } };
 const query = typeof location !== 'undefined' ? new URLSearchParams(location.search) : new URLSearchParams('');
-// A computer with a mouse (not a phone): the Settings page and mouse look are offered only here. ?pc forces it, for tests.
-let hasMouse = query.has('pc') || (typeof matchMedia !== 'undefined' && matchMedia('(hover: hover) and (pointer: fine)').matches);
+// Input mode: 'pc' (mouse look and keys, the grey touch boxes hidden) or 'mobile' (the touch boxes). The default is PC; a
+// mobile browser switches to mobile at start-up. A choice made on the Settings page is saved and wins. ?pc and ?mobile
+// force a mode, for tests.
+function detectMobile() {
+  if (query.has('mobile')) return true;
+  if (query.has('pc')) return false;
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  const coarse = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse) and (hover: none)').matches;
+  const ipadOs = /Macintosh/.test(ua) && (navigator.maxTouchPoints || 0) > 1; // iPadOS asks for the desktop site
+  return coarse || ipadOs || /Android|iPhone|iPad|iPod|Mobile/i.test(ua);
+}
+let mobileBrowser = detectMobile();
+const inputMode = () => S.settings.input || (mobileBrowser ? 'mobile' : 'pc');
 // Quality: ?q=low|medium|high forces a tier (used by tests); otherwise start from the saved tier (default high)
 // and step down automatically if the device is clearly struggling. ?perf shows a frame-rate overlay.
 const Q = { tier: 'high', fixed: false, ema: 1 / 60, frames: 0, last: 0, perf: query.has('perf'), fps: 60 };
-// Debug mode is a testing aid for Freddie only. It must never feed back into balance: enemies, weapons' base stats,
+// Debug mode is a testing aid for Naebun only. It must never feed back into balance: enemies, weapons' base stats,
 // areas and everything in data.js are tuned for normal mode alone.
 const DEBUG_MULT = { fire: 2, damage: 2, health: 2 };
 const NORMAL_MULT = { fire: 1, damage: 1, health: 1 };
 
 const S = {
   mode: 'title', // title | controls | settings | voicemail | intro | play | dead | complete
-  settings: { mouseLook: false, sens: 1 }, // saved; sens indexes MOUSE_SENS
+  settings: { input: null, sens: 1 }, // saved; input is 'pc', 'mobile' or null (detect); sens indexes MOUSE_SENS
   save: store.fresh(), // progress: unlocked level, levels done, best scores (src/save.js: a cookie, mirrored in localStorage)
   resetArmed: 0, // seconds left in which a second tap on RESET PROGRESS erases the save
   mouseLocked: false,
@@ -136,7 +148,7 @@ const inRect = (x, y, r) => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y +
 export function init(view) {
   S.view = view;
   const savedSettings = read(SETTINGS_KEY);
-  if (savedSettings && typeof savedSettings === 'object') S.settings = { mouseLook: savedSettings.mouseLook === true, sens: clamp(Math.round(Number(savedSettings.sens)) || 1, 0, MOUSE_SENS.length - 1) };
+  if (savedSettings && typeof savedSettings === 'object') S.settings = { input: savedSettings.input === 'pc' || savedSettings.input === 'mobile' ? savedSettings.input : null, sens: clamp(Math.round(Number(savedSettings.sens)) || 1, 0, MOUSE_SENS.length - 1) };
   S.save = store.load();
   for (let n = 1; n <= store.MAX_LEVELS; n++) { // scores from before the cookie save existed
     const old = Number(read(bestKey(n))) || 0;
@@ -238,10 +250,10 @@ export function resize(view) {
   R.fx.setScale((view.h * R.pipeline.pixelRatio) / (2 * Math.tan((R.camera.fov * Math.PI) / 360)));
 }
 
-// Mouse look is wanted only while playing, on a computer, with the setting on. The engine asks every frame, so it also
+// Mouse look is wanted only while playing in PC mode. The engine asks every frame, so it also
 // lets go of the pointer when we stop wanting it (death, the level-complete screen).
 export function wantsMouseLock() {
-  return hasMouse && S.settings.mouseLook && S.mode === 'play';
+  return inputMode() === 'pc' && S.mode === 'play';
 }
 
 export function pointerLock(locked) {
@@ -309,10 +321,10 @@ function initRender(view) {
     }
   }
 
-  // Freddie himself, seen only when Last Orders pulls the camera out to third person
-  const freddie = M.makeFreddie ? M.makeFreddie() : fallbackFreddie();
-  freddie.group.visible = false;
-  scene.add(freddie.group);
+  // Naebun himself, seen only when Last Orders pulls the camera out to third person
+  const naebun = M.makeNaebun ? M.makeNaebun() : fallbackNaebun();
+  naebun.group.visible = false;
+  scene.add(naebun.group);
 
   // the laser: a white-hot core inside a wide magenta glow, both HDR so they bloom; unit length along -z
   const beam = new THREE.Group();
@@ -344,13 +356,13 @@ function initRender(view) {
   const pipeline = createPipeline(renderer, view, Q.tier);
   const fx = createFx(scene);
   fx.setQuality(FX_QUALITY[Q.tier]);
-  R = { renderer, scene, camera, hemi, torch, wscene, wcam, wroot, models, flashes, impacts, explosions: [], flashT: 0, muzzleT: 0, pipeline, fx, look: null, drinkVms, beam, beamParts: [beamCore, beamMid, beamGlow], fov: 85, baseFov: 85, freddie };
+  R = { renderer, scene, camera, hemi, torch, wscene, wcam, wroot, models, flashes, impacts, explosions: [], flashT: 0, muzzleT: 0, pipeline, fx, look: null, drinkVms, beam, beamParts: [beamCore, beamMid, beamGlow], fov: 85, baseFov: 85, naebun };
   applyAtmosphere();
   resize(view);
 }
 
-// Stand-in until models.js provides makeFreddie: a simple figure with a cannon, enough to see the spin.
-function fallbackFreddie() {
+// Stand-in until models.js provides makeNaebun: a simple figure with a cannon, enough to see the spin.
+function fallbackNaebun() {
   const g = new THREE.Group();
   const mat = (c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.7 });
   const box = (w, h, d, x, y, z, c) => {
@@ -505,7 +517,7 @@ function wakeArea(areaId, exceptE) {
   for (const o of S.enemies) if (o !== exceptE && o.areaId === areaId && o.state === 'idle') wake(o, rand(0.15, 0.7));
 }
 
-// A gunshot or a shout: idle robots close enough, with a way to reach Freddie, come looking.
+// A gunshot or a shout: idle robots close enough, with a way to reach Naebun, come looking.
 function alertNear(x, z, range) {
   for (const e of S.enemies) {
     if (e.state !== 'idle' || e.wakeDelay >= 0) continue;
@@ -811,7 +823,7 @@ function fireBottle(e, off = 0) {
   let dx = p.x - e.x;
   let dz = p.z - e.z;
   const d = Math.hypot(dx, dz) || 1;
-  if (off) { // fan the volley out sideways around the line to Freddie
+  if (off) { // fan the volley out sideways around the line to Naebun
     const c = Math.cos(off);
     const sn = Math.sin(off);
     [dx, dz] = [dx * c - dz * sn, dx * sn + dz * c];
@@ -846,7 +858,7 @@ function fireBottle(e, off = 0) {
 function hurtPlayer(amount, srcX, srcZ, melee) {
   const p = S.player;
   if (S.mode !== 'play' || p.health <= 0) return;
-  if (S.laser) return; // the spin makes Freddie untouchable
+  if (S.laser) return; // the spin makes Naebun untouchable
   if (buffOn('guard')) amount = Math.max(1, Math.round(amount * DRINKS.heavy.mult));
   p.health -= amount;
   p.hurt = 1;
@@ -978,7 +990,7 @@ function readControls(input, view, dt) {
   }
   // mouse look: moving the mouse aims, the left button fires, the wheel swaps weapons
   const mouse = S.mouseTest || input.mouse;
-  if (wantsMouseLock() && (mouse === S.mouseTest || mouse.locked)) {
+  if (wantsMouseLock() && mouse && (mouse === S.mouseTest || mouse.locked)) {
     const sens = PLAYER.mouse * MOUSE_SENS[S.settings.sens].k;
     out.yawD -= mouse.dx * sens;
     out.pitchD -= mouse.dy * sens;
@@ -1426,7 +1438,7 @@ function vaporise(e, p) {
   if (R) R.fx.explosion(e.x, e.h * 0.5, e.z, 1.6);
 }
 
-// Kills every non-boss robot with a clear line to Freddie inside the beam's arc (and, at the very end, any that
+// Kills every non-boss robot with a clear line to Naebun inside the beam's arc (and, at the very end, any that
 // slipped through), as the view spins. Bosses are never touched.
 function updateLaser(dt) {
   const L = S.laser;
@@ -1511,9 +1523,9 @@ function progressText() {
 
 function stateFor(mode) {
   switch (mode) {
-    case 'settings': return { t: S.t, mouseLook: S.settings.mouseLook, sensLabel: MOUSE_SENS[S.settings.sens].label, hasMouse: hasMouse, resetArmed: S.resetArmed > 0, saved: progressText() };
-    case 'title': return { t: S.t, resumeLevel: S.save.unlocked > 1 ? Math.min(S.save.unlocked, LEVELS.length) : 0, debugMode: S.debugMode, best: S.best, levelNumber: LEVELS[startLevel() - 1].number, levelName: LEVELS[startLevel() - 1].name };
-    case 'controls': return { t: S.t };
+    case 'settings': return { t: S.t, input: inputMode(), sensLabel: MOUSE_SENS[S.settings.sens].label, resetArmed: S.resetArmed > 0, saved: progressText() };
+    case 'title': return { t: S.t, input: inputMode(), resumeLevel: S.save.unlocked > 1 ? Math.min(S.save.unlocked, LEVELS.length) : 0, debugMode: S.debugMode, best: S.best, levelNumber: LEVELS[startLevel() - 1].number, levelName: LEVELS[startLevel() - 1].name };
+    case 'controls': return { t: S.t, input: inputMode() };
     case 'dead': return { t: S.deadT, line: S.deadLine, score: S.score, best: S.best, newBest: S.newBest, debugMode: S.debugMode, levelName: levelInfo().name };
     case 'complete':
       return {
@@ -1545,7 +1557,7 @@ function handlePresses(input, view) {
           S.resetArmed = 0;
         } else S.resetArmed = 4;
         break;
-      case 'mouse': S.settings.mouseLook = !S.settings.mouseLook; saveSettings(); break;
+      case 'input': S.settings.input = inputMode() === 'pc' ? 'mobile' : 'pc'; saveSettings(); break;
       case 'sens': S.settings.sens = (S.settings.sens + 1) % MOUSE_SENS.length; saveSettings(); break;
       case 'start': S.level = startLevel(); beginRun(); break;
       case 'next': nextLevel(); break;
@@ -1713,7 +1725,7 @@ function buildHudState() {
   h.move = S.ui.move;
   h.look = S.ui.look;
   h.firing = S.ui.firing;
-  h.compact = wantsMouseLock(); // mouse look: the touch boxes and buttons are not needed
+  h.compact = inputMode() === 'pc'; // PC mode: the grey touch boxes and buttons are hidden
   h.hint = wantsMouseLock() && !S.mouseLocked && !S.mouseTest ? 'CLICK TO AIM WITH THE MOUSE   ESC TO LET GO' : null;
   return h;
 }
@@ -1747,7 +1759,7 @@ function placeCamera() {
   roll += (Math.random() - 0.5) * sh * 0.2;
   let fov = R.baseFov;
 
-  // Last Orders: ease out to a third-person camera behind and above Freddie, looking at him
+  // Last Orders: ease out to a third-person camera behind and above Naebun, looking at him
   const k = S.camK;
   if (k > 0) {
     const e = k * k * (3 - 2 * k);
@@ -1778,8 +1790,8 @@ function placeCamera() {
   camera.position.set(cx, y, cz);
   camera.rotation.set(pitch, yaw, roll);
 
-  // Freddie appears once the camera is out, spinning with the cannon; the beam leaves the cannon
-  const F = R.freddie;
+  // Naebun appears once the camera is out, spinning with the cannon; the beam leaves the cannon
+  const F = R.naebun;
   F.group.visible = S.mode === 'play' && k > 0.2;
   if (F.group.visible) {
     F.group.position.set(p.x, 0, p.z);
@@ -1990,8 +2002,8 @@ export function testHook(cmd, arg) {
       return undefined;
     case 'drink': startDrink(arg); return undefined;
     case 'save': S.save = store.clean({ ...S.save, ...arg }); store.save(S.save); return undefined; // set progress for tests
-    case 'pc': hasMouse = !!arg; return undefined; // pretend there is (or is not) a mouse
-    case 'setting': Object.assign(S.settings, arg); return undefined; // { mouseLook, sens }
+    case 'mobile': mobileBrowser = !!arg; return undefined; // pretend the browser is (or is not) a mobile one
+    case 'setting': Object.assign(S.settings, arg); return undefined; // { input: 'pc' | 'mobile' | null, sens }
     case 'mouse': S.mouseTest = arg ? { dx: 0, dy: 0, wheel: 0, down: false, ...arg } : null; return undefined; // inject mouse input
     case 'hitEnemy': { // headless combat checks: damage enemy arg.i as if shot from (arg.fx, arg.fz); returns the hp it lost
       const e = S.enemies[arg.i];
@@ -2003,7 +2015,7 @@ export function testHook(cmd, arg) {
       const w = WEAPONS[S.player.weapon];
       return {
         fireInterval: w.interval / mult().fire, damageMult: mult().damage, maxHealth: S.player.maxHealth, weapon: w.id, clip: S.player.ammo[w.id],
-        mouseLook: S.settings.mouseLook, sens: S.settings.sens, reloading: S.player.reloadT > 0, fov: R ? R.camera.fov : null, aspect: R ? R.camera.aspect : null, buffs: { ...S.buffs }, drinking: S.drink ? S.drink.id : null, laser: !!S.laser, yaw: S.player.yaw, third: S.camK > 0.5, camK: S.camK, health: S.player.health,
+        input: inputMode(), sens: S.settings.sens, reloading: S.player.reloadT > 0, fov: R ? R.camera.fov : null, aspect: R ? R.camera.aspect : null, buffs: { ...S.buffs }, drinking: S.drink ? S.drink.id : null, laser: !!S.laser, yaw: S.player.yaw, third: S.camK > 0.5, camK: S.camK, health: S.player.health,
       };
     }
     default: return undefined;

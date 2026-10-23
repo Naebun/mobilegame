@@ -1,4 +1,4 @@
-# Handover: Freddie's Last Set
+# Handover: Naebun's Last Set
 
 Written so the chat can be cleared and work resumed from a cold start. Read this, then `CLAUDE.md`, `ROADMAP.md` and
 `README.md`. The status section is the part most likely to be stale, so check it against `git log` first.
@@ -13,12 +13,12 @@ Written so the chat can be cleared and work resumed from a cold start. Read this
 - Robots are melee ("Dr Fizzbang") or ranged ("Bampot and Nephew"). Invented names, never real brands.
 - Controls: two grey boxes, left moves, right aims and auto-fires, no aim assist. Unlimited ammo, limited clips.
 - Last Orders (the super drink) never triggers in the boss room, does not stop time, and switches to a third-person
-  camera while Freddie spins.
+  camera while Naebun spins.
 - Org style: British English, plain peer tone, no em dashes. Say what is verified and what is assumed.
 
 ## The game in one paragraph
 Portrait first-person 3D horror shooter for the phone browser, set in a Cowgate basement club in Edinburgh. Dark
-comedy, light Scottish voice. Six linear areas, pre-placed sleeping robots that wake on noticing Freddie, doors that
+comedy, light Scottish voice. Six linear areas, pre-placed sleeping robots that wake on noticing Naebun, doors that
 open when an area is clear, four floor-pickup weapons, a Bouncer boss. Drinks are the power-ups, each with a
 first-person drinking animation. Three.js r160 is vendored, plain ES modules, no backend. Full-game plan (about two
 hours, 8 to 10 levels, iOS from the last four years) is in `docs/full-game-plan.md`.
@@ -41,7 +41,7 @@ from `main`.
   medium, low), auto-drop when frames run slow, `?q=low|medium|high`, `?perf`, `?test`.
 - **World** (`src/world.js`): PBR brick, stone, timber and plaster from generated data textures, baked AO and light
   pools, mirror ball, light shafts. 11 drink pickups and 3 weapons placed, none in the boss room.
-- **Models** (`src/models.js`): battered robots, weapons, pickups, projectiles, drink pickups and viewmodels, Freddie
+- **Models** (`src/models.js`): battered robots, weapons, pickups, projectiles, drink pickups and viewmodels, Naebun
   for the third-person view.
 - **Drinks** (`src/data.js` `DRINKS`, `docs/drinks.md`): Dram (heal), Orange (speed), Heavy (guard), Energy (rapid
   fire), Last Orders (laser).
@@ -55,7 +55,7 @@ Done and verified headless (now on `main`): the models agent's work is integrate
 (casual 100, good 100, sloppy 93 percent). The Claude Artifact was republished as version 7 and includes all of this.
 
 Still open:
-1. Review screenshots of each drinking animation and the Freddie third-person spin. Level and robot shots were
+1. Review screenshots of each drinking animation and the Naebun third-person spin. Level and robot shots were
    reviewed. The others were only checked by the models agent.
 2. Cost on a real phone is unknown. Software numbers are in `ROADMAP.md`. High and medium cost about the same there,
    so tiers may need re-spacing once a phone has been tried.
@@ -95,7 +95,7 @@ extrude, bevel and primitive operators (they order output by pointer hash). The 
 are still code. About 19k triangles for all five drinks and 370 KB of source; trim segment counts in `drinks.py` first
 if load time matters.
 
-**Weapons and hands.** `scripts/blender/weapons.py` models the five weapons and Freddie's hands and forearms and writes
+**Weapons and hands.** `scripts/blender/weapons.py` models the five weapons and Naebun's hands and forearms and writes
 `src/weapon-meshes.js` (same packed format, about 620 KB, byte-for-byte reproducible). Parts: `body`, `pump` (shotgun fore-end,
 with the left hand as its child), `cradle` (vinyl platter; the record is still code so it can spin) and `hands`. Muzzle
 and lamp positions travel in the data. `makeWeaponModel(id, { hands: false })` leaves the hands off (pickups use it);
@@ -109,7 +109,7 @@ modules, which changes that rule. Raise it with the owner before starting.
 
 ## Open questions for the owner
 1. When to start Blender texture work, and whether image files may enter the repo. (Models are done for the drinks;
-   say if the robots, weapons or Freddie should move to Blender too.)
+   say if the robots, weapons or Naebun should move to Blender too.)
 2. Playtest feedback on difficulty and look.
 
 ## Landscape (branch `level-2`)
@@ -134,7 +134,7 @@ tests inject input), Safari's cookie expiry rules (it may drop script-set cookie
 storage has the same limit for sites not added to the home screen, which is why both are written).
 
 ## Blender assets (weapons, hands, props)
-Drinks, weapons plus Freddie's hands, and 27 level props are modelled in Blender and generated into data modules
+Drinks, weapons plus Naebun's hands, and 27 level props are modelled in Blender and generated into data modules
 (`src/drink-meshes.js`, `src/weapon-meshes.js`, `src/prop-meshes.js`) by `scripts/blender/{drinks,weapons,props}.py`. Never
 edit the output; each is reproducible (run twice and `cmp`). `models.js` decodes weapons and falls back to the older procedural
 models; `world.js` places props with `placeProp` and falls back to procedural props (the low tier uses them, to stay inside

@@ -6,8 +6,8 @@ have not had a human play this level, and nothing here has been seen on a real p
 
 ## Story and flow
 
-Level 1 ends on NEXT LEVEL. A voicemail card from Cheryl (Freddie's agent) plays, then the level 2 intro, then play.
-Freddie starts level 2 with the pistol only and full health, same as level 1. There is no save data, and no carry-over of
+Level 1 ends on NEXT LEVEL. A voicemail card from Cheryl (Naebun's agent) plays, then the level 2 intro, then play.
+Naebun starts level 2 with the pistol only and full health, same as level 1. There is no save data, and no carry-over of
 weapons. Best scores are kept per level (`mobilegame.fps.best` for level 1, `mobilegame.fps.best.2` for level 2). Debug
 runs still never write a best score.
 
@@ -46,7 +46,7 @@ percent faster. Last Orders is refused in its room, like the Bouncer's.
 ## Look
 
 Nearly dark on purpose. The baked ambient tint is a third of level 1's, the fog is near and black, and the world's four
-point lights are braziers and lamps. Wall torches light pools through the baked light (no extra lights). Freddie's own
+point lights are braziers and lamps. Wall torches light pools through the baked light (no extra lights). Naebun's own
 torch is much stronger than in level 1 (`LEVEL_DEF.torch` in `src/levels/vaults.js`). Flames are soft crossed quads
 drawn additively and re-shaped every frame. The ceiling is flat with stone arch ribs under it; a true barrel vault was
 tried on paper and dropped, because doors in the long walls would be cut off by the curve.

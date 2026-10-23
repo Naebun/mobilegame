@@ -1,17 +1,17 @@
 # First-person rebuild: design contract
 
-This is the contract for turning "Freddie's Last Set" from a top-down shooter into a first-person 3D game. Level 1
+This is the contract for turning "Naebun's Last Set" from a top-down shooter into a first-person 3D game. Level 1
 only (the Cowgate). Several modules are built in parallel against the APIs below, so **do not change a signature**
 without saying so in your final report. If something in here is wrong or impossible, make the smallest sensible
 deviation and report it.
 
 ## The game in one paragraph
 
-Portrait, first-person, phone browser. Freddie is a DJ in an Edinburgh club basement, fighting robots. The level is
+Portrait, first-person, phone browser. Naebun is a DJ in an Edinburgh club basement, fighting robots. The level is
 linear: a chain of rooms ("areas") joined by doors. Every enemy is placed in the level in advance, idle, and wakes
-when it notices Freddie. Killing an enemy removes it for good. When every enemy in an area is dead the area is
+when it notices Naebun. Killing an enemy removes it for good. When every enemy in an area is dead the area is
 clear, and the door out of it unlocks. Nothing spawns out of walls. Weapons are picked up on the floor and each has
-a different effect. Ammo is unlimited but each clip is limited, so Freddie reloads (automatically when empty, or
+a different effect. Ammo is unlimited but each clip is limited, so Naebun reloads (automatically when empty, or
 with a button). Enemies are robots: "Dr Fizzbang" robots only fight in melee; "Bampot and Nephew" robots can shoot.
 
 Controls: two grey boxes on screen. Left box moves (virtual stick). Right box aims by dragging; while a thumb is down
@@ -280,7 +280,7 @@ explanatory lines "2x fire rate, 2x damage, 2x health" and "Scores are not recor
 ('START GAME', primary) and `back` ('BACK', small). dead: `retry` ('RETRY LEVEL', primary, only once `state.t > 0.9`),
 `menu` ('MAIN MENU'). complete: `again` ('PLAY AGAIN', primary), `menu` ('MAIN MENU'), shown once `state.t > 1`.
 `buttons` must take `state` so it can apply those delays and the debug label. Keep the existing look: title text
-"FREDDIE'S" magenta over "LAST SET" cyan, the skyline and moon on the title, "Edinburgh. 2am. Everyone is dead." Add the line
+"NAEBUN'S" magenta over "LAST SET" cyan, the skyline and moon on the title, "Edinburgh. 2am. Everyone is dead." Add the line
 "Level 1: the Cowgate" on the title. All screens are drawn over a live 3D scene, so use translucent dark overlays, not
 opaque backgrounds, except the title which should be a heavier dim (about 0.55) so the 3D club shows through.
 

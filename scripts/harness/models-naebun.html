@@ -20,11 +20,11 @@ window.show = (cfg = {}) => {
   const cw = W / cols;
   const ch = H / rows;
   renderer.setScissorTest(true);
-  const f = M.makeFreddie();
+  const f = M.makeNaebun();
   S.content.add(f.group);
   cells.forEach((c, i) => {
     f.setPose(c.state || 'idle', c.t ?? 1, c.k ?? 0);
-    const a = c.angle ?? Math.PI; // angle of the camera around Freddie: PI = behind him, 0 = in front
+    const a = c.angle ?? Math.PI; // angle of the camera around Naebun: PI = behind him, 0 = in front
     const d = c.dist ?? 5;
     const h = c.h ?? 2;
     camera.position.set(Math.sin(a) * -d * -1, h, Math.cos(a) * d * -1 * -1);

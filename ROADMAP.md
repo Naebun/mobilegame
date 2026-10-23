@@ -31,10 +31,10 @@ Known and unmeasured:
   and medium cost about the same as each other there and low is cheaper; it says nothing about an A15 GPU. The level
   is about 118k triangles and a full robot roster is up to about 150k if all were in view. If phones struggle, trim the
   robots first (the models agent offered to), then the level.
-- **The drinking animations and the Freddie spin** have not been reviewed frame by frame in screenshots by the owner.
+- **The drinking animations and the Naebun spin** have not been reviewed frame by frame in screenshots by the owner.
 - **Blender** now makes the five drink models (`scripts/blender/drinks.py` writes `src/drink-meshes.js`). Geometry and
   baked vertex colour only. Texture work has not started and needs the owner's go-ahead, plus a decision on whether
-  image files may enter a repo that is procedural-only today. Robots, weapons, Freddie and the level are still
+  image files may enter a repo that is procedural-only today. Robots, weapons, Naebun and the level are still
   procedural code, not Blender.
 
 ## Not verified: needs a human playing on a phone
@@ -72,7 +72,7 @@ the new names.
 
 ## Approved enemy ideas (not built)
 
-The owner approved all five of these for the game. Number 1 is now built (level 2); the other four are **not built and must not be added** until the owner says so.
+The owner approved all five of these for the game. Number 1 is built and used in level 2. Numbers 2 to 5 are being **prepared** (model, definition, AI and tests) at the owner's request, but are **not placed in any level** until the owner says so.
 They are not tied to level 1 and may appear in any level. Approval of an enemy is not permission to build a later
 level (see the standing rule). The melee and ranged rule holds: Fizzbang robots only fight in melee, Bampot robots can
 shoot.
@@ -80,10 +80,10 @@ shoot.
 | # | Robot | Camp | Idea |
 | --- | --- | --- | --- |
 | 1 | Shielded Fizzbang | Melee | **Built, in level 2.** Carries a vending-machine door as a shield. Shots from the front do almost nothing, so the player flanks it, shoots it from behind, or uses the launcher or shotgun up close |
-| 2 | Fizzbang Shaken | Melee, exploder | A shaken can that rattles faster as it nears, then bursts in a fizzy blast when it dies or touches Freddie. It can set off neighbouring robots, so shooting it close is a mistake |
+| 2 | Fizzbang Shaken | Melee, exploder | A shaken can that rattles faster as it nears, then bursts in a fizzy blast when it dies or touches Naebun. It can set off neighbouring robots, so shooting it close is a mistake |
 | 3 | Bampot Longshot | Ranged, sniper | A tall bottle robot with a visible laser line that charges for a moment, then fires one heavy shot. Makes cover matter |
 | 4 | Bampot Nurse | Support | Does not attack, but revives dead robots after a few seconds unless killed first. Makes kill order matter |
-| 5 | Vending Mimic | Melee, dormant | An ordinary-looking drinks machine in a corner that unfolds into a robot when Freddie walks past. It is in the level from the start, so nothing appears from nowhere |
+| 5 | Vending Mimic | Melee, dormant | An ordinary-looking drinks machine in a corner that unfolds into a robot when Naebun walks past. It is in the level from the start, so nothing appears from nowhere |
 
 Notes for whoever builds them: each needs a model and poses in `src/models.js`, a definition in `src/data.js`, AI in
 `src/game3d.js`, placement in the level data, a bot and headless check, and a screenshot review. The idea of the first

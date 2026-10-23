@@ -5,14 +5,14 @@ Where something is a guess, it says so.
 
 ## What we are making
 
-A first-person comic horror shooter for the phone browser, set in Edinburgh. Freddie is a DJ, the robots are drinks
+A first-person comic horror shooter for the phone browser, set in Edinburgh. Naebun is a DJ, the robots are drinks
 machines that have gone wrong, and the whole thing takes about two hours to finish.
 
 Fixed decisions:
 
 - Portrait and landscape (the plan said portrait only; landscape was added on request, see `ROADMAP.md`). Plays in Safari on any iOS device from the past four years (iPhone 14 and newer, and iPads of the
   same age), so Safari 16 or later, WebGL 2, and an A15-class GPU as the floor.
-- Linear levels. Every robot is placed in advance, asleep, and wakes when it notices Freddie. Dead robots stay dead.
+- Linear levels. Every robot is placed in advance, asleep, and wakes when it notices Naebun. Dead robots stay dead.
   Clear an area and its door opens. Nothing comes out of walls.
 - Two grey thumb boxes (move left, aim right, auto-fire while the right thumb is down), no aim assist, unlimited ammo
   with limited clips, reload automatic when empty or via the RELOAD button.
@@ -23,14 +23,14 @@ Fixed decisions:
 
 ## The story frame
 
-Freddie has the closing slot on the last night of the Fringe, at a club in the Cowgate. Somebody restocked the bar with
+Naebun has the closing slot on the last night of the Fringe, at a club in the Cowgate. Somebody restocked the bar with
 the wrong sort of drinks machine. They have opinions. Worse, his record bag has been carried off by a bigger act,
 the Headliner, who is playing the sunrise show on top of Arthur's Seat. The bag holds the one record he needs.
-Freddie has until dawn to fight across Edinburgh, get it back, and play his set.
+Naebun has until dawn to fight across Edinburgh, get it back, and play his set.
 
 Cast, all delivered in a line or two:
 
-- **Freddie.** Tired, dry, professionally unbothered.
+- **Naebun.** Tired, dry, professionally unbothered.
 - **Cheryl, his agent.** Appears only as voicemails between levels. Always optimistic, always wrong.
 - **The Headliner.** Seen on posters and graffiti all the way up, fought at the end.
 - **Fizzbang Beverages and Bampot and Nephew.** The two firms behind the robots. Product recall notices and
@@ -47,9 +47,9 @@ How it is delivered (no cutscenes, no voice acting, so the cost is small):
 
 Sample copy, to set the tone (all placeholder):
 
-- Cheryl, after level 1: "Freddie, good news. The venue is paying in cash. Bad news, the cash is also a robot."
+- Cheryl, after level 1: "Naebun, good news. The venue is paying in cash. Bad news, the cash is also a robot."
 - Recall notice: "UNIT 4471 HAS EXCEEDED ITS PRESSURE RATING. DO NOT SHAKE. DO NOT STAND NEAR. DO NOT BE IN THE CLUB."
-- Ending: the record turns out to be scratched. Freddie plays it anyway. It is a banger.
+- Ending: the record turns out to be scratched. Naebun plays it anyway. It is a banger.
 
 ## Shape of the game: 8 core levels, up to 10
 

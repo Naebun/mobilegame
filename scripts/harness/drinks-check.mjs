@@ -58,7 +58,7 @@ const stats = () => game.testHook('stats');
   input.keys.add(' ');
   const shots0 = S.shots;
   step(input, 60);
-  ok(S.shots === shots0, 'Freddie cannot fire during the animation');
+  ok(S.shots === shots0, 'Naebun cannot fire during the animation');
   step(input, Math.ceil(DRINKS.heavy.duration * 60));
   step(input, 30);
   ok(S.shots > shots0, 'firing works again once the drink is done');
@@ -96,7 +96,7 @@ for (const id of ['orange', 'heavy', 'energy']) {
   game.testHook('drink', 'orange');
   step(input, Math.ceil(1.9 * 60));
   const fast = speedOf(S, input);
-  ok(Math.abs(fast / base - 1.25) < 0.05, `Bruiser Orange makes Freddie 25 percent faster (${base.toFixed(2)} -> ${fast.toFixed(2)} units/s)`);
+  ok(Math.abs(fast / base - 1.25) < 0.05, `Bruiser Orange makes Naebun 25 percent faster (${base.toFixed(2)} -> ${fast.toFixed(2)} units/s)`);
 }
 {
   const a = fresh();
@@ -149,7 +149,7 @@ const bestSpot = (W, S) => {
   return best;
 };
 
-// Plays the drinking animation, then the spin. Reports where Freddie stood and what he did only during the spin.
+// Plays the drinking animation, then the spin. Reports where Naebun stood and what he did only during the spin.
 const runLaser = (input) => {
   const S = game.getState();
   step(input, Math.ceil((DRINKS.lastorders.duration + 0.1) * 60));
@@ -186,13 +186,13 @@ const runLaser = (input) => {
   const res = runLaser(input);
   ok(res.started, 'the spin starts when the drink is finished');
   ok(res.thirdDuring > 0.9, `the game switches to a third-person camera for the spin (blend ${res.thirdDuring.toFixed(2)})`);
-  ok(res.spun > 3.5 * Math.PI, `Freddie spins about two full turns (${(res.spun / (2 * Math.PI)).toFixed(2)} turns)`);
-  ok(Math.hypot(res.endPos.x - res.startPos.x, res.endPos.z - res.startPos.z) < 0.05, 'Freddie cannot walk during the spin (walk key held the whole time)');
-  ok(res.firedDuring === 0, 'Freddie cannot fire during the spin (fire key held the whole time)');
-  ok(res.healthLost === 0, 'Freddie takes no damage during the spin');
+  ok(res.spun > 3.5 * Math.PI, `Naebun spins about two full turns (${(res.spun / (2 * Math.PI)).toFixed(2)} turns)`);
+  ok(Math.hypot(res.endPos.x - res.startPos.x, res.endPos.z - res.startPos.z) < 0.05, 'Naebun cannot walk during the spin (walk key held the whole time)');
+  ok(res.firedDuring === 0, 'Naebun cannot fire during the spin (fire key held the whole time)');
+  ok(res.healthLost === 0, 'Naebun takes no damage during the spin');
   const killed = alive0.filter((e) => e.dead);
   ok(killed.length >= spot.n, `the laser wipes out every robot in reach (${killed.length} killed, ${spot.n} were in view at the start)`);
-  ok(killed.every((e) => Math.hypot(e.x - res.startPos.x, e.z - res.startPos.z) <= LASER.radius + 1 && W.los(res.startPos.x, res.startPos.z, e.x, e.z)), 'the laser only kills robots that have a clear line to Freddie, never through walls');
+  ok(killed.every((e) => Math.hypot(e.x - res.startPos.x, e.z - res.startPos.z) <= LASER.radius + 1 && W.los(res.startPos.x, res.startPos.z, e.x, e.z)), 'the laser only kills robots that have a clear line to Naebun, never through walls');
   ok(far.every((e) => !e.dead), `robots in other rooms, out of reach, are untouched (${far.length})`);
   ok(S.enemies.filter((e) => e.boss).every((e) => !e.dead), 'the boss is untouched');
   ok(game.testHook('stats').laser === false, 'the spin ends');
@@ -218,7 +218,7 @@ const runLaser = (input) => {
   step(input, Math.ceil((DRINKS.lastorders.duration + 0.1) * 60));
   const hp = S.player.health;
   game.testHook('hurt', 50);
-  ok(game.testHook('stats').laser && S.player.health === hp, 'nothing can hurt Freddie during the spin');
+  ok(game.testHook('stats').laser && S.player.health === hp, 'nothing can hurt Naebun during the spin');
 }
 
 // the boss is never hit, even when it is right there and asleep
