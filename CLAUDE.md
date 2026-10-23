@@ -1,5 +1,10 @@
 # Freddie's Last Set
 
+## Standing rule: levels
+Only level 1 exists. **Never build level 2 or any later level (maps, enemies, bosses, textures, story cards, anything
+that belongs to a future level) without the owner's explicit permission.** Planning documents are fine; building is
+not. Features are built and tested on level 1 only.
+
 First-person 3D horror shooter, phone browser, set in an Edinburgh basement club. Dark comedy tone, light Scottish
 voice. Portrait. Three.js (vendored in `vendor/`), plain ES modules, no bundler for development, no backend.
 Level 1 only for now. Read `README.md` for the layout and `docs/fps-design.md` for the module contract.

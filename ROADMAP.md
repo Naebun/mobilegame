@@ -1,5 +1,9 @@
 # Roadmap and deferred work
 
+## Standing rule
+Only level 1 is built. No later level is to be built without the owner's explicit permission, however obvious the next
+step looks. Features are built and tested on level 1 only.
+
 ## Current state: level 1, first person
 
 The game was rebuilt from a top-down shooter into a first-person 3D game. Level 1 (the Cowgate) is playable end to

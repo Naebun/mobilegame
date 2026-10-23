@@ -4,7 +4,7 @@ The owner's rule: **power-ups are drinks**. When Freddie walks onto one, there i
 that drink, then the effect applies. All drink names are invented (no real brands, logos or packaging). This replaces
 the old medkit.
 
-## The four drinks (ids are used in code)
+## The five drinks (ids are used in code)
 
 | id | Name | Looks like | Effect | Animation (about) |
 | --- | --- | --- | --- | --- |
@@ -12,6 +12,12 @@ the old medkit.
 | `orange` | Bruiser Orange | a glass bottle of fizzy orange with a screw cap, bright orange liquid | 25 percent faster movement for 20 s | 1.6 s: twist the cap off (fizz), swig, a burp, lower |
 | `heavy` | Pint of Heavy | a pint glass of dark ale with a foam head | Takes 50 percent less damage for 20 s ("liquid courage") | 2.0 s: raise, big gulp (foam moustache), sigh, lower |
 | `energy` | Bassline Energy | a slim energy can, black with a magenta and cyan stripe | 50 percent faster fire rate and much faster reloads for 15 s | 1.7 s: crack the tab (pssht), chug, crush the can slightly, lower |
+
+| `lastorders` | Last Orders (the super power-up) | a big, dark-glass bottle with a gold foil neck and a gold label, glowing like it should not be touched, with embers rising off it | Freddie spins on the spot, unable to walk, while a huge laser sweeps round and wipes out every robot around him (never in a boss room) | about 2.2 s: both hands raise the bottle, a long glug (gold light spills over his face), a roar, the bottle is thrown away, then the spin begins |
+
+The super power-up does **not** stop time. It is a rare drink: two in the level, on the dance floor and in the VIP
+corridor, and never in a boss room. The laser never fires in a boss room, never hurts a boss, and is not available
+while a boss is awake.
 
 Effects are applied at the moment the drink is finished (about 65 percent through the animation), and the toast says
 what it did. Freddie cannot fire during the animation (it is short), but can still move.
@@ -21,7 +27,7 @@ what it did. Freddie cannot fire during the animation (it is short), but can sti
 New exports (keep everything else as it is):
 
 ```js
-export const DRINK_IDS = ['dram', 'orange', 'heavy', 'energy'];
+export const DRINK_IDS = ['dram', 'orange', 'heavy', 'energy', 'lastorders'];
 export function makeDrinkPickup(id) -> THREE.Group   // origin on the floor, about 1.0 to 1.3 tall in total
 export function makeDrinkViewmodel(id) -> { group, setPose(k), duration }
 ```
@@ -62,4 +68,7 @@ export function makeDrinkViewmodel(id) -> { group, setPose(k), duration }
   - vip: `orange` or `energy` in a booth, `dram` in a side nook.
   - backstage: `dram` (existing) by the entrance and `heavy` before the boss.
   Roughly one drink per area from the cloakroom on, more where the fights are harder (bar, backstage).
+- Two `lastorders` super drinks: one on the dance floor, on a plinth or the DJ booth in clear view from the middle of
+  the room, and one in the VIP corridor, in a booth or alcove about halfway along. **None in the backstage (boss) room,
+  and none within its doorway.** Make them stand out (a taller pickup) but not easy to grab by accident while passing.
 - Pickups do not need extra meshes in the world; the integrator creates the models from `makeDrinkPickup`.
