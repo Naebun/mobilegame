@@ -37,7 +37,10 @@ the new names.
   - Low Power Mode caps the frame rate at 30; the fixed-step loop already copes, but test it.
   - iPads count, so layouts must work at about 820 x 1180 in portrait. It works today, but the control boxes keep
     their phone size (180 px cap in `hud.layout`) and look small there. Scale them up on large screens.
-- Still to decide: story weight, and how many levels two hours means (probably 8 to 10 levels of 12 to 15 minutes).
+- Story: a light comic frame (short written lines, no cutscenes, no voice acting).
+- Levels: 8 to 10 (8 core, 2 stretch).
+- Graphics: the owner wants a more modern look than the current flat-shaded low-poly. Direction still to decide.
+- The full plan is in `docs/full-game-plan.md`.
 
 ## Parked
 - **Top-down version.** Replaced by this rebuild. It is in git history on `main` (squash commits up to PR #2).
