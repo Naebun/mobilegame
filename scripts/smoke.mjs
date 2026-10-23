@@ -7,7 +7,7 @@ import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
 
-const port = 8099;
+const port = Number(process.env.PORT || 8099);
 const outDir = process.argv[2] || '.';
 const server = spawn('node', ['scripts/serve.mjs', String(port)], { stdio: 'ignore' });
 await new Promise((r) => setTimeout(r, 500));

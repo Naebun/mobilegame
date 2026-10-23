@@ -3,7 +3,7 @@
 // The shield, the Vinyl Disc bounce, the Tour Guide's volley, slam and enrage, and the shielded robot's slow turn.
 // Normal mode only (balance is never tuned against debug mode).
 import * as game from '../../src/game3d.js';
-import { ENEMY_DEFS, WEAPONS } from '../../src/data.js';
+import { ENEMY_DEFS, WEAPONS, PLAYER, DIFFICULTY, DIFFICULTY_ORDER, TELEGRAPH_FLOOR, defFor } from '../../src/data.js';
 
 let failures = 0;
 let checks = 0;
@@ -304,6 +304,287 @@ function setEnemy(S, e, x, z, yaw) { e.x = x; e.z = z; e.yaw = yaw; e.kx = e.kz 
   game.testHook('torch', { attached: true });
 }
 
+// ---- difficulty: Hard and Extra Hard are multipliers on the robots (docs/difficulty.md) ----
+{
+  const KINDS = Object.keys(ENEMY_DEFS);
+  const near2 = (a, b, eps) => Math.abs(a - b) <= eps;
+  const sc = (v, k) => Math.round(v * k);
+  const quick = (v, k) => Math.max(v * k, Math.min(v, TELEGRAPH_FLOOR));
+  // every warning a robot gives, as [label, seconds] pairs, read from a definition
+  const warnings = (d) => [['windup', d.windup], ['aim', d.aim], ['slam', d.slam && d.slam.windup], ['track', d.charge && d.charge.track], ['lock', d.charge && d.charge.lock], ['fuse', d.prime && d.prime.fuse], ['unfold', d.dormant && d.dormant.unfold]].filter((w) => w[1] !== undefined);
+
+  ok(JSON.stringify(DIFFICULTY_ORDER) === '["normal","hard","extra"]', 'three modes: normal, hard, extra');
+  ok(DIFFICULTY.normal.damage === 1 && DIFFICULTY.normal.health === 1 && DIFFICULTY.normal.speed === 1 && DIFFICULTY.normal.windup === 1, 'normal is all ones');
+  ok(DIFFICULTY.hard.damage === 1.5 && DIFFICULTY.hard.health === 1.25 && DIFFICULTY.hard.speed === 1.1 && near(DIFFICULTY.hard.windup, 0.9), 'the Hard table is 1.5 damage, 1.25 health, 1.1 speed, 10 percent quicker wind-ups');
+  ok(DIFFICULTY.extra.damage === 2 && DIFFICULTY.extra.health === 1.5 && DIFFICULTY.extra.speed === 1.2 && near(DIFFICULTY.extra.windup, 0.8), 'the Extra Hard table is 2 damage, 1.5 health, 1.2 speed, 20 percent quicker wind-ups');
+
+  // the pure function: every kind, every mode, every number it is meant to touch and none it is not
+  for (const kind of KINDS) {
+    const base = ENEMY_DEFS[kind];
+    ok(defFor(kind, 'normal') === base, `${kind}: normal returns the base definition itself (nothing copied, nothing scaled)`);
+    for (const m of ['hard', 'extra']) {
+      const D = DIFFICULTY[m];
+      const d = defFor(kind, m);
+      const same = (a, b, what) => ok(JSON.stringify(a) === JSON.stringify(b), `${kind} ${m}: ${what} is not scaled`);
+      ok(d !== base && d.hp === sc(base.hp, D.health), `${kind} ${m}: hp ${base.hp} -> ${d.hp}`);
+      ok(near2(d.speed, base.speed * D.speed, 1e-9), `${kind} ${m}: speed ${base.speed} -> ${d.speed.toFixed(2)}`);
+      ok(base.damage === undefined ? d.damage === undefined : d.damage === sc(base.damage, D.damage), `${kind} ${m}: damage ${base.damage} -> ${d.damage}`);
+      ok(warnings(d).every((w, i) => near2(w[1], quick(warnings(base)[i][1], D.windup), 1e-9)), `${kind} ${m}: warnings ${warnings(base).map((w) => `${w[0]} ${w[1]}`).join(', ') || 'none'} -> ${warnings(d).map((w) => `${w[1].toFixed(2)}`).join(', ') || 'none'}`);
+      ok(warnings(d).every((w, i) => w[1] >= Math.min(warnings(base)[i][1], TELEGRAPH_FLOOR) - 1e-9), `${kind} ${m}: no warning is shorter than ${TELEGRAPH_FLOOR} s (or than it already was)`);
+      same(d.score, base.score, 'score');
+      same([d.reach, d.swing, d.cooldown, d.shotInterval, d.projSpeed, d.keepMin, d.keepMax, d.range, d.wakeRange, d.shield, d.turn], [base.reach, base.swing, base.cooldown, base.shotInterval, base.projSpeed, base.keepMin, base.keepMax, base.range, base.wakeRange, base.shield, base.turn], 'reach, swing, cooldown, shot interval, projectile speed, ranges and shield');
+      if (base.enrage) same(d.enrage, base.enrage, 'the enrage block (its speed factor is a multiplier on top)');
+      if (base.slam) ok(d.slam.damage === sc(base.slam.damage, D.damage) && d.slam.reach === base.slam.reach && d.slam.swing === base.slam.swing, `${kind} ${m}: the slam does ${d.slam.damage}`);
+      if (base.burst) ok(d.burst.player === sc(base.burst.player, D.damage) && d.burst.robots === base.burst.robots && d.burst.radius === base.burst.radius, `${kind} ${m}: the blast hurts Naebun for ${d.burst.player} and other robots for ${d.burst.robots} (unscaled)`);
+      if (base.prime) ok(near2(d.prime.speed, base.prime.speed * D.speed, 1e-9) && d.prime.range === base.prime.range, `${kind} ${m}: the lunge is ${d.prime.speed.toFixed(1)} m/s`);
+      if (base.revive) same(d.revive, base.revive, 'the revive block (a fraction of the scaled maximum)');
+      if (base.charge) ok(d.charge.turn === base.charge.turn && d.shot.halfWidth === base.shot.halfWidth, `${kind} ${m}: the laser swings and the shot is as wide as before`);
+      ok(ENEMY_DEFS[kind] === base && base.hp === defFor(kind, 'normal').hp, `${kind}: ENEMY_DEFS itself is untouched by scaling`);
+    }
+  }
+  // a table that tries to cut warnings to nothing hits the floor, and a warning already below it is left alone
+  {
+    const crush = { crush: { id: 'crush', damage: 1, health: 1, speed: 1, windup: 0.1 } };
+    for (const kind of KINDS) {
+      const base = warnings(ENEMY_DEFS[kind]);
+      const crushed = warnings(defFor(kind, 'crush', crush));
+      ok(crushed.every((w, i) => near2(w[1], Math.min(base[i][1], Math.max(base[i][1] * 0.1, TELEGRAPH_FLOOR)), 1e-9) && w[1] >= Math.min(base[i][1], TELEGRAPH_FLOOR) - 1e-9), `${kind}: even at x0.1 every warning stays at ${TELEGRAPH_FLOOR} s or its own length (${crushed.map((w) => w[1].toFixed(2)).join(', ') || 'none'})`);
+    }
+    ok(defFor('nonsense', 'hard') === undefined && defFor('fizzbang', 'bogus') === ENEMY_DEFS.fizzbang, 'an unknown kind or mode scales nothing and does not throw');
+  }
+
+  // the running game: each mode's robots, spawned, fought and timed
+  const { S, W } = fresh();
+  const lane = (() => {
+    for (let r = 1; r < 60; r++) {
+      for (let c = 1; c < 50; c++) {
+        const x0 = (c + 0.5) * 2;
+        const z = (r + 0.5) * 2;
+        let good = true;
+        for (let d = 0; d <= 24 && good; d += 0.5) for (const o of [-1, 0, 1]) if (W.isSolidAt(x0 + d, z + o)) good = false;
+        if (good) return { x0, z };
+      }
+    }
+    return null;
+  })();
+  ok(lane !== null, 'there is a lane of free floor to fight on');
+  const setup = (mode) => {
+    game.testHook('difficulty', mode); // respawns the level's own robots in this mode
+    S.enemies.length = 0;
+    S.totalEnemies = 0;
+    S.pickups.length = 0;
+    S.projectiles.length = 0;
+    S.player.maxHealth = S.player.health = 1000;
+    S.mode = 'play';
+  };
+  const spawn = (kind, x, z, yaw = 0, area = '_t') => S.enemies[game.testHook('spawn', { kind, x, z, yaw, area })];
+  const wake = (e) => { e.state = 'chase'; e.stateT = 1; e.cool = 0; e.checkT = 0; e.wakeDelay = -1; };
+  const kill = (e) => game.testHook('hitEnemy', { i: S.enemies.indexOf(e), amount: 1e6, fx: e.x + 5, fz: e.z });
+  const hpNow = () => S.player.health;
+  const at = (x, z, yaw) => game.testHook('teleport', { x, z, yaw });
+
+  for (const mode of DIFFICULTY_ORDER) {
+    const D = DIFFICULTY[mode];
+    const label = (t) => `${mode}: ${t}`;
+    // spawned: every kind has the scaled hp and numbers, and a boss bar would show the scaled maximum
+    setup(mode);
+    ok(game.testHook('difficulty') === mode, label('the mode in force'));
+    for (const kind of KINDS) {
+      const e = spawn(kind, lane.x0, lane.z);
+      ok(JSON.stringify(e.def) === JSON.stringify(defFor(kind, mode)) && (mode !== 'normal' || e.def === ENEMY_DEFS[kind]), label(`${kind} spawns with the ${mode} definition`));
+      ok(e.maxHp === sc(ENEMY_DEFS[kind].hp, D.health) && e.hp === e.maxHp, label(`${kind} spawns with ${e.maxHp} hp (base ${ENEMY_DEFS[kind].hp} x ${D.health})`));
+      ok(e.def.score === ENEMY_DEFS[kind].score, label(`${kind} is worth the same score`));
+    }
+    S.enemies.length = 0;
+    // the level's own robots, respawned by the hook, carry the mode too (bosses included)
+    game.testHook('difficulty', mode);
+    ok(S.enemies.length === 24 && S.enemies.every((e) => e.maxHp === sc(ENEMY_DEFS[e.kind].hp, D.health)), label('all 24 robots of the Vaults, the Shielded and the Tour Guide among them, have scaled hp'));
+    const tg = S.enemies.find((e) => e.kind === 'tourguide');
+    ok(tg.boss && tg.maxHp === sc(360, D.health) && tg.def.slam.damage === sc(20, D.damage), label(`the Tour Guide boss: ${tg.maxHp} hp, slam ${tg.def.slam.damage}`));
+    ok(game.testHook('hud').difficulty === D.tag, label(`the HUD is told "${D.tag}"`));
+
+    // melee: damage and wind-up length for a plain robot, a shielded one, the Mimic and the Bouncer boss
+    for (const kind of ['fizzbang', 'shielded', 'mimic', 'bouncer']) {
+      setup(mode);
+      const e = spawn(kind, lane.x0, lane.z, -Math.PI / 2);
+      at(lane.x0 + 1.6, lane.z, Math.PI / 2);
+      wake(e);
+      e.fixed = false;
+      let tW = -1;
+      let tS = -1;
+      const h0 = hpNow();
+      let lost = 0;
+      run(S, 4, input(), (t) => {
+        if (e.state === 'windup' && tW < 0) tW = t;
+        if (e.state === 'swing' && tS < 0) tS = t;
+        if (hpNow() < h0) { lost = h0 - hpNow(); return false; }
+        return true;
+      });
+      const base = ENEMY_DEFS[kind];
+      ok(lost === sc(base.damage, D.damage), label(`${kind} hits for ${lost} (${base.damage} x ${D.damage})`));
+      ok(tW >= 0 && tS > tW && near2(tS - tW, quick(base.windup, D.windup), 0.035), label(`${kind} winds up for ${(tS - tW).toFixed(2)} s (${base.windup} x ${D.windup}, never under ${TELEGRAPH_FLOOR})`));
+    }
+
+    // speed: a plain robot's path length over one second of chase, in the open
+    {
+      setup(mode);
+      const e = spawn('fizzbang', lane.x0, lane.z, -Math.PI / 2);
+      at(lane.x0 + 22, lane.z, Math.PI / 2);
+      wake(e);
+      let px = e.x;
+      let pz = e.z;
+      let path = 0;
+      run(S, 1, input(), () => { path += Math.hypot(e.x - px, e.z - pz); px = e.x; pz = e.z; });
+      ok(near2(path, 3.4 * D.speed, 0.15), label(`a Fizzbang covers ${path.toFixed(2)} m in a second (3.4 x ${D.speed})`));
+      ok(3.4 * D.speed < PLAYER.speed && 3.3 * D.speed < PLAYER.speed && 3.6 * D.speed < PLAYER.speed, label(`the fastest melee walker (Shaken, ${(3.6 * D.speed).toFixed(2)} m/s) still cannot catch Naebun walking (${PLAYER.speed})`));
+    }
+
+    // a bottle: its damage, and the Bampot's aim time
+    {
+      setup(mode);
+      const e = spawn('bampot', lane.x0, lane.z, -Math.PI / 2);
+      at(lane.x0 + 9, lane.z, Math.PI / 2);
+      wake(e);
+      let tA = -1;
+      let tSh = -1;
+      let bottleDmg = null;
+      const h0 = hpNow();
+      let lost = 0;
+      run(S, 8, input(), (t) => {
+        if (e.state === 'aim' && tA < 0) tA = t;
+        if (e.state === 'shoot' && tSh < 0) tSh = t;
+        const b = S.projectiles.find((q) => q.owner === 'enemy');
+        if (b && bottleDmg === null) bottleDmg = b.damage;
+        if (hpNow() < h0) { lost = h0 - hpNow(); return false; }
+        return true;
+      });
+      ok(bottleDmg === sc(10, D.damage) && lost === bottleDmg, label(`a bottle carries ${bottleDmg} and costs ${lost} (10 x ${D.damage})`));
+      ok(tA >= 0 && near2(tSh - tA, quick(0.55, D.windup), 0.035), label(`the Bampot aims for ${(tSh - tA).toFixed(2)} s (0.55 x ${D.windup})`));
+    }
+
+    // the Tour Guide: the slam's damage and wind-up, and volley bottles before and after the enrage
+    {
+      setup(mode);
+      const e = spawn('tourguide', lane.x0, lane.z, -Math.PI / 2);
+      at(lane.x0 + 2.2, lane.z, Math.PI / 2);
+      wake(e);
+      e.slamCool = 0;
+      e.cool = 99;
+      let tSl = -1;
+      const h0 = hpNow();
+      let lost = 0;
+      let tHit = -1;
+      run(S, 3, input(), (t) => {
+        at(lane.x0 + 2.2, lane.z);
+        if (e.state === 'slam' && tSl < 0) tSl = t;
+        if (hpNow() < h0) { lost = h0 - hpNow(); tHit = t; return false; }
+        return true;
+      });
+      const sl = ENEMY_DEFS.tourguide.slam;
+      ok(lost === sc(sl.damage, D.damage), label(`the pole slam hits for ${lost} (${sl.damage} x ${D.damage})`));
+      ok(tSl >= 0 && near2(tHit - tSl, quick(sl.windup, D.windup) + sl.swing * 0.45, 0.04), label(`and lands ${(tHit - tSl).toFixed(2)} s after it starts (wind-up ${sl.windup} x ${D.windup} plus the swing)`));
+      setup(mode);
+      const g = spawn('tourguide', lane.x0, lane.z, -Math.PI / 2);
+      at(lane.x0 + 9, lane.z, Math.PI / 2);
+      wake(g);
+      const seen = new Set();
+      run(S, 5, input(), () => { for (const q of S.projectiles) if (q.owner === 'enemy') seen.add(q.damage); });
+      game.testHook('hitEnemy', { i: S.enemies.indexOf(g), amount: g.maxHp * 0.52, fx: g.x, fz: g.z + 9 });
+      ok(g.enraged, label('the Tour Guide enrages at half of its scaled health'));
+      S.player.health = S.player.maxHealth;
+      S.projectiles.length = 0;
+      g.state = 'chase'; g.cool = 0; g.stateT = 1;
+      run(S, 5, input(), () => { for (const q of S.projectiles) if (q.owner === 'enemy') seen.add(q.damage); });
+      ok(seen.size === 1 && seen.has(sc(10, D.damage)), label(`every volley bottle, enraged or not, carries ${[...seen].join(',')} (10 x ${D.damage})`));
+    }
+
+    // the Longshot: one heavy hitscan, a lock the player can still read
+    {
+      setup(mode);
+      const e = spawn('longshot', lane.x0, lane.z, -Math.PI / 2);
+      at(lane.x0 + 14, lane.z, Math.PI / 2);
+      wake(e);
+      const C = ENEMY_DEFS.longshot.charge;
+      let tCh = -1;
+      let tLock = -1;
+      let tFire = -1;
+      const h0 = hpNow();
+      run(S, 8, input(), (t) => {
+        if (e.state === 'charge' && tCh < 0) tCh = t;
+        if (e.locked && tLock < 0) tLock = t;
+        if (e.state === 'recover' && tFire < 0) tFire = t;
+        return !(tFire >= 0 && t > tFire + 0.1);
+      });
+      ok(h0 - hpNow() === sc(38, D.damage), label(`the Longshot's shot costs ${h0 - hpNow()} (38 x ${D.damage})`));
+      ok(near2(tFire - tLock, quick(C.lock, D.windup), 0.06) && tFire - tLock >= TELEGRAPH_FLOOR - 0.06, label(`the lock lasts ${(tFire - tLock).toFixed(2)} s before the shot, over the ${TELEGRAPH_FLOOR} s floor`));
+      ok(near2(tFire - tCh, quick(C.track, D.windup) + quick(C.lock, D.windup), 0.08), label(`the whole charge takes ${(tFire - tCh).toFixed(2)} s`));
+    }
+
+    // the Shaken's blast: Naebun takes the scaled figure, other robots the unscaled one
+    {
+      setup(mode);
+      const sh = spawn('shaken', lane.x0, lane.z, -Math.PI / 2);
+      const other = spawn('fizzbang', lane.x0 + 1.5, lane.z + 0.5, 0);
+      other.state = 'idle';
+      at(lane.x0 + 1, lane.z, Math.PI / 2);
+      const b = ENEMY_DEFS.shaken.burst;
+      const h0 = hpNow();
+      kill(sh);
+      const dp = Math.hypot(S.player.x - sh.x, S.player.z - sh.z);
+      const want = Math.round(sc(b.player, D.damage) * (1 - (1 - b.floor) * Math.min(1, dp / b.radius)));
+      ok(h0 - hpNow() === want, label(`the blast costs Naebun ${h0 - hpNow()} (${b.player} x ${D.damage} with the falloff at ${dp.toFixed(1)} m)`));
+      const dr = Math.hypot(other.x - sh.x, other.z - sh.z);
+      const lostRobot = other.maxHp - other.hp;
+      ok(near2(lostRobot, b.robots * (1 - (1 - b.floor) * Math.min(1, dr / b.radius)), 0.01), label(`the blast costs a robot ${lostRobot.toFixed(1)} hp, the same as in normal mode`));
+    }
+
+    // the Nurse: a revived robot comes back at 60 percent of its scaled maximum
+    {
+      setup(mode);
+      const n = spawn('nurse', lane.x0, lane.z, -Math.PI / 2, 'longvault');
+      const f = spawn('fizzbang', lane.x0 + 3, lane.z, 0, 'longvault');
+      at(lane.x0 + 22, lane.z, Math.PI / 2);
+      wake(n);
+      wake(f);
+      f.cool = 99;
+      kill(f);
+      run(S, 8, input(), () => f.dead);
+      ok(!f.dead && f.state === 'rise' && near2(f.hp, f.maxHp * ENEMY_DEFS.nurse.revive.hp, 0.5), label(`a revived Fizzbang is back at ${f.hp.toFixed(0)} of ${f.maxHp} (60 percent of the scaled maximum)`));
+      ok(n.def.revive.time === ENEMY_DEFS.nurse.revive.time, label('and the Nurse takes as long as ever to do it'));
+    }
+  }
+
+  // Naebun is not scaled: weapons, health and the clip are the same in every mode
+  for (const mode of DIFFICULTY_ORDER) {
+    setup(mode);
+    game.testHook('play');
+    const st = game.testHook('stats');
+    ok(st.maxHealth === 100 && st.damageMult === 1 && near(st.fireInterval, WEAPONS.pistol.interval), `${mode}: Naebun has 100 health, normal damage and the pistol's own fire rate`);
+  }
+
+  // debug mode stacks on top and is not the same thing: Naebun 2x, robots still scaled by the mode alone
+  {
+    S.debugMode = true;
+    for (const mode of DIFFICULTY_ORDER) {
+      setup(mode);
+      game.testHook('play');
+      S.enemies.length = 0; // 'play' respawned the level's own robots
+      const st = game.testHook('stats');
+      ok(st.maxHealth === 200 && st.damageMult === 2 && near(st.fireInterval, WEAPONS.pistol.interval / 2), `debug ${mode}: Naebun 2x health, 2x damage, 2x fire rate`);
+      const e = spawn('fizzbang', lane.x0, lane.z, -Math.PI / 2);
+      ok(e.maxHp === sc(60, DIFFICULTY[mode].health) && e.def.damage === sc(12, DIFFICULTY[mode].damage), `debug ${mode}: the robots are exactly the ${mode} robots (${e.maxHp} hp, ${e.def.damage} damage)`);
+      S.player.maxHealth = S.player.health = 1000;
+      at(lane.x0 + 1.6, lane.z, Math.PI / 2);
+      wake(e);
+      const h0 = hpNow();
+      run(S, 4, input(), () => hpNow() >= h0);
+      ok(h0 - hpNow() === sc(12, DIFFICULTY[mode].damage), `debug ${mode}: a hit costs ${h0 - hpNow()} (debug leaves the robots alone)`);
+    }
+    S.debugMode = false;
+    setup('normal');
+  }
+}
+
 // ---- saved progress: the format a cookie can carry ----
 {
   const store = await import('../../src/save.js');
@@ -315,9 +596,9 @@ function setEnemy(S, e, x, z, yaw) { e.x = x; e.z = z; e.yaw = yaw; e.kx = e.kz 
   ok(store.clean({ unlocked: 99 }).unlocked === store.MAX_LEVELS, 'unlocked cannot pass the last level');
   ok(store.clean({ done: [1] }).unlocked === 2, 'finishing level 1 unlocks level 2');
   ok(JSON.stringify(store.clean({ done: [2, 1, 1, 7, -3, 'a'] }).done) === '[1,2]', 'done is a clean sorted set of real levels');
-  ok(JSON.stringify(store.clean({ best: { 1: 500, 2: -4, 9: 100, x: 5 } }).best) === '{"1":500}', 'only real positive best scores survive');
+  ok(JSON.stringify(store.clean({ best: { 1: 500, 2: -4, 9: 100, x: 5 } }).best.normal) === '{"1":500}', 'only real positive best scores survive (an old flat best is the normal-mode one)');
   const m = store.merge(store.clean({ unlocked: 2, best: { 1: 100 } }), store.clean({ done: [1], best: { 1: 300, 2: 50 } }));
-  ok(m.unlocked === 2 && m.best[1] === 300 && m.best[2] === 50 && m.done.join() === '1', 'two copies merge to whichever is further on');
+  ok(m.unlocked === 2 && m.best.normal[1] === 300 && m.best.normal[2] === 50 && m.done.join() === '1', 'two copies merge to whichever is further on');
   ok(JSON.stringify(store.load()) === JSON.stringify(f), 'under plain Node (no cookie or storage) load() is a fresh save, and save() does not throw');
   store.save(f);
 }

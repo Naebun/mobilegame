@@ -1,7 +1,7 @@
 // Headless playtest bot for the first-person level. Runs the real game logic (src/game3d.js) at 60 Hz in Node,
 // with no rendering, driven by a bot that navigates, aims, strafes and picks weapons.
 //
-//   node scripts/sim3d.mjs [--runs 30] [--skill sloppy|casual|good|both] [--trace SEED] [--level 1|2]
+//   node scripts/sim3d.mjs [--runs 30] [--skill sloppy|casual|good|both] [--trace SEED] [--level 1|2] [--difficulty normal|hard|extra]
 //
 // NORMAL MODE ONLY: balance is never tuned against debug mode. The bot is a proxy for a person, not a replacement:
 // it answers "is the level winnable, and roughly how hard is each area", not "is it fun".
@@ -12,6 +12,8 @@ const RUNS = Number(args.runs || 30);
 const SKILLS = args.skill === 'both' || !args.skill ? ['sloppy', 'casual', 'good'] : [args.skill];
 const TRACE = args.trace === undefined ? null : Number(args.trace);
 const LEVEL = Number(args.level || 1);
+const DIFF = args.difficulty || 'normal'; // the robots' multipliers (src/data.js DIFFICULTY); the bot itself is the same in every mode
+if (!['normal', 'hard', 'extra'].includes(DIFF)) throw new Error(`unknown --difficulty ${DIFF}`);
 const VIEW = { w: 390, h: 844, dpr: 1, safe: { top: 0, bottom: 0 } };
 const DT = 1 / 60;
 const LIMIT = 900; // seconds of game time before a run counts as stuck
@@ -43,6 +45,7 @@ function runOnce(seed, skillName) {
   game.init(VIEW);
   game.testHook('level', LEVEL);
   game.testHook('torch', { attached: true }); // the bot never watches the torch being fitted
+  game.testHook('difficulty', DIFF); // before the player object is taken: it respawns the robots
   const S = game.getState();
   const W = game.getWorld();
   if (S.debugMode) throw new Error('simulator must run in normal mode');
@@ -206,6 +209,7 @@ function runOnce(seed, skillName) {
 const avg = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : NaN);
 const f = (n, d = 0) => (Number.isFinite(n) ? n.toFixed(d) : '-');
 
+console.log(`level ${LEVEL}, ${DIFF}`);
 console.log('skill   win%  dead%  stuck%  time(s)  dmgTaken  melee/ranged   died in');
 for (const skill of SKILLS) {
   const rs = [];

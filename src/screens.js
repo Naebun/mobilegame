@@ -200,7 +200,8 @@ function difficultyButtons(view, st) {
     const cw = Math.min(view.w - 48 - sl - sr, 340);
     const ch = clamp((yb - y0 - gap * 2) / 3, 52, 104);
     const x = sl + (view.w - sl - sr - cw) / 2;
-    list.forEach((b, i) => Object.assign(b, { x, y: y0 + i * (ch + gap), w: cw, h: ch }));
+    const yTop = y0 + Math.max(0, (yb - y0 - ch * 3 - gap * 2) / 2) * 0.5; // spare height: half of it above, the rest below
+    list.forEach((b, i) => Object.assign(b, { x, y: yTop + i * (ch + gap), w: cw, h: ch }));
   }
   list.push(back);
   return list;
@@ -353,12 +354,13 @@ export function drawDifficulty(ctx, view, state) {
     const nx = b.x + b.w / 2;
     if (tall) {
       const f = fit(ctx, b.label, inner - (pc ? 44 : 0), land ? 21 : 24, 800, 13);
-      heavy(ctx, f.str, nx, b.y + 24, f.size, b.accent);
       const size = land ? 12.5 : 13.5;
       const lines = wrapLines(ctx, b.sub, inner, size, 500, 3);
       const lh = size + 4;
-      const y1 = b.y + 24 + f.size * 0.5 + 10 + size * 0.5;
-      lines.forEach((ln, i) => outlined(ctx, ln, nx, y1 + i * lh, size, '#e5e0f5', 'center', 500));
+      const block = f.size + 10 + lines.length * lh; // name and line(s), centred in the card
+      const yn = b.y + (b.h - block) / 2 + f.size / 2;
+      heavy(ctx, f.str, nx, yn, f.size, b.accent);
+      lines.forEach((ln, i) => outlined(ctx, ln, nx, yn + f.size / 2 + 10 + size / 2 + i * lh, size, '#e5e0f5', 'center', 500));
     } else { // a short screen: the name and the line each on one row
       const f = fit(ctx, b.label, inner - (pc ? 44 : 0), 16, 800, 11);
       outlined(ctx, f.str, nx, b.y + b.h * 0.32, f.size, b.accent, 'center', 800);

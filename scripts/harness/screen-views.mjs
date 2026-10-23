@@ -1,6 +1,6 @@
 // Screenshots every menu screen and the play view at a chosen size (default landscape phone):
 //   W=844 H=390 node scripts/harness/screen-views.mjs <outdir> [screens, comma separated]
-// Screens: title, controls, settings, intro, voicemail, dead, complete, play. Level 2 is used for intro/play so the long text shows.
+// PORT sets the server port (default 8095), DIFF=hard|extra the mode, SAVE=1 a saved game. Screens: title, difficulty, controls, settings, intro, voicemail, dead, complete, play. Level 2 is used for intro/play so the long text shows.
 import { chromium } from 'playwright';
 import { spawn } from 'node:child_process';
 import { readdirSync } from 'node:fs';
@@ -8,7 +8,8 @@ const out = process.argv[2];
 const want = (process.argv[3] || 'title,controls,intro,voicemail,dead,complete,play').split(',');
 const W = Number(process.env.W || 844);
 const H = Number(process.env.H || 390);
-const server = spawn('node', ['scripts/serve.mjs', '8095'], { stdio: 'ignore', cwd: process.cwd() });
+const PORT = Number(process.env.PORT || 8095);
+const server = spawn('node', ['scripts/serve.mjs', String(PORT)], { stdio: 'ignore', cwd: process.cwd() });
 await new Promise((r) => setTimeout(r, 700));
 const base = '/opt/pw-browsers';
 const exe = readdirSync(base).filter((d) => d.startsWith('chromium-')).map((d) => readdirSync(`${base}/${d}`).filter((x) => x.startsWith('chrome-linux')).map((x) => `${base}/${d}/${x}/chrome`)[0])[0];
@@ -17,8 +18,9 @@ const page = await (await b.newContext({ viewport: { width: W, height: H }, devi
 const errs = [];
 page.on('pageerror', (e) => errs.push(e.message));
 page.on('console', (m) => m.type() === 'error' && !/favicon|404/.test(m.text()) && errs.push(m.text()));
-await page.goto(`http://localhost:8095/?test&q=${process.env.Q || 'medium'}&level=${process.env.LEVEL || 2}${process.env.PC ? '&pc' : ''}`);
+await page.goto(`http://localhost:${PORT}/?test&q=${process.env.Q || 'medium'}&level=${process.env.LEVEL || 2}${process.env.PC ? '&pc' : ''}${process.env.DIFF ? `&difficulty=${process.env.DIFF}` : ''}`);
 await page.waitForFunction(() => window.__game && window.__game.getState().player, null, { timeout: 90000 });
+if (process.env.SAVE) await page.evaluate(() => window.__game.testHook('save', { done: [1], unlocked: 2 })); // SAVE=1: a finished level 1, so the title offers CONTINUE (not for debug runs: it writes the cookie)
 const tag = `${W}x${H}`;
 for (const name of want) {
   if (name === 'play') {
