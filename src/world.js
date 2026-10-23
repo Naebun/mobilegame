@@ -803,7 +803,7 @@ function genConcrete(S, N, o) {
       const pol = N.f2[idx];
       if (pol > 0.6) rough = rough * 0.6 + 0.2 * sstep(0.6, 0.7, pol); // trowelled, polished by boots
       const wet = N.mid[(idx + 4321) % N.mid.length];
-      if (wet > 0.74) { const m = sstep(0.74, 0.84, wet); rough = rough * (1 - m) + 0.3 * m; r *= 1 - 0.3 * m; g *= 1 - 0.3 * m; b *= 1 - 0.3 * m; h = h * (1 - m) + 0.5 * m; }
+      if (wet > 0.74) { const m = sstep(0.74, 0.84, wet); rough = rough * (1 - m) + 0.42 * m; r *= 1 - 0.3 * m; g *= 1 - 0.3 * m; b *= 1 - 0.3 * m; h = h * (1 - m) + 0.5 * m; }
       if (x * k < 2 || y * k < 2) { r *= 0.55; g *= 0.55; b *= 0.55; h = 0; } // expansion joints
       const o4 = idx * 4;
       o.alb[o4] = r; o.alb[o4 + 1] = g; o.alb[o4 + 2] = b;
@@ -1236,7 +1236,7 @@ const AREA_STYLE = {
   // ambient tint baked into vertex colours; low on purpose, the baked pools and the real lights do the lighting
   stairwell: { tint: [0.46, 0.5, 0.6] },
   cloakroom: { tint: [0.6, 0.46, 0.36] },
-  dancefloor: { tint: [0.42, 0.3, 0.34] },
+  dancefloor: { tint: [0.52, 0.37, 0.4] },
   bar: { tint: [0.6, 0.46, 0.34] },
   vip: { tint: [0.52, 0.36, 0.34] },
   backstage: { tint: [0.44, 0.5, 0.58] },
@@ -1319,7 +1319,7 @@ function buildVisuals(ctx) {
   ];
   PENDANT.forEach(([, ps]) => ps.forEach(([c, r]) => emit(c, r, 2.6, 0xffa24a, 1.25, 8.5, true)));
   BULBS.forEach(([id, ps]) => ps.forEach(([c, r]) => emit(c, r, 2.6, id === 'stairwell' ? 0xffb85a : 0xffd890, id === 'stairwell' ? 1.7 : 1.05, 9, true)));
-  CANS.forEach(([c, r, red]) => emit(c, r, 2.8, red ? 0xff2412 : 0xff7a14, 0.95, 9.5, true));
+  CANS.forEach(([c, r, red]) => emit(c, r, 2.8, red ? 0xff2412 : 0xff7a14, 1.35, 11, true));
   emit(17.5, 30.5, 2.6, 0xffc890, 0.45, 9);
   emit(4.5, 41.0, 2.4, 0x9fb8ff, 1.0, 8);
   emit(2.5, 4.0, 1.4, 0xa8ffc0, 0.9, 7);
@@ -1896,7 +1896,7 @@ function buildVisuals(ctx) {
     gm.frustum(x, z, 0.05, 0.05, y + 0.02, y + 0.12, 8, glowc(hex, 6), true);
     gm.tri([x - 0.3, y + 0.03, z], [x, y + 0.03, z + 0.3], [x + 0.3, y + 0.03, z], glowc(hex, 2.4), [0, -1, 0]);
     gm.tri([x - 0.3, y + 0.03, z], [x + 0.3, y + 0.03, z], [x, y + 0.03, z - 0.3], glowc(hex, 2.4), [0, -1, 0]);
-    if (Q.shafts) { M.shaftL.cone([x, y + 0.02, z], 0.32, [x, 0.02, z], 1.35, 10, mul(rgb(hex), 0.05), [0, 0, 0]); M.shaftL.cone([x, y + 0.02, z], 0.18, [x, 0.02, z], 0.75, 10, mul(rgb(hex), 0.05), [0, 0, 0]); }
+    if (Q.shafts) { M.shaftL.cone([x, y + 0.02, z], 0.32, [x, 0.02, z], 1.35, 10, mul(rgb(hex), 0.035), [0, 0, 0]); M.shaftL.cone([x, y + 0.02, z], 0.18, [x, 0.02, z], 0.75, 10, mul(rgb(hex), 0.035), [0, 0, 0]); }
   };
   for (const [id, ps] of PENDANT) {
     ps.forEach(([c, r], i) => pendant(c, r, id === 'bar' ? M.gBar : M.gPend, id === 'vip' ? [0.4, 0.07, 0.1] : SHADES[(i + (id === 'bar' ? 1 : 0)) % SHADES.length], id === 'vip' ? 0xffa070 : 0xffb870));
@@ -1911,7 +1911,7 @@ function buildVisuals(ctx) {
       gm.frustum(x, z, 0.03, 0.065, 2.5, 2.55, 10, glowc(0xffe2a8, 5.5), false);
       gm.frustum(x, z, 0.065, 0.065, 2.43, 2.5, 10, glowc(0xffe2a8, 5.5), false);
       gm.frustum(x, z, 0.065, 0.0, 2.37, 2.43, 10, glowc(0xffe2a8, 5.5), false);
-      if (Q.shafts) { M.shaftL.cone([x, 2.4, z], 0.12, [x, 0.02, z], 1.5, 10, mul(rgb(0xffd890), 0.035), [0, 0, 0]); M.shaftL.cone([x, 2.4, z], 0.07, [x, 0.02, z], 0.8, 10, mul(rgb(0xffd890), 0.035), [0, 0, 0]); }
+      if (Q.shafts) { M.shaftL.cone([x, 2.4, z], 0.12, [x, 0.02, z], 1.5, 10, mul(rgb(0xffd890), 0.022), [0, 0, 0]); M.shaftL.cone([x, 2.4, z], 0.07, [x, 0.02, z], 0.8, 10, mul(rgb(0xffd890), 0.022), [0, 0, 0]); }
     }
   }
   // stage rigs over the dancefloor
@@ -2083,7 +2083,11 @@ function buildVisuals(ctx) {
   M.metal.tube([BX, BY + 0.38, BZ], [BX, WALL_H, BZ], 0.012, C.steel, 4);
   const hazeM = new Mesher(14, null);
   if (Q.haze) {
-    for (const [x0, z0, x1, z1] of [[2, 48, 70, 76], [2, 28, 56, 46], [2, 18, 70, 26]]) hazeM.quad([x0, 0.55, z1], [x1, 0.55, z1], [x1, 0.55, z0], [x0, 0.55, z0], [1, 1, 1], [0, 1, 0]);
+    for (const [x0, z0, x1, z1] of [[2, 48, 70, 76], [2, 28, 56, 46], [2, 18, 70, 26]]) {
+      const fade = (a, lo, hi) => clamp(Math.min(a - lo, hi - a) / 5, 0, 1); // soft borders, so the sheet has no visible edge
+      const us = [0, 0.04, 0.12, 0.88, 0.96, 1];
+      hazeM.grid([x0, 0.55, z0], [x1, 0.55, z0], [x0, 0.55, z1], us, [0, 0.1, 0.5, 0.9, 1], (i, j, p) => { const k = fade(p[0], x0, x1) * fade(p[2], z0, z1); return [k, k, k]; }, [0, 1, 0]);
+    }
   }
 
   // ---- materials and meshes ----
@@ -2114,13 +2118,13 @@ function buildVisuals(ctx) {
   add(M.brick.mesh(textured('brick', 1.0)));
   add(M.paint.mesh(textured('paint', 1.0)));
   add(M.stone.mesh(textured('stone', 1.0)));
-  add(M.flag.mesh(textured('flag', 1.0, 1.4)));
+  add(M.flag.mesh(textured('flag', 1.0, 0.9)));
   add(M.floorboards.mesh(textured('floorboards', 1.0, 0.5)));
   add(M.carpet.mesh(textured('carpet', 0.8)));
-  add(M.concrete.mesh(textured('concrete', 0.9, 1.2)));
+  add(M.concrete.mesh(textured('concrete', 0.9, 0.4)));
   const ceilMesh = add(M.plaster.mesh(textured('plaster', 0.7)));
   if (ceilMesh) ceilMesh.userData.ceil = true;
-  add(M.wood.mesh(textured('boards', 1.0)));
+  add(M.wood.mesh(textured('boards', 1.0, 0.5)));
   const polishMat = Q.std ? new THREE.MeshStandardMaterial({ map: tex.boards.map, normalMap: tex.boards.normal, roughness: 0.42, metalness: 0, vertexColors: true, envMapIntensity: 0.3 }) : new THREE.MeshLambertMaterial({ map: tex.boards.map, vertexColors: true });
   add(M.polish.mesh(polishMat));
   add(M.props.mesh(flat(0.7, 0)));
@@ -2215,7 +2219,7 @@ function buildVisuals(ctx) {
   let hazeTexture = null;
   if (Q.haze) {
     hazeTexture = hazeTex();
-    const hm = new THREE.MeshBasicMaterial({ map: hazeTexture, color: new THREE.Color(0xc89060).multiplyScalar(0.55), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+    const hm = new THREE.MeshBasicMaterial({ map: hazeTexture, color: new THREE.Color(0xc89060).multiplyScalar(0.5), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
     const hz = hazeM.mesh(hm);
     hz.renderOrder = 1;
     group.add(hz);
@@ -2296,7 +2300,7 @@ function buildVisuals(ctx) {
 
   // lights: four, one per big room that needs warmth. The integrator adds the camera light.
   const lights = {
-    dance: new THREE.PointLight(0xff4a22, 30, 26, 2),
+    dance: new THREE.PointLight(0xff4a22, 40, 26, 2),
     bar: new THREE.PointLight(0xffa860, 26, 22, 2),
     vip: new THREE.PointLight(0xff9a70, 20, 24, 2),
     back: new THREE.PointLight(0xdfe8d8, 24, 24, 2),
@@ -2306,7 +2310,7 @@ function buildVisuals(ctx) {
   lights.vip.position.set(17.5 * T, 2.4, 11 * T);
   lights.back.position.set(19 * T, 2.7, 4 * T);
   Object.values(lights).forEach((l) => group.add(l));
-  const base = { dance: 30, bar: 26, vip: 20, back: 24 };
+  const base = { dance: 40, bar: 26, vip: 20, back: 24 };
   const red = new THREE.Color(0xff3a1c);
   const amber = new THREE.Color(0xff9a30);
 

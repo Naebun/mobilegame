@@ -279,7 +279,7 @@ function bake(parts, { base = [0, 0, 0], originY = base[1], seed = 0, tint = 0 }
       const n1 = vnoise(_vv.x * 5.3 + seed * 13.1, wy * 5.3, _vv.z * 5.3);
       const n2 = vnoise(_vv.x * 23 + seed * 7.7, wy * 23, _vv.z * 23);
       const st = vnoise(_vv.x * 9, wy * 1.7 + seed, _vv.z * 9);
-      _c.copy(c0).multiplyScalar(0.9 + 0.2 * n2);
+      _c.copy(c0).multiplyScalar(0.84 + 0.3 * n2);
       const yy = clamp(wy / 1.3, 0, 1);
       _c.multiplyScalar(0.72 + 0.28 * smooth(yy));
       _c.lerp(GRIME, (1 - yy) * 0.16);
@@ -293,7 +293,7 @@ function bake(parts, { base = [0, 0, 0], originY = base[1], seed = 0, tint = 0 }
         metal = lerp(metal, 0.85, w);
       }
       if (o.rust > 0) {
-        const t = sstep(1 - o.rust * 0.6, 1 - o.rust * 0.6 + 0.16, n1 * 0.65 + st * 0.45 + (1 - yy) * 0.14);
+        const t = sstep(1 - o.rust * 0.85, 1 - o.rust * 0.85 + 0.18, n1 * 0.65 + st * 0.45 + (1 - yy) * 0.14);
         _c2.copy(RUST_A).lerp(RUST_B, n2);
         _c.lerp(_c2, t);
         rough = lerp(rough, 0.92, t);
@@ -364,21 +364,21 @@ const SPEC = {
   fizzbang: {
     height: 2.1, radius: 0.55, headY: 1.62, hip: 0.45, neck: 1.62, bodyR: 0.5,
     legX: 0.26, shoulderX: 0.64, shoulderY: 1.38, wrist: -0.5,
-    eye: 0xff5a22, eyeK: 4.5, lamp: [0.15, 1.355, -0.512, 0xffa030],
+    eye: 0xff5a22, eyeK: 2.6, lamp: [0.15, 1.355, -0.512, 0xffa030],
     walkRate: 6.5, bob: 0.05, stride: 0.75, eyeX: 0.17, eyeY: 1.84, eyeZ: -0.305, eyeTilt: 0.2,
     cannon: false, bothArms: false, hoseAt: [0, 1.52, 0.3],
   },
   bampot: {
     height: 2.0, radius: 0.5, headY: 1.5, hip: 0.42, neck: 1.5, bodyR: 0.47,
     legX: 0.22, shoulderX: 0.54, shoulderY: 1.05, wrist: 0,
-    eye: 0x35e6ff, eyeK: 4, lamp: [0.26, 0.75, -0.485, 0xffa030],
+    eye: 0x35e6ff, eyeK: 2.2, lamp: [0.26, 0.75, -0.485, 0xffa030],
     walkRate: 7.5, bob: 0.04, stride: 0.7, eyeX: 0.11, eyeY: 1.68, eyeZ: -0.235, eyeTilt: 0,
     cannon: true, bothArms: false, hoseAt: [0, 1.15, 0.3],
   },
   bouncer: {
     height: 3.3, radius: 0.95, headY: 2.62, hip: 0.8, neck: 2.62, bodyR: 0.82,
     legX: 0.42, shoulderX: 1.2, shoulderY: 2.35, wrist: -0.95,
-    eye: 0xff2a2a, eyeK: 5, lamp: null,
+    eye: 0xff2a2a, eyeK: 2.8, lamp: null,
     walkRate: 4.6, bob: 0.07, stride: 0.55, eyeX: 0.27, eyeY: 2.94, eyeZ: -0.44, eyeTilt: 0.18,
     cannon: false, bothArms: false, bothArms2: true, hoseAt: null,
   },
@@ -679,7 +679,7 @@ export function makeRobot(kind) {
     else e.rotation.z = -side * spec.eyeTilt;
     return e;
   });
-  const lampMat = new THREE.MeshBasicMaterial({ color: hdr(spec.lamp ? spec.lamp[3] : COLOURS.cyan, 4), fog: false });
+  const lampMat = new THREE.MeshBasicMaterial({ color: hdr(spec.lamp ? spec.lamp[3] : COLOURS.cyan, 2.6), fog: false });
   let lamp = null;
   if (spec.lamp) lamp = mk(geo.lamp, lampMat, upper, spec.lamp[0], spec.lamp[1] - spec.hip, spec.lamp[2]);
   if (kind === 'bouncer') lamp = mk(geo.lamp, lampMat, headG, 0.66, 2.96 - spec.neck, -0.02);
