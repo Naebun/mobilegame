@@ -12,6 +12,7 @@ export const WEAPONS = {
   shotgun: {
     id: 'shotgun', name: 'SUBWOOFER SHOTGUN', kind: 'hitscan', clip: 6, interval: 0.85, reload: 2.0,
     damage: 9, pellets: 8, spread: 0.085, knock: 7, range: 22, kick: 0.06, noise: 20,
+    shieldBreak: 3.5, // inside this range the blast shoves a shield aside, so it only half stops the pellets
   },
   smg: {
     id: 'smg', name: 'TWEETER SMG', kind: 'hitscan', clip: 30, interval: 0.075, reload: 1.6,
@@ -21,8 +22,14 @@ export const WEAPONS = {
     id: 'launcher', name: 'REVERB LAUNCHER', kind: 'projectile', clip: 3, interval: 1.1, reload: 2.4,
     damage: 60, splashRadius: 3.6, splashDamage: 70, speed: 20, knock: 9, kick: 0.07, noise: 24,
   },
+  // Level 2. A record flung flat and fast. It bounces off walls (`bounces` times, then it drops) and stops in the first
+  // robot it hits, so a bounce is how to reach the unprotected back of a shielded robot.
+  vinyl: {
+    id: 'vinyl', name: 'VINYL DISC', kind: 'projectile', bounces: 3, clip: 8, interval: 0.42, reload: 1.7,
+    damage: 36, speed: 26, life: 3, knock: 2.5, kick: 0.03, noise: 14,
+  },
 };
-export const WEAPON_ORDER = ['pistol', 'shotgun', 'smg', 'launcher'];
+export const WEAPON_ORDER = ['pistol', 'shotgun', 'smg', 'launcher', 'vinyl'];
 
 // Dr Fizzbang robots only ever fight in melee. Bampot and Nephew robots can shoot. The Bouncer is a big Dr Fizzbang variant.
 export const ENEMY_DEFS = {
@@ -40,29 +47,85 @@ export const ENEMY_DEFS = {
   },
 };
 
+// Level 2. The shielded one holds a vending-machine door: hits from inside `arc` (radians either side of where it faces)
+// do `mult` of their damage, or `closeMult` for a shotgun blast inside the weapon's `shieldBreak` range. Explosions and
+// anything from the sides or behind do full damage. `turn` is how fast it can swing round (rad/s; the others use 7), so
+// a player who keeps moving can get behind it. The Tour Guide is the boss: a Bampot-camp robot, so it shoots, but it
+// also swings its lantern pole at anyone who gets close. At half health it enrages: bigger volleys, faster.
+ENEMY_DEFS.shielded = {
+  name: 'SHIELDED FIZZBANG BOT', hp: 85, speed: 2.7, ranged: false, reach: 1.9, windup: 0.7, swing: 0.45, cooldown: 1.3,
+  damage: 16, score: 200, wakeRange: 16, turn: 1.9, shield: { arc: 1.1, mult: 0.12, closeMult: 0.5 },
+};
+ENEMY_DEFS.tourguide = {
+  name: 'THE TOUR GUIDE', boss: true, hp: 520, speed: 2.9, ranged: true, damage: 12, score: 1200, wakeRange: 24,
+  shotInterval: [1.6, 2.3], aim: 0.5, shoot: 0.35, projSpeed: 12, keepMin: 6, keepMax: 12, range: 28,
+  volley: 3, volleySpread: 0.2, quote: 'Please keep up. And do not touch the exhibits.',
+  slam: { reach: 2.9, windup: 0.7, swing: 0.45, cooldown: 2.4, damage: 24 },
+  enrage: { at: 0.5, volley: 5, volleySpread: 0.17, shotInterval: [1.0, 1.5], speed: 1.25, line: 'Right. That is it. No refunds.' },
+};
+
 export const PLAYER = {
   health: 100, speed: 4.4,
   // drag sensitivity in radians per pixel, and the continuous turn rate (rad/s) when the thumb rests at the box edge
   lookX: 0.009, lookY: 0.0075, edgeTurn: 2.4,
 };
 
-export const LEVEL = {
-  number: 1,
-  name: 'THE COWGATE',
-  sub: 'Basement club. Sticky floor. Faulty robots.',
-  line: 'The bar was restocked this morning. Nobody checked with what.',
-  clock: '02:00',
-};
-
-// Shown as a banner when Freddie first steps into an area (keyed by area id); falls back to the area objective.
-export const AREA_HINTS = {
-  stairwell: 'Walk over weapons to pick them up.',
-  cloakroom: 'Dr Fizzbang bots: all fists, no manners.',
-  dancefloor: 'Use the speaker stacks for cover.',
-  bar: 'Bampot and Nephew bots throw bottles. Keep moving.',
-  vip: 'Long corridor. Short temper.',
-  backstage: 'Not in those trainers.',
-};
+// One entry per level. `hints` is the banner under an area's name when Freddie first steps into it (keyed by area id),
+// `done*` is the level-complete text, `voicemail` plays before the level starts (Cheryl, his agent), `titleArea` is the
+// area the menu backdrop drifts through.
+export const LEVELS = [
+  {
+    number: 1,
+    name: 'THE COWGATE',
+    sub: 'Basement club. Sticky floor. Faulty robots.',
+    line: 'The bar was restocked this morning. Nobody checked with what.',
+    clock: '02:00',
+    titleArea: 'dancefloor',
+    hints: {
+      stairwell: 'Walk over weapons to pick them up.',
+      cloakroom: 'Dr Fizzbang bots: all fists, no manners.',
+      dancefloor: 'Use the speaker stacks for cover.',
+      bar: 'Bampot and Nephew bots throw bottles. Keep moving.',
+      vip: 'Long corridor. Short temper.',
+      backstage: 'Not in those trainers.',
+    },
+    doneTitle: 'CLEARED.',
+    doneLine: 'The Cowgate is quiet. Mostly.',
+    doneSub: 'Freddie gets paid in exposure.',
+    voicemail: null,
+  },
+  {
+    number: 2,
+    name: 'THE VAULTS',
+    sub: 'Damp stone. No signal. Tours cancelled.',
+    line: 'Your torch works. Your luck, less so.',
+    clock: '03:10',
+    titleArea: 'plague',
+    hints: {
+      steps: 'Pistol only. The torch is not optional.',
+      longvault: 'Dark between the torches. Stay out of it.',
+      casks: 'Shielded bots: go round the back, or bring something loud.',
+      close: 'Tight corners. Check them before you turn them.',
+      plague: 'Vinyl Disc bounces. Use the walls.',
+      tour: 'The last tour of the night.',
+    },
+    doneTitle: 'TOUR OVER.',
+    doneLine: 'The Vaults are quiet. Nobody has asked for a refund.',
+    doneSub: 'Somewhere above, a bag is on its way up a hill.',
+    voicemail: {
+      from: 'CHERYL (AGENT)',
+      lines: [
+        'Freddie, good news. The venue is paying in cash.',
+        'Bad news, the cash is also a robot.',
+        'Your bag went down into the Vaults under South Bridge. I have booked you on the 3am tour. Group rate.',
+        'Do not shake anything.',
+      ],
+    },
+  },
+];
+export const LEVEL = LEVELS[0]; // older callers
+// Kept for older callers: level 1's area hints.
+export const AREA_HINTS = LEVELS[0].hints;
 
 export const DEATH_LINES = [
   'Reviewed: one star. "Robotic, and not in a good way."',

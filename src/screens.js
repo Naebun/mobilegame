@@ -66,8 +66,16 @@ export function buttons(mode, view, state) {
     add('retry', 'RETRY LEVEL', view.h * 0.6);
     add('menu', 'MAIN MENU', view.h * 0.6 + 64, false, 44);
   } else if (mode === 'complete' && t > 1) {
-    add('again', 'PLAY AGAIN', view.h * 0.7);
-    add('menu', 'MAIN MENU', view.h * 0.7 + 64, false, 44);
+    if (st.hasNext) {
+      add('next', 'NEXT LEVEL', view.h * 0.7);
+      add('again', 'PLAY AGAIN', view.h * 0.7 + 64, false, 44);
+      add('menu', 'MAIN MENU', view.h * 0.7 + 116, false, 40);
+    } else {
+      add('again', 'PLAY AGAIN', view.h * 0.7);
+      add('menu', 'MAIN MENU', view.h * 0.7 + 64, false, 44);
+    }
+  } else if (mode === 'voicemail' && t > 0.8) {
+    add('continue', 'CONTINUE', view.h - sb - 96);
   }
   return list;
 }
@@ -462,6 +470,39 @@ export function drawIntro(ctx, view, state) {
   ctx.globalAlpha = 1;
 }
 
+// ---- voicemail ----
+
+// A voicemail from Cheryl, shown between levels: dark card, a caller strip, her lines one after another.
+export function drawVoicemail(ctx, view, state) {
+  const st = state || {};
+  const t = num(st.t);
+  const mail = st.mail || {};
+  const lines = Array.isArray(mail.lines) ? mail.lines : [];
+  const cx = view.w / 2;
+  const top = num(safe(view).top);
+  dim(ctx, view, 0.86);
+  const a = clamp(t / 0.5, 0, 1);
+  ctx.globalAlpha = a;
+  const y0 = Math.max(view.h * 0.16, top + 60);
+  outlined(ctx, 'NEW VOICEMAIL', cx, y0, 13, CYAN, 'center', 700);
+  const pulse = 0.5 + 0.5 * Math.sin(t * 5);
+  circle(ctx, cx - 78, y0 + 34, 5 + pulse * 1.5);
+  ctx.fillStyle = '#ff5a7a';
+  ctx.fill();
+  outlined(ctx, str(mail.from).toUpperCase() || 'UNKNOWN CALLER', cx + 8, y0 + 34, 17, '#ffffff', 'center', 800);
+  outlined(ctx, `0:${pad2(Math.min(59, 12 + lines.length * 4))}`, cx, y0 + 60, 12, '#9fb3c8', 'center', 600);
+  let y = y0 + 104;
+  const w = view.w - 56;
+  lines.forEach((ln, i) => {
+    const la = clamp((t - 0.7 - i * 1.1) / 0.5, 0, 1);
+    if (la <= 0) return;
+    ctx.globalAlpha = a * la;
+    y += paragraph(ctx, `"${str(ln)}"`, cx, y + (1 - la) * 6, w, 16, i % 2 ? '#e5e0f5' : '#ffffff', 'center', 500, 22) + 14;
+  });
+  ctx.globalAlpha = 1;
+  drawButtons(ctx, buttons('voicemail', view, st), t, 0.8);
+}
+
 // ---- dead ----
 
 export function drawDead(ctx, view, state) {
@@ -522,11 +563,11 @@ export function drawComplete(ctx, view, state) {
   const a = clamp(t / 0.5, 0, 1);
   ctx.globalAlpha = a;
   const y0 = Math.max(view.h * 0.2, top + 70);
-  const f = fit(ctx, 'CLEARED.', view.w - 40, 54, 800, 28);
+  const f = fit(ctx, str(st.title) || 'CLEARED.', view.w - 40, 54, 800, 28);
   heavy(ctx, f.str, cx, y0 - (1 - a) * 12, f.size, AMBER);
   let y = y0 + 44;
-  y += paragraph(ctx, 'The Cowgate is quiet. Mostly.', cx, y, view.w - 64, 18, '#ffffff', 'center', 600);
-  y += paragraph(ctx, 'Freddie gets paid in exposure.', cx, y + 4, view.w - 64, 15, '#e5e0f5', 'center', 500);
+  y += paragraph(ctx, str(st.line) || 'The Cowgate is quiet. Mostly.', cx, y, view.w - 64, 18, '#ffffff', 'center', 600);
+  y += paragraph(ctx, str(st.sub) || 'Freddie gets paid in exposure.', cx, y + 4, view.w - 64, 15, '#e5e0f5', 'center', 500);
 
   // stats row
   const kills = Math.floor(num(st.kills));

@@ -12,7 +12,7 @@ const AMBER = '#fbbf24';
 const RED = '#ff2a2a';
 const FONT = 'system-ui, -apple-system, sans-serif';
 const ZERO_SAFE = { top: 0, bottom: 0 };
-const WEAPON_COLOURS = { pistol: CYAN, shotgun: AMBER, smg: '#a78bfa', launcher: MAGENTA };
+const WEAPON_COLOURS = { pistol: CYAN, shotgun: AMBER, smg: '#a78bfa', launcher: MAGENTA, vinyl: '#34d399' };
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const num = (v, d = 0) => (Number.isFinite(v) ? v : d);
@@ -194,6 +194,14 @@ export function weaponIcon(ctx, id, cx, cy, w, colour) {
       ctx.fill();
       poly(ctx, [5, -4.5, 11, -8, 11, 8, 5, 4.5]);
       ctx.fillRect(-4, 4, 3, 5);
+      break;
+    case 'vinyl': // a record with a spindle hole, and a notch for the flinger
+      ctx.beginPath();
+      ctx.arc(0, 0, 6.5, 0, TAU);
+      ctx.moveTo(2.6, 0);
+      ctx.arc(0, 0, 2.6, 0, TAU, true);
+      ctx.fill('evenodd');
+      ctx.fillRect(7, -1, 5, 2);
       break;
     default:
       rrect(ctx, -8, -5, 16, 10, 3);

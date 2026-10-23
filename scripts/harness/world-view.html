@@ -2,7 +2,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <body style="margin:0;background:#000;overflow:hidden"><canvas id="c" style="width:100vw;height:100vh;display:block"></canvas>
 <script type="module">
-// Look at the Cowgate: window.cam(x, z, yaw, pitch?, fov?, tile?) moves the camera; window.overview() frames the whole map.
+// Look at a level (?level=1|2, ?q=low|medium|high): window.cam(x, z, yaw, pitch?, fov?, tile?) moves the camera; window.overview() frames the whole map.
 // Coordinates are tile units when tile is true (default), else world units. window.open(ids) opens doors.
 import * as THREE from '../../vendor/three.module.min.js';
 import { buildWorld } from '../../src/world.js';
@@ -12,7 +12,8 @@ const r = new THREE.WebGLRenderer({ canvas: document.getElementById('c'), antial
 r.setPixelRatio(1);
 r.setSize(innerWidth, innerHeight, false);
 const quality = new URLSearchParams(location.search).get('q') || 'high';
-const world = buildWorld({ quality });
+const level = Number(new URLSearchParams(location.search).get('level')) || 1;
+const world = buildWorld({ quality, level });
 r.toneMapping = THREE.ACESFilmicToneMapping;
 r.toneMappingExposure = world.look.exposure;
 const scene = new THREE.Scene();
@@ -22,7 +23,8 @@ scene.environment = makeEnvironment(r);
 scene.add(world.group);
 scene.add(new THREE.HemisphereLight(world.ambient.sky, world.ambient.ground, world.ambient.intensity));
 const cam = new THREE.PerspectiveCamera(90, innerWidth / innerHeight, 0.05, 300);
-const torch = new THREE.PointLight(0xffd8a8, 9, 14, 2); // stand-in for the integrator's camera light
+const tc = world.torch || { colour: 0xffd8a8, intensity: 1.2, range: 15, decay: 1.6 };
+const torch = new THREE.PointLight(tc.colour, tc.intensity, tc.range, tc.decay); // the same camera light the game uses
 cam.add(torch);
 scene.add(cam);
 cam.rotation.order = 'YXZ';

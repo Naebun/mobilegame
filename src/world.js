@@ -401,6 +401,7 @@ export function buildWorld(opts = {}) {
     pickups,
     areaAt,
     isSolidAt,
+    blocksShotAt: (x, z) => blocksShot(Math.floor(x / T), Math.floor(z / T)),
     moveCircle,
     raycast,
     los,

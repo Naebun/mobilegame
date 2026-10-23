@@ -169,10 +169,32 @@ export function shoot(kind = 'pistol') {
   } else if (kind === 'launcher') {
     osc('sawtooth', 200, t, 0.35, 0.4, sfxBus, { to: 55 });
     noise(t, 0.3, 0.25, sfxBus, { type: 'bandpass', freq: 500, to: 2000 });
+  } else if (kind === 'vinyl') {
+    // a record flung off the deck: a scratch, then a thin whirr
+    osc('sawtooth', 900, t, 0.12, 0.2, sfxBus, { to: 240 });
+    osc('triangle', 330, t + 0.03, 0.2, 0.25, sfxBus, { to: 620 });
+    noise(t, 0.12, 0.2, sfxBus, { type: 'bandpass', freq: 2500, to: 900 });
   } else {
     osc('sine', 260 + Math.random() * 30, t, 0.14, 0.45, sfxBus, { to: 70 });
     noise(t, 0.06, 0.2, sfxBus, { freq: 3000 });
   }
+}
+
+// A shot landing on a robot's shield: a short dull clang, no damage worth the name.
+export function clang() {
+  if (!running()) return;
+  const t = ac.currentTime;
+  osc('square', 820, t, 0.09, 0.14, sfxBus, { to: 700 });
+  osc('square', 1370, t, 0.06, 0.1, sfxBus, { to: 1250 });
+  noise(t, 0.04, 0.12, sfxBus, { freq: 3200 });
+}
+
+// A vinyl disc glancing off a wall: a bright ping that bends down.
+export function ricochet() {
+  if (!running()) return;
+  const t = ac.currentTime;
+  osc('sine', 2100 + Math.random() * 300, t, 0.25, 0.14, sfxBus, { to: 1100 });
+  osc('triangle', 1250, t, 0.12, 0.08, sfxBus, { to: 700 });
 }
 
 export function reload(done = false) {
