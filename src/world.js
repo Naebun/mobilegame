@@ -64,6 +64,8 @@ const tileCentre = (c, r) => [(c + 0.5) * T, (r + 0.5) * T];
 
 // opts.quality: 'high' (default), 'medium' or 'low'. Texture size, normal and roughness maps, subdivision and effects scale with it.
 // opts.level: 1 (the Cowgate, default) or 2 (the Vaults).
+// opts.baked: optional baked texture sets ({ name: { map, normal, rough } }, see src/textures.js) used instead of the generated
+// textures for those surfaces on the medium and high tiers. Nothing here loads files: the caller hands over finished textures.
 export function buildWorld(opts = {}) {
   const quality = opts && QUALITY[opts.quality] ? opts.quality : 'high';
   const lv = (opts && LEVEL_DEFS[opts.level]) || COWGATE;
@@ -371,7 +373,7 @@ export function buildWorld(opts = {}) {
   }
 
   // ---- visuals ----
-  const visuals = buildVisuals({ lv, kind, sub, at, areas, areaOfTile, doors, doorAtTile, doorState, exit, start, raycast, quality });
+  const visuals = buildVisuals({ lv, kind, sub, at, areas, areaOfTile, doors, doorAtTile, doorState, exit, start, raycast, quality, baked: opts && opts.baked });
 
   function update(dt, time) {
     const t = time === undefined ? (visuals.clock += dt) : time;
@@ -413,6 +415,9 @@ export function buildWorld(opts = {}) {
     update,
     // extras for tests and tools (not part of the contract)
     textures: visuals.textures,
+    retexture: visuals.retexture, // swap baked textures in once they have loaded; returns the surface names swapped
+    disposeTextures: visuals.disposeTextures, // free the GPU copies of this world's own (generated) textures
+    bakedNames: visuals.bakedNames, // surfaces that currently use baked textures
     propsPlaced: visuals.propsPlaced, // Blender props placed, by name
     size: { cols: COLS, rows: ROWS },
     tileSolid: (c, r) => blocksMove(c, r),
@@ -810,10 +815,12 @@ function dataTex(data, w, h, format) {
 }
 
 // quality: { S, nrm, rgh }. Returns { name: { map, normal, rough } }, the last two null when the tier does without.
-function buildTextures(Q) {
+// ext: finished textures for some surfaces (baked ones); those are used as given and not generated.
+function buildTextures(Q, ext) {
   const cache = {}; // noise fields and scratch arrays per size
   const out = {};
   for (const [name, [gen, strength, soft]] of Object.entries(TEX_SPEC)) {
+    if (ext && ext[name] && ext[name].map) { out[name] = ext[name]; continue; }
     const S = soft ? Math.min(Q.S, 256) : Q.S; // low-frequency surfaces do not need the big size
     const c = cache[S] || (cache[S] = { N: buildNoise(S), o: { alb: new Float32Array(S * S * 4), hgt: new Float32Array(S * S), rgh: new Float32Array(S * S) } });
     const N = c.N;
@@ -967,6 +974,7 @@ class Mesher {
     this.sw = [];
     this.idx = [];
     this.swap = false;
+    this.off = null; // [du, dv] in metres added to the texture coordinates: breaks up repeats on long brick walls
   }
 
   vert(p, n, c) {
@@ -976,6 +984,7 @@ class Mesher {
     else if (Math.abs(n[0]) > Math.abs(n[2])) { u = p[2]; v = p[1]; }
     else { u = p[0]; v = p[1]; }
     if (this.swap) { const t = u; u = v; v = t; }
+    if (this.off) { u += this.off[0]; v += this.off[1]; }
     const b = this.bake ? this.bake(p[0], p[1], p[2], n[0], n[1], n[2]) : ONE;
     this.pos.push(p[0], p[1], p[2]);
     this.nor.push(n[0], n[1], n[2]);
@@ -1287,7 +1296,7 @@ function buildVisuals(ctx) {
   const { cols: COLS, rows: ROWS } = lv;
   const { areaStyle: AREA_STYLE, wallStyle: WALL_STYLE, floorStyle: FLOOR_STYLE, floorTint: FLOOR_TINT } = lv;
   const Q = QUALITY[quality];
-  const tex = buildTextures(Q);
+  const tex = buildTextures(Q, Q.std ? ctx.baked : null); // the low tier never takes baked textures
   const aid = (an) => areas[an].id;
   const sprite = Q.spots || Q.steam ? softSprite(64, 1.6) : null;
   const COW = lv.id === 'cowgate';
@@ -1572,6 +1581,9 @@ function buildVisuals(ctx) {
     for (const [y0, y1, mesh, col] of segs) {
       const m = M[mesh];
       m.swap = mesh === 'wood'; // vertical boarding
+      // brick: start each wall face a whole number of double courses up the texture, so the bond stays continuous across
+      // faces but the same bricks do not line up in a column every 0.9 m
+      if (mesh === 'brick' || mesh === 'paint') m.off = [0, 0.15 * (f.h % 6)];
       const jc = (i, j) => { // smooth per-vertex tone drift, so one texture does not read as one tile
         const q = hash(f.h + i * 131, j * 17 + Math.round(y0 * 10), 5);
         const k = jit(q, 0.12);
@@ -1579,6 +1591,7 @@ function buildVisuals(ctx) {
       };
       m.grid(f.f.p(-hw, y0, 0), f.f.p(hw, y0, 0), f.f.p(-hw, y1, 0), Q.fine ? U_FINE : U_COARSE, rowsFor(y0, y1), jc, f.f.n);
       m.swap = false;
+      m.off = null;
     }
     obox(M.wood, f.f, -hw, hw, 0, 0.16, 0, 0.04, [0.3, 0.22, 0.16], { bottom: false });
     if (st.dado > 0) obox(M.wood, f.f, -hw, hw, st.dado - 0.02, st.dado + 0.06, 0, 0.07, [0.34, 0.24, 0.16], { bottom: false });
@@ -2202,10 +2215,16 @@ function buildVisuals(ctx) {
     mat.customProgramCacheKey = () => 'sway';
     return mat;
   };
+  const slots = {}; // surface name -> the materials that use its textures, so a baked set can be swapped in later
+  const slot = (name, m) => { (slots[name] || (slots[name] = [])).push(m); m.userData.ns = m.normalScale ? m.normalScale.x : 1; return m; };
   const textured = (name, ns = 1, env = 1) => {
     const t = tex[name];
     if (!Q.std) return new THREE.MeshLambertMaterial({ map: t.map, vertexColors: true });
-    return new THREE.MeshStandardMaterial({ map: t.map, normalMap: t.normal, normalScale: new THREE.Vector2(ns, ns), roughnessMap: t.rough, roughness: 1, metalness: 0, vertexColors: true, envMapIntensity: env });
+    const m = new THREE.MeshStandardMaterial({ map: t.map, normalMap: t.normal, normalScale: new THREE.Vector2(ns, ns), roughnessMap: t.rough, roughness: 1, metalness: 0, vertexColors: true, envMapIntensity: env });
+    slot(name, m);
+    if (t.ns) m.normalScale.setScalar(ns * t.ns);
+    if (t.tint) m.color.setScalar(t.tint);
+    return m;
   };
   const flat = (rough, metal, env = 1, swayed = false) => {
     const m = Q.std ? new THREE.MeshStandardMaterial({ vertexColors: true, roughness: rough, metalness: metal, envMapIntensity: env }) : new THREE.MeshLambertMaterial({ vertexColors: true });
@@ -2225,7 +2244,7 @@ function buildVisuals(ctx) {
   const ceilMesh = add(M.plaster.mesh(textured('plaster', 0.7)));
   if (ceilMesh) ceilMesh.userData.ceil = true;
   add(M.wood.mesh(textured('boards', 1.0, 0.5)));
-  const polishMat = Q.std ? new THREE.MeshStandardMaterial({ map: tex.boards.map, normalMap: tex.boards.normal, roughness: 0.42, metalness: 0, vertexColors: true, envMapIntensity: 0.3 }) : new THREE.MeshLambertMaterial({ map: tex.boards.map, vertexColors: true });
+  const polishMat = Q.std ? slot('boards', new THREE.MeshStandardMaterial({ map: tex.boards.map, normalMap: tex.boards.normal, roughness: 0.42, metalness: 0, vertexColors: true, envMapIntensity: 0.3 })) : new THREE.MeshLambertMaterial({ map: tex.boards.map, vertexColors: true });
   add(M.polish.mesh(polishMat));
   add(M.props.mesh(flat(0.7, 0)));
   add(M.metal.mesh(flat(0.38, 0.9, 1.0)));
@@ -2453,5 +2472,38 @@ function buildVisuals(ctx) {
 
   const textures = {};
   for (const [name, t] of Object.entries(tex)) textures[name] = t.map;
-  return { group, clock: 0, doorVisual, animate, textures, propsPlaced };
+  const bakedNames = Object.keys(tex).filter((n) => tex[n].map && tex[n].map.userData.baked);
+
+  // Swap baked textures in for the generated ones. Safe to call whenever the files have arrived: the old textures are
+  // disposed (their GPU copies freed) unless they are baked ones, which are shared between levels and kept.
+  const owned = (t) => t && !t.userData.baked;
+  function retexture(set) {
+    const done = [];
+    if (!Q.std || !set) return done; // the low tier is Lambert with no normal or roughness maps
+    for (const name of Object.keys(set)) {
+      const s = set[name];
+      const mats = slots[name];
+      const old = tex[name];
+      if (!s || !s.map || !mats || !old || old.map === s.map) continue;
+      for (const m of mats) {
+        m.map = s.map;
+        m.normalMap = s.normal || null;
+        m.roughnessMap = s.rough || null;
+        m.normalScale.setScalar(m.userData.ns * (s.ns || 1));
+        m.color.setScalar(s.tint || 1);
+        m.needsUpdate = true;
+      }
+      for (const t of [old.map, old.normal, old.rough]) if (owned(t)) t.dispose();
+      tex[name] = s;
+      textures[name] = s.map;
+      if (bakedNames.indexOf(name) < 0) bakedNames.push(name);
+      done.push(name);
+    }
+    return done;
+  }
+  function disposeTextures() {
+    for (const t of Object.values(tex)) for (const x of [t.map, t.normal, t.rough]) if (owned(x)) x.dispose();
+    for (const x of [sprite, hazeTexture]) if (x) x.dispose();
+  }
+  return { group, clock: 0, doorVisual, animate, textures, propsPlaced, retexture, disposeTextures, bakedNames };
 }

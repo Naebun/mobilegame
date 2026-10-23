@@ -7,6 +7,7 @@
 import * as THREE from '../../vendor/three.module.min.js';
 import { buildWorld } from '../../src/world.js';
 import { makeEnvironment } from '../../src/gfx-env.js';
+import { loadBaked } from '../../src/textures.js';
 const T = 2;
 const r = new THREE.WebGLRenderer({ canvas: document.getElementById('c'), antialias: true });
 r.setPixelRatio(1);
@@ -14,6 +15,7 @@ r.setSize(innerWidth, innerHeight, false);
 const quality = new URLSearchParams(location.search).get('q') || 'high';
 const level = Number(new URLSearchParams(location.search).get('level')) || 1;
 const world = buildWorld({ quality, level });
+if (quality !== 'low' && new URLSearchParams(location.search).get('baked') !== '0') world.retexture(await loadBaked()); // ?baked=0 keeps the generated textures
 r.toneMapping = THREE.ACESFilmicToneMapping;
 r.toneMappingExposure = world.look.exposure;
 const scene = new THREE.Scene();
