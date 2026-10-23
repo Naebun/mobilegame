@@ -9,7 +9,7 @@ Written so the chat can be cleared and work resumed from a cold start. Read this
 - **Never balance against debug mode.** Debug is 2x fire rate, 2x damage, 2x health. Debug runs do not write the best
   score.
 - **Nothing goes to `main` until the owner says so.** Squash-merge by PR when asked. (Last go-ahead: "Merge all", PR #4.)
-- **Blender makes the drink models; texture work has not started.** The owner said "don't start that" about textures. Wait to be told.
+- **Blender makes the models and the textures.** Textures were approved (option D then C in `docs/texture-options.md`): baked in Blender, shipped as WebP in `assets/textures/`, which is the only place image files may enter the repo. See the Textures section below.
 - Robots are melee ("Dr Fizzbang") or ranged ("Bampot and Nephew"). Invented names, never real brands.
 - Controls: two grey boxes, left moves, right aims and auto-fires, no aim assist. Unlimited ammo, limited clips.
 - Last Orders (the super drink) never triggers in the boss room, does not stop time, and switches to a third-person
@@ -103,13 +103,11 @@ the procedural `WEAPON_PARTS` in `models.js` stay as the fallback for a weapon m
 `loft` (a section swept along a path: grips, fingers, sleeves), `sweep`/`curve`, more surface types and a per-part
 smoothing angle; `drinks.py` output is unchanged (checked with `cmp`). Previews: `weapons.py --preview smg --view fp`.
 
-Still not decided: how Blender *textures* would reach the game. `world.js` and `models.js` are procedural only (no
-image files, run under plain Node). Baked textures would need either committed image files or more data embedded in
-modules, which changes that rule. Raise it with the owner before starting.
+Textures: decided and built, see the Textures section.
 
 ## Open questions for the owner
-1. When to start Blender texture work, and whether image files may enter the repo. (Models are done for the drinks;
-   say if the robots, weapons or Naebun should move to Blender too.)
+1. Whether the baked textures look right on a phone, and whether plaster, carpet and concrete should be baked too (they are
+   still generated). Say if the robots or Naebun should move to Blender too.
 2. Playtest feedback on difficulty and look.
 
 ## Landscape (branch `level-2`)
@@ -156,7 +154,7 @@ edit the output; each is reproducible (run twice and `cmp`). `models.js` decodes
 models; `world.js` places props with `placeProp` and falls back to procedural props (the low tier uses them, to stay inside
 its triangle cap). Details and the prop ranking: `docs/props.md`. Known: level 2 high is close to the 150k triangle limit
 (about 145k); the weapons' left forearms read as plain purple tubes in portrait; the Vaults are dark enough that old and new
-props are hard to tell apart; nothing has been seen on a phone. The textures question is open: `docs/texture-options.md`.
+props are hard to tell apart; nothing has been seen on a phone. Textures: see the Textures section and `docs/textures.md`.
 
 ## Prepared objects (built, not placed)
 At the owner's request the roadmap's enemies, weapons, upgrades and collectibles are built and tested ahead of their levels.
@@ -166,3 +164,22 @@ upgrades, ten collectible records and the SETLIST screen): `docs/arsenal.md`, `s
 `src/arsenal-meshes.js`), `src/arsenal.js`, `src/arsenal-play.js`, `scripts/harness/arsenal-check.mjs`. Every number is a first
 guess; nothing has been played by a person or heard. The sim bots cannot dodge a laser, run from a Shaken, hunt a Nurse or
 use the new weapons, so they need teaching before these go into a level. Level 3 and later are still not to be built.
+
+## Textures
+Brick, painted brick, stone, flags and boards (and the floor boards, which are the boards darker) are baked in Blender and
+shipped as WebP; carpet, concrete and plaster are still generated. Read `docs/textures.md` for the numbers and the reasoning.
+- **Source art:** `scripts/blender/textures.py` models each surface as real geometry over a seamless tile (bevelled uneven
+  bricks, recessed joints that vary in depth, worn flagstones at different heights, chips), bakes albedo, tangent normal,
+  roughness, occlusion and a mask with Cycles on the CPU at twice the final size, averages down, then adds grain, pits, stains
+  and wood grain in numpy from tileable noise. Output is byte-for-byte reproducible (two full runs compared with `cmp`).
+  About 6 minutes for everything on this container. Never edit the WebP files; change the script and rerun.
+- **Delivery:** `assets/textures/<name>-albedo|normal|rough.webp`, 0.6 MB in all. `src/textures.js` loads them (DOM allowed)
+  and builds `THREE.Texture`s, flagged `userData.baked`. `world.js` stays DOM-free: `buildWorld({ baked })` uses finished
+  textures for the surfaces it is given, and `world.retexture(sets)` swaps them into a built world, disposing the generated
+  textures it replaces (baked ones are shared between levels and never disposed). `game3d.js` starts loading at start-up on
+  medium and high, swaps in when nobody is playing (title, menus, death, level end), and passes the set to every level built
+  afterwards. The low tier, Node and any failed load keep the generated textures. `?baked=0` forces that for comparisons.
+- **Brick tile is 1.8 m by 0.9 m** (the generated one was 0.9 m square): `texture.repeat` carries the difference, and each brick
+  wall face starts a whole number of double courses up the tile (`Mesher.off`), so the same bricks do not stack in a column.
+- **Tests:** `scripts/harness/textures-check.mjs` (Node), the baked checks in `scripts/smoke.mjs`.
+- **Not known:** decode and upload time, GPU memory and frame rate on a phone. See `docs/textures.md`.

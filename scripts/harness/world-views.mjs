@@ -14,7 +14,7 @@ page.setDefaultTimeout(Number(process.env.TIMEOUT || 30000)); // a busy machine 
 const errs = [];
 page.on('pageerror', (e) => errs.push(e.message));
 page.on('console', (m) => m.type() === 'error' && !/favicon|404/.test(m.text()) && errs.push(m.text()));
-await page.goto(`http://localhost:${PORT}/scripts/harness/world-view.html?level=${level}&q=${process.env.Q || 'high'}`);
+await page.goto(`http://localhost:${PORT}/scripts/harness/world-view.html?level=${level}&q=${process.env.Q || 'high'}${process.env.EXTRA || ''}`);
 await page.waitForTimeout(3500);
 await page.evaluate(() => window.openDoors(['d1', 'd2', 'd3', 'd4', 'd5', 'd6']));
 for (const v of views) {

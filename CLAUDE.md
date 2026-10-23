@@ -24,10 +24,17 @@ Two levels so far. Read `README.md` for the layout and `docs/fps-design.md` for 
   they stay unplaced: no level map uses them until the owner says to put them in a level.
 - Match the surrounding code: 2-space indent, single quotes, semicolons, short comments that say why. British English.
 - `world.js` and `models.js` are procedural only: geometry, flat colours and generated `THREE.DataTexture`s. No image
-  files, no canvas textures, no DOM access, so they run under plain Node (used by the headless tests).
+  files, no canvas textures, no DOM access, so they run under plain Node (used by the headless tests). `world.js` is
+  handed finished baked textures (`buildWorld({ baked })`, `world.retexture(sets)`) but never loads a file.
+- **Textures are baked in Blender and shipped as WebP.** `scripts/blender/textures.py` models brick, painted brick, stone,
+  flags and boards as real geometry, bakes albedo, normal, roughness and occlusion with Cycles, and writes
+  `assets/textures/*.webp`. Those are the only image files the repo may hold (textures, nothing else: models stay data
+  modules). `src/textures.js` (DOM allowed) loads them in the background from the title screen and `game3d.js` swaps them in
+  on the medium and high tiers. The generated textures stay as the fallback: the low tier, every headless test and any
+  failed load use them. Change the script and rerun it, never edit the files. Details: `docs/textures.md`.
 - The five drink meshes are modelled in Blender (`scripts/blender/drinks.py`) and generated into `src/drink-meshes.js`,
   which `models.js` decodes. That file is data, not hand-written: change the script and rerun it, never edit the output.
-  Geometry and vertex colour only, still no image files. Texture work has not started.
+  Geometry and vertex colour only: drinks and the other models carry no image files.
 - The five weapons and Naebun's hands and forearms are modelled in Blender too (`scripts/blender/weapons.py` generates
   `src/weapon-meshes.js`; same rules: change the script, never the output). The procedural `WEAPON_PARTS` in `models.js` stay as
   the fallback.
@@ -63,7 +70,10 @@ Debug mode (home-screen toggle, `DEBUG_MULT` in `game3d.js`) gives Naebun 2x fir
 - `npm run sim` plays the level with bots in plain Node. It is a proxy for a person, not a replacement: use it to check
   the level is winnable and to compare changes, then ask for a human playtest.
 - Look at screenshots (`scripts/shot.mjs`, `scripts/harness/level-tour.mjs`) for anything visual. Do not judge the 3D
-  look from logs.
+  look from logs. The browser harnesses take `PORT` (so parallel runs do not clash) and `TIMEOUT`; `EXTRA='&baked=0'` (or
+  `?baked=0`) turns the baked textures off for a before and after.
+- `node scripts/harness/textures-check.mjs` checks the baked-texture hand-off in Node (files, swap, dispose, low tier, Node
+  start-up); the smoke test checks that the files really decode and swap in on medium and are never fetched on low.
 
 ## Current state
 See `ROADMAP.md`.

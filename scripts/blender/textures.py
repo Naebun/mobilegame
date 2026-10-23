@@ -232,7 +232,7 @@ SPECS = {
                 paint=dict(target=(209.0, 201.7, 189.2))),
   'flag': dict(W=2.0, H=2.0, res=(512, 512), blocks=flag_blocks, r=0.013, D=0.016, famp=0.0022, fcells=9, step=0.016, mstep=0.012, wob=0.5,
                mortar=(46, 44, 42), mamp=0.0025, mcells=40, cvar=0.12, chipcol=(150, 146, 138),
-               target=(104.1, 104.2, 99.8), half_rough=True, micro=0.7, grain=0.15, boost=2.0, lowboost=5.0, ao_pow=1.3, ao_mix=1.0, streak=0.0),
+               target=(104.1, 104.2, 99.8), wet=True, half_rough=True, micro=0.7, grain=0.15, boost=2.0, lowboost=5.0, ao_pow=1.3, ao_mix=1.0, streak=0.0),
   'stone': dict(W=1.2, H=1.2, res=(512, 512), blocks=stone_blocks, r=0.0075, D=0.012, famp=0.0016, fcells=8, step=0.011, mstep=0.008, wob=0.55,
                 mortar=(66, 62, 56), mamp=0.0016, mcells=40, cvar=0.12, chipcol=(172, 160, 140),
                 target=(133.4, 125.6, 113.0), half_rough=True, micro=0.75, grain=0.15, boost=2.0, lowboost=3.0, ao_pow=1.3, ao_mix=1.0, streak=0.12),
@@ -525,6 +525,12 @@ def post(spec, A, N, AO, R, M, res):
   if not wood:
     salt = sst(0.76, 0.92, f(max(2, int(W / 0.25)), 78, 3)) * face * 0.7
     alb = alb * (1 - 0.3 * salt)[..., None] + (0.22 * salt)[..., None] * np.array([0.8, 0.78, 0.72])[None, None, :]
+  crown = np.zeros_like(X)
+  wetm = np.zeros_like(X)
+  if spec.get('wet'):
+    crown = sst(0.45, 0.6, f(5, 131, 3)) * face * (1 - edge)
+    wetm = sst(0.62, 0.8, f(5, 132, 3)) * face
+    alb = alb * (1 - 0.3 * wetm)[..., None]  # wet stone is darker
   out = {}
 
   def calibrate(a, target):
@@ -549,6 +555,10 @@ def post(spec, A, N, AO, R, M, res):
   rgh = np.clip(R[..., 0] + (f(int(W / 0.02), 79, 2) - 0.5) * 0.1 + white * 0.1, 0.05, 1.0)
   # damp areas are a little glossier
   rgh = rgh - 0.18 * damp * face
+  # flags: boots polish the crowns, and damp patches are wet and glossy (the old generated floor had both, and the torch
+  # finds them in the Vaults)
+  rgh = rgh - 0.3 * crown
+  rgh = rgh * (1 - wetm) + 0.3 * wetm
   return srgb_enc(alb), nrm, np.clip(rgh, 0.04, 1.0), out
 
 
