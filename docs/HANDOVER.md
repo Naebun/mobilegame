@@ -103,3 +103,12 @@ modules, which changes that rule. Raise it with the owner before starting.
 1. When to start Blender texture work, and whether image files may enter the repo. (Models are done for the drinks;
    say if the robots, weapons or Freddie should move to Blender too.)
 2. Playtest feedback on difficulty and look.
+
+## Landscape (branch `level-2`)
+Added on the owner's request, replacing the earlier "portrait only" decision. `hud.layout(view)` has a landscape branch
+(boxes in the lower corners, SWAP and RELOAD beside them, side insets from the notch); `screens.js` puts words left and
+buttons in a right column (`frame()`, `landscape()`), with a four-column controls page; `baseFov()` in `game3d.js` narrows
+the vertical field of view as the screen widens (85 degrees in portrait, about 58 at 2.16:1) and `weaponX()` moves the
+viewmodel out to the right. Tested by `ui-check` (12 view sizes, side insets), the smoke test (rotate to 844 x 390 and
+back) and screenshots from `scripts/harness/screen-views.mjs`. Not tested: a real phone rotating, iOS reporting a stale
+size after rotation (the engine re-measures at 0, 120 and 450 ms to cover it), real thumb reach on the landscape boxes.

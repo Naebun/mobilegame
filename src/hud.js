@@ -25,6 +25,8 @@ let cache = null;
 let cacheW = -1;
 let cacheH = -1;
 let cacheB = -1;
+let cacheL = -1;
+let cacheR = -1;
 
 function inflate(r, d) {
   return { x: r.x - d, y: r.y - d, w: r.w + d * 2, h: r.h + d * 2 };
@@ -32,18 +34,39 @@ function inflate(r, d) {
 
 // Boxes sit in the bottom corners; the RELOAD and SWAP buttons hang under them. The result is cached because the
 // game asks for it every frame and the inputs almost never change.
+export const isLandscape = (view) => view.w > view.h * 1.05;
+export const sideSafe = (view) => ({ left: num(view.safe && view.safe.left), right: num(view.safe && view.safe.right) });
+
 export function layout(view) {
   const safeBottom = num(view.safe && view.safe.bottom);
-  if (cache && cacheW === view.w && cacheH === view.h && cacheB === safeBottom) return cache;
-  const size = clamp(Math.min(view.w * 0.4, view.h * 0.24), 120, 180);
-  const bottom = view.h - safeBottom - 62;
-  const top = bottom - size;
-  const moveBox = { x: 16, y: top, w: size, h: size };
-  const lookBox = { x: view.w - 16 - size, y: top, w: size, h: size };
-  const bw = size * 0.7;
-  const by = bottom + 10;
-  const swapBtn = { x: moveBox.x + (size - bw) / 2, y: by, w: bw, h: 38 };
-  const reloadBtn = { x: lookBox.x + (size - bw) / 2, y: by, w: bw, h: 38 };
+  const { left: sl, right: sr } = sideSafe(view);
+  if (cache && cacheW === view.w && cacheH === view.h && cacheB === safeBottom && cacheL === sl && cacheR === sr) return cache;
+  let moveBox;
+  let lookBox;
+  let swapBtn;
+  let reloadBtn;
+  if (isLandscape(view)) {
+    // Boxes in the bottom corners (clear of the notch), SWAP and RELOAD beside them on the inside, so the screen's
+    // height goes to the view and the wide middle is free for the aiming drag.
+    const size = clamp(view.h * 0.34, 104, 150);
+    const bottom = view.h - safeBottom - 16;
+    const top = bottom - size;
+    moveBox = { x: sl + 22, y: top, w: size, h: size };
+    lookBox = { x: view.w - sr - 22 - size, y: top, w: size, h: size };
+    const bw = Math.min(size * 0.75, 104);
+    swapBtn = { x: moveBox.x + size + 14, y: bottom - 38, w: bw, h: 38 };
+    reloadBtn = { x: lookBox.x - 14 - bw, y: bottom - 38, w: bw, h: 38 };
+  } else {
+    const size = clamp(Math.min(view.w * 0.4, view.h * 0.24), 120, 180);
+    const bottom = view.h - safeBottom - 62;
+    const top = bottom - size;
+    moveBox = { x: 16, y: top, w: size, h: size };
+    lookBox = { x: view.w - 16 - size, y: top, w: size, h: size };
+    const bw = size * 0.7;
+    const by = bottom + 10;
+    swapBtn = { x: moveBox.x + (size - bw) / 2, y: by, w: bw, h: 38 };
+    reloadBtn = { x: lookBox.x + (size - bw) / 2, y: by, w: bw, h: 38 };
+  }
   cache = {
     moveBox,
     lookBox,
@@ -57,6 +80,8 @@ export function layout(view) {
   cacheW = view.w;
   cacheH = view.h;
   cacheB = safeBottom;
+  cacheL = sl;
+  cacheR = sr;
   return cache;
 }
 
@@ -495,8 +520,9 @@ function drawHealth(ctx, view, h, top, t) {
   const f = hp / max;
   const low = f < 0.3;
   const y = top + 16;
-  const hx = 16 + 9;
-  const bx = 16 + 24;
+  const sl = sideSafe(view).left;
+  const hx = 16 + sl + 9;
+  const bx = 16 + sl + 24;
   const bw = clamp(view.w * 0.29, 88, 124);
   const pulse = low ? 0.5 + 0.5 * Math.sin(t * 10) : 0;
   heart(ctx, hx, y, 11.5);
@@ -558,7 +584,7 @@ function drawWeapons(ctx, view, ws, top) {
   const gap = 4;
   const cw = Math.min(34, (Math.max(60, view.w * 0.4) - gap * (n - 1)) / n);
   const ch = 26;
-  let x = view.w - 16 - n * cw - (n - 1) * gap;
+  let x = view.w - 16 - sideSafe(view).right - n * cw - (n - 1) * gap;
   const y = top + 3;
   for (let i = 0; i < n; i++) {
     const w = ws[i] || {};
@@ -578,8 +604,9 @@ function drawWeapons(ctx, view, ws, top) {
 }
 
 function drawBoss(ctx, view, boss, y) {
-  const x = 16;
-  const bw = view.w - 32;
+  const ss = sideSafe(view);
+  const x = 16 + ss.left;
+  const bw = view.w - 32 - ss.left - ss.right;
   const max = Math.max(1, num(boss.maxHp, 1));
   const f = clamp(num(boss.hp, 0) / max, 0, 1);
   rrect(ctx, x, y, bw, 16, 8);
@@ -725,8 +752,9 @@ function drawBanner(ctx, view, b) {
   if (k <= 0) return;
   const title = str(b.title);
   const sub = str(b.sub);
-  const cy = view.h * 0.3;
-  const ft = fit(ctx, title, view.w - 40, 42, 800, 18);
+  const land = isLandscape(view); // short screen: lower, so it clears the objective text at the top
+  const cy = view.h * (land ? 0.4 : 0.3);
+  const ft = fit(ctx, title, view.w - 40, land ? 34 : 42, 800, 18);
   let subLines = null;
   let subH = 0;
   if (sub) {
@@ -758,7 +786,7 @@ function fmtTime(sec) {
 
 function drawDebugBadge(ctx, view, y) {
   const w = 72;
-  const x = view.w - 16 - w;
+  const x = view.w - 16 - sideSafe(view).right - w;
   rrect(ctx, x, y - 8, w, 16, 8);
   ctx.fillStyle = 'rgba(251,191,36,0.2)';
   ctx.fill();
@@ -795,14 +823,14 @@ export function drawPlayHud(ctx, view, h) {
 
   // top left: health, then score and time
   drawHealth(ctx, view, h, top, t);
-  outlined(ctx, `SCORE ${Math.floor(clamp(num(h.score), 0, 1e12))}   ${fmtTime(h.timeSec)}`, 18, top + 40, 11, 'rgba(255,255,255,0.8)', 'left', 700);
+  outlined(ctx, `SCORE ${Math.floor(clamp(num(h.score), 0, 1e12))}   ${fmtTime(h.timeSec)}`, 18 + sideSafe(view).left, top + 40, 11, 'rgba(255,255,255,0.8)', 'left', 700);
 
   // top right: weapon row, then the debug badge
   if (furniture) drawWeapons(ctx, view, Array.isArray(h.weapons) ? h.weapons : EMPTY, top);
   if (h.debugMode) drawDebugBadge(ctx, view, top + 40);
 
   // top centre: area, objective, status
-  const maxW = view.w - 32;
+  const maxW = view.w - 32 - 2 * Math.max(sideSafe(view).left, sideSafe(view).right);
   let y = top + 60;
   const area = str(h.areaName);
   if (area) {

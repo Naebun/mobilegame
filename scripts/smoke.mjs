@@ -313,6 +313,65 @@ try {
   await pressButton('debug');
   check(await until('s.debugMode === false'), 'the debug button turns it off again');
 
+  // landscape: rotate the phone. The boxes move to the lower corners, SWAP and RELOAD sit beside them, the view narrows
+  // its field of view, and the same controls still work.
+  await page.setViewportSize({ width: 844, height: 390 });
+  await page.waitForFunction(() => window.innerWidth === 844, null, { timeout: 10000 });
+  await page.waitForTimeout(800);
+  const LL = await hook('layout');
+  check(LL.moveBox.y > 195 && LL.lookBox.y > 195 && LL.moveBox.x < 100 && LL.lookBox.x + LL.lookBox.w > 744, `landscape: the boxes sit in the lower corners (${JSON.stringify(LL.moveBox)})`);
+  check(LL.swapBtn.x > LL.moveBox.x + LL.moveBox.w && LL.reloadBtn.x + LL.reloadBtn.w < LL.lookBox.x, 'landscape: SWAP and RELOAD sit between the boxes');
+  const fovL = await hook('stats');
+  check(fovL.aspect > 2 && fovL.fov < 70, `landscape: the vertical field of view narrows (${fovL.fov.toFixed(1)} degrees at aspect ${fovL.aspect.toFixed(2)})`);
+  await shot('land-title');
+  await pressButton('new');
+  check(await until("s.mode === 'controls'"), 'landscape: NEW GAME opens the controls screen');
+  await page.waitForTimeout(800);
+  await shot('land-controls');
+  await pressButton('start');
+  await until("s.mode === 'intro'");
+  await page.waitForTimeout(800);
+  await shot('land-intro');
+  await tap(422, 200);
+  check(await until("s.mode === 'play'"), 'landscape: tap skips the intro');
+  const l0 = await state();
+  const [lmx, lmy] = center(LL.moveBox);
+  const [llx, lly] = center(LL.lookBox);
+  await ptr('pointerdown', 1, lmx, lmy);
+  await ptr('pointermove', 1, lmx, lmy - LL.moveBox.h * 0.4);
+  check(await until('Math.hypot(s.player.x - a.x, s.player.z - a.z) > 1.5', { x: l0.x, z: l0.z }), 'landscape: the move box walks Freddie');
+  await ptr('pointerup', 1, lmx, lmy - LL.moveBox.h * 0.4);
+  const ly0 = (await state()).yaw;
+  const lshots = (await state()).shots;
+  await ptr('pointerdown', 2, llx, lly);
+  for (let i = 1; i <= 10; i++) await ptr('pointermove', 2, llx + i * 4, lly);
+  check(await until('s.shots > a', lshots), 'landscape: a thumb in the look box fires on its own');
+  check(Math.abs((await state()).yaw - ly0) > 0.15, 'landscape: dragging in the look box turns the view');
+  await ptr('pointerup', 2, llx, lly);
+  const sw0 = (await state()).shots;
+  await ptr('pointerdown', 3, 422, 120);
+  for (let i = 1; i <= 10; i++) await ptr('pointermove', 3, 422 + i * 5, 120);
+  await page.waitForTimeout(600);
+  check((await state()).shots === sw0, 'landscape: a free-aim drag in the middle of the screen does not fire');
+  await ptr('pointerup', 3, 472, 120);
+  await tap(...center(LL.swapBtn));
+  await hook('giveWeapons');
+  await tap(...center(LL.swapBtn));
+  check(await until("s.player.weapon !== 'pistol'"), 'landscape: SWAP works from beside the box');
+  await shot('land-play');
+  await hook('hurt', 1000);
+  check(await until("s.mode === 'dead'"), 'landscape: dies at zero health');
+  await page.waitForTimeout(2600);
+  await shot('land-dead');
+  check((await hook('buttons')).map((b) => b.id).join() === 'retry,menu', 'landscape: RETRY and MAIN MENU are offered');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForFunction(() => window.innerWidth === 390, null, { timeout: 10000 });
+  await page.waitForTimeout(800);
+  const LP = await hook('layout');
+  const fovP = await hook('stats');
+  check(LP.moveBox.y > 500 && fovP.fov === 85, `rotating back restores the portrait layout and 85 degrees (${fovP.fov})`);
+  await shot('port-after-rotate');
+
   check(errors.length === 0, `no console errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
 } finally {
   await browser.close();

@@ -36,7 +36,7 @@ braziers light pools, and Freddie's own torch does the rest. Design notes and nu
 
 Two grey boxes on screen. **Left box:** drag to move. **Right box:** drag to aim; while a thumb is down in it,
 the weapon fires on its own. **Anywhere else on the screen:** drag to aim only, with no firing (a second
-aiming thumb, or a lighter way to look round). **RELOAD** sits under the right box and **SWAP** (next weapon) under the left box.
+aiming thumb, or a lighter way to look round). **RELOAD** sits under the right box and **SWAP** (next weapon) under the left box. In landscape the boxes sit in the lower corners, clear of the notch, with SWAP and RELOAD beside them and the whole middle of the screen free for the aiming drag.
 On a desktop: WASD to move, arrow keys to look, space to fire, R to reload, Q to swap.
 
 ## Flow

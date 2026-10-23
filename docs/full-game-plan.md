@@ -10,7 +10,7 @@ machines that have gone wrong, and the whole thing takes about two hours to fini
 
 Fixed decisions:
 
-- Portrait only. Plays in Safari on any iOS device from the past four years (iPhone 14 and newer, and iPads of the
+- Portrait and landscape (the plan said portrait only; landscape was added on request, see `ROADMAP.md`). Plays in Safari on any iOS device from the past four years (iPhone 14 and newer, and iPads of the
   same age), so Safari 16 or later, WebGL 2, and an A15-class GPU as the floor.
 - Linear levels. Every robot is placed in advance, asleep, and wakes when it notices Freddie. Dead robots stay dead.
   Clear an area and its door opens. Nothing comes out of walls.
@@ -201,5 +201,5 @@ or the upgrades above will lock out the older devices.
 3. Three difficulty levels, or one fixed difficulty?
 4. Phone-only release as a web app, or is a store release ever in scope? That changes what iOS work is needed.
 
-Decided: story is a light comic frame; 8 to 10 levels (8 core, 2 stretch); about two hours; portrait only; iOS devices
+Decided: story is a light comic frame; 8 to 10 levels (8 core, 2 stretch); about two hours; portrait and landscape; iOS devices
 from the past four years.

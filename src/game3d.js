@@ -190,11 +190,28 @@ function applyAtmosphere() {
   R.look = { ...DEFAULT_LOOK, ...wl, grade: { ...DEFAULT_LOOK.grade, ...(wl.grade || {}) } };
 }
 
+// Vertical field of view. Portrait keeps 85; in landscape the same number would give a fish-eye, so it narrows to hold the
+// horizontal view near 100 degrees. An iPad's squarer screen lands in between.
+export function baseFov(aspect) {
+  if (aspect <= 1) return 85;
+  return clamp((2 * Math.atan(Math.tan((50 * Math.PI) / 180) / aspect) * 180) / Math.PI, 50, 85);
+}
+
+// How far right of centre the weapon sits: in portrait it is nearly central, in landscape it moves out to the right
+// so it stays at the edge of a much wider picture.
+function weaponX(aspect) {
+  const halfW = Math.tan((35 * Math.PI) / 180) * aspect * 0.62; // half the visible width at the weapon's distance
+  return clamp(halfW * 0.4, 0.15, 0.4);
+}
+
 export function resize(view) {
   S.view = view;
   if (!R) return;
   R.pipeline.resize(view);
   R.camera.aspect = view.w / view.h;
+  R.baseFov = baseFov(R.camera.aspect);
+  R.fov = R.baseFov;
+  R.camera.fov = R.baseFov;
   R.camera.updateProjectionMatrix();
   R.wcam.aspect = view.w / view.h;
   R.wcam.updateProjectionMatrix();
@@ -293,7 +310,7 @@ function initRender(view) {
   const pipeline = createPipeline(renderer, view, Q.tier);
   const fx = createFx(scene);
   fx.setQuality(FX_QUALITY[Q.tier]);
-  R = { renderer, scene, camera, hemi, torch, wscene, wcam, wroot, models, flashes, impacts, explosions: [], flashT: 0, muzzleT: 0, pipeline, fx, look: null, drinkVms, beam, beamParts: [beamCore, beamMid, beamGlow], fov: 85, freddie };
+  R = { renderer, scene, camera, hemi, torch, wscene, wcam, wroot, models, flashes, impacts, explosions: [], flashT: 0, muzzleT: 0, pipeline, fx, look: null, drinkVms, beam, beamParts: [beamCore, beamMid, beamGlow], fov: 85, baseFov: 85, freddie };
   applyAtmosphere();
   resize(view);
 }
@@ -1421,7 +1438,7 @@ function updateAreas() {
 
 function stateFor(mode) {
   switch (mode) {
-    case 'title': return { t: S.t, debugMode: S.debugMode, best: S.best };
+    case 'title': return { t: S.t, debugMode: S.debugMode, best: S.best, levelNumber: LEVELS[startLevel() - 1].number, levelName: LEVELS[startLevel() - 1].name };
     case 'controls': return { t: S.t };
     case 'dead': return { t: S.deadT, line: S.deadLine, score: S.score, best: S.best, newBest: S.newBest, debugMode: S.debugMode, levelName: levelInfo().name };
     case 'complete':
@@ -1639,7 +1656,7 @@ function placeCamera() {
   let yaw = p.yaw;
   let pitch = p.pitch + (Math.random() - 0.5) * sh * 0.2;
   roll += (Math.random() - 0.5) * sh * 0.2;
-  let fov = 85;
+  let fov = R.baseFov;
 
   // Last Orders: ease out to a third-person camera behind and above Freddie, looking at him
   const k = S.camK;
@@ -1662,7 +1679,7 @@ function placeCamera() {
     yaw += wrap(tpYaw - yaw) * e;
     pitch += (tpPitch - pitch) * e;
     roll *= 1 - e;
-    fov += (72 - fov) * e;
+    fov += (R.baseFov * (72 / 85) - fov) * e;
   }
   if (Math.abs(R.fov - fov) > 0.02) {
     R.fov = fov;
@@ -1726,7 +1743,7 @@ function animateViewmodel(dt) {
   const reloading = p.reloadT > 0 ? 1 - p.reloadT / (p.reloadTotal || w.reload) : 0;
   const dip = Math.sin(reloading * Math.PI);
   const sw = p.switchT / 0.25;
-  const baseX = p.weapon === 'launcher' || p.weapon === 'vinyl' ? 0.12 : 0.15;
+  const baseX = weaponX(R.wcam.aspect) - (p.weapon === 'launcher' || p.weapon === 'vinyl' ? 0.03 : 0);
   wroot.scale.setScalar(0.68);
   if (drinking) {
     // the drink animation owns the pose; the root stays at the usual resting spot
@@ -1826,10 +1843,13 @@ export function render(ctx, view, alpha) {
     case 'intro':
       screens.drawIntro(ctx, view, { t: S.introT, level: levelInfo() });
       break;
-    case 'dead':
-      hud.drawPlayHud(ctx, view, buildHudState());
+    case 'dead': {
+      const hs = buildHudState();
+      if (view.w > view.h * 1.05) hs.cinematic = 1; // landscape: the control boxes would sit under the buttons
+      hud.drawPlayHud(ctx, view, hs);
       screens.drawDead(ctx, view, stateFor('dead'));
       break;
+    }
     case 'complete':
       screens.drawComplete(ctx, view, stateFor('complete'));
       break;
@@ -1861,6 +1881,14 @@ export function testHook(cmd, arg) {
       return undefined;
     case 'layout': return layoutFor(v);
     case 'hurt': hurtPlayer(arg, S.player.x, S.player.z + 5, false); return undefined;
+    case 'screen': // jump to a menu screen, for screenshots: title | controls | intro | voicemail | dead | complete
+      if (arg === 'title') toTitle();
+      else if (arg === 'controls') S.mode = 'controls';
+      else if (arg === 'intro') beginRun();
+      else if (arg === 'voicemail') { S.level = 2; S.mode = 'voicemail'; S.mailT = 0; }
+      else if (arg === 'dead') { resetLevel(); S.mode = 'play'; die(); }
+      else if (arg === 'complete') { resetLevel(); S.mode = 'play'; completeLevel(); }
+      return undefined;
     case 'drink': startDrink(arg); return undefined;
     case 'hitEnemy': { // headless combat checks: damage enemy arg.i as if shot from (arg.fx, arg.fz); returns the hp it lost
       const e = S.enemies[arg.i];
@@ -1872,7 +1900,7 @@ export function testHook(cmd, arg) {
       const w = WEAPONS[S.player.weapon];
       return {
         fireInterval: w.interval / mult().fire, damageMult: mult().damage, maxHealth: S.player.maxHealth, weapon: w.id, clip: S.player.ammo[w.id],
-        reloading: S.player.reloadT > 0, buffs: { ...S.buffs }, drinking: S.drink ? S.drink.id : null, laser: !!S.laser, yaw: S.player.yaw, third: S.camK > 0.5, camK: S.camK, health: S.player.health,
+        reloading: S.player.reloadT > 0, fov: R ? R.camera.fov : null, aspect: R ? R.camera.aspect : null, buffs: { ...S.buffs }, drinking: S.drink ? S.drink.id : null, laser: !!S.laser, yaw: S.player.yaw, third: S.camK > 0.5, camK: S.camK, health: S.player.health,
       };
     }
     default: return undefined;

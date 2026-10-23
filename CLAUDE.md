@@ -7,7 +7,7 @@ the owner's explicit permission.** Permission for one level is not permission fo
 building is not. A feature is built on the levels that exist and tested on both.
 
 First-person 3D horror shooter, phone browser, set in an Edinburgh basement club. Dark comedy tone, light Scottish
-voice. Portrait. Three.js (vendored in `vendor/`), plain ES modules, no bundler for development, no backend.
+voice. Portrait and landscape (the layout follows the screen shape; `hud.layout(view)` and `screens.js` handle both). Three.js (vendored in `vendor/`), plain ES modules, no bundler for development, no backend.
 Two levels so far. Read `README.md` for the layout and `docs/fps-design.md` for the module contract.
 
 ## Conventions

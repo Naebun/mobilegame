@@ -6,14 +6,14 @@ const MAX_FRAME = 0.25; // clamp after tab switches / stalls
 
 export function start(canvas, game) {
   const ctx = canvas.getContext('2d');
-  const view = { w: 0, h: 0, dpr: 1, safe: { top: 0, bottom: 0 } };
+  const view = { w: 0, h: 0, dpr: 1, safe: { top: 0, bottom: 0, left: 0, right: 0 } };
   // touches: live pointers by id ({ id, x, y, sx, sy, role }); pressed: new presses this step.
   const input = { touches: new Map(), pressed: [], keys: new Set() };
 
   // Canvas can't read env(); measure the safe-area insets through a hidden element.
   const probe = document.createElement('div');
   probe.style.cssText =
-    'position:fixed;visibility:hidden;pointer-events:none;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)';
+    'position:fixed;visibility:hidden;pointer-events:none;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)';
   document.body.appendChild(probe);
 
   function resize() {
@@ -23,6 +23,8 @@ export function start(canvas, game) {
     const cs = getComputedStyle(probe);
     view.safe.top = parseFloat(cs.paddingTop) || 0;
     view.safe.bottom = parseFloat(cs.paddingBottom) || 0;
+    view.safe.left = parseFloat(cs.paddingLeft) || 0; // the notch sits at a side in landscape
+    view.safe.right = parseFloat(cs.paddingRight) || 0;
     canvas.width = Math.round(view.w * view.dpr);
     canvas.height = Math.round(view.h * view.dpr);
     ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
@@ -57,7 +59,8 @@ export function start(canvas, game) {
   canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
   window.addEventListener('resize', resize);
-  window.addEventListener('orientationchange', resize);
+  // iOS reports the old size for a moment after a rotation, so measure again once it has settled
+  window.addEventListener('orientationchange', () => { resize(); setTimeout(resize, 120); setTimeout(resize, 450); });
 
   let last = performance.now();
   let acc = 0;

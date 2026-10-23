@@ -56,7 +56,7 @@ the new names.
 
 ## Decisions for the full game
 - Length: about two hours to complete.
-- Orientation: portrait only.
+- Orientation: portrait and landscape (landscape added after the first draft of this plan, on the owner's request). The manifest no longer locks the orientation.
 - Devices: any iOS device released in the past four years (as of October 2026: iPhone 14 and newer, plus iPads of the
   same age). That means Safari 16 or later, WebGL 2, and an A15-class GPU as the performance floor. Consequences:
   - iOS has no Vibration API, so no haptics.
