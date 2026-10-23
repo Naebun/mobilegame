@@ -692,7 +692,7 @@ function stickFrom(t, box, dead) {
   return { nx, ny, rx: nx, ry: ny };
 }
 
-// Reads the touches: assigns each to the move box, the look box or a button on first contact, then
+// Reads the touches: assigns each to the move box, the look box, a button or free aim on first contact, then
 // returns { mx, mz (move, -1..1), yawD, pitchD, firing, reload, swap }. Buttons are read from tap events.
 function readControls(input, view, dt) {
   const L = layoutFor(view);
@@ -713,7 +713,8 @@ function readControls(input, view, dt) {
     if (inRect(t.sx, t.sy, L.reloadHit) || inRect(t.sx, t.sy, L.swapHit)) t.role = 'btn';
     else if (!moveTaken && inRect(t.sx, t.sy, L.moveHit)) { t.role = 'move'; moveTaken = true; }
     else if (!lookTaken && inRect(t.sx, t.sy, L.lookHit)) { t.role = 'look'; lookTaken = true; }
-    else t.role = 'none';
+    else if (inRect(t.sx, t.sy, L.moveHit) || inRect(t.sx, t.sy, L.lookHit)) t.role = 'none'; // a box already in use
+    else t.role = 'free'; // anywhere else on the screen: aim only, no fire
     t.lx = t.sx;
     t.ly = t.sy;
   }
@@ -743,6 +744,11 @@ function readControls(input, view, dt) {
       t.lx = t.x;
       t.ly = t.y;
       out.firing = true;
+    } else if (t.role === 'free') {
+      out.yawD -= (t.x - t.lx) * PLAYER.lookX;
+      out.pitchD -= (t.y - t.ly) * PLAYER.lookY;
+      t.lx = t.x;
+      t.ly = t.y;
     }
   }
 
