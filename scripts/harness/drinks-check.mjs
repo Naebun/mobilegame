@@ -21,7 +21,7 @@ const stats = () => game.testHook('stats');
   const { S, input } = fresh();
   const drinks = S.pickups.filter((p) => p.def.kind === 'drink');
   ok(drinks.length >= 1, `the level has drink pickups (${drinks.length})`);
-  ok(S.pickups.every((p) => p.def.kind === 'drink' || p.def.kind === 'weapon'), 'every pickup is a weapon or a drink (no medkits)');
+  ok(S.pickups.every((p) => ['drink', 'weapon', 'upgrade', 'record'].includes(p.def.kind)), 'every pickup is a drink, weapon, upgrade or record (no medkits)');
   ok(drinks.every((p) => DRINK_ORDER.includes(p.def.item)), 'every drink pickup is one of the four known drinks');
 }
 

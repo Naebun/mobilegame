@@ -17,13 +17,16 @@
 //             once she is channelling (a revive takes 3.6 s). A harmless target: it walks up to her rather than backing off.
 //   Mimic     the good and casual bots shoot a machine they can see from a distance (they suspect it); the sloppy one
 //             walks up to it and finds out the hard way.
-//   Weapons   Feedback Beam on bosses and mimics, Bass-Drop Grenade on a pack of three, Airhorn when two are on top of it,
-//             the SMG's alt-fire when the pedal is fitted. Upgrades and records are picked up within a reach that depends on skill.
+//   Weapons   Feedback Beam on bosses and mimics (inside a range that depends on how steady the aim is), Bass-Drop Grenade on
+//             a pack of three, Airhorn when two are on top of it, the SMG's alt-fire when the pedal is fitted. SWAP only goes
+//             forward round the owned weapons, so a special weapon is used only when it is at most 2 presses away and the way
+//             back to the usual one at most 3 (with seven guns the grenade is mostly out of reach, as it would be for a person).
+//             Upgrades and records are picked up within a reach that depends on skill.
 // A level without any of these behaves as it always did: every new decision uses its own random stream and is only
 // taken when one of the new things exists, so the old numbers stay comparable.
 import { pathToFileURL } from 'node:url';
 import * as game from '../src/game3d.js';
-import { UPGRADES, WEAPONS } from '../src/data.js';
+import { UPGRADES, WEAPONS, WEAPON_ORDER } from '../src/data.js';
 
 const args = Object.fromEntries(process.argv.slice(2).reduce((a, v, i, all) => (v.startsWith('--') ? [...a, [v.slice(2), all[i + 1]]] : a), []));
 const RUNS = Number(args.runs || 30);
@@ -91,6 +94,17 @@ export function runOnce(seed, skillName, opts = {}) {
   game.testHook('torch', { attached: true }); // the bot never watches the torch being fitted
   const S = game.getState();
   const W = game.getWorld();
+  // Experiments only: --drop shaken,longshot,nurse,mimic,records,upgrades,newweapons or an item name takes those out of the level
+  // for the run, to see what each contributes. The level itself is unchanged.
+  if (args.drop) {
+    const drop = new Set(args.drop.split(','));
+    for (let i = S.enemies.length - 1; i >= 0; i--) if (drop.has(S.enemies[i].kind)) S.enemies.splice(i, 1);
+    S.totalEnemies = S.enemies.length;
+    for (let i = S.pickups.length - 1; i >= 0; i--) {
+      const d = S.pickups[i].def;
+      if (drop.has(d.item) || (drop.has('records') && d.kind === 'record') || (drop.has('upgrades') && d.kind === 'upgrade') || (drop.has('newweapons') && d.kind === 'weapon' && WEAPONS[d.item].prepared)) S.pickups.splice(i, 1);
+    }
+  }
   if (S.debugMode) throw new Error('simulator must run in normal mode');
   const p = S.player;
   if (opts.scenario) {
@@ -140,6 +154,7 @@ export function runOnce(seed, skillName, opts = {}) {
   const areaTimes = {};
   const dmgBy = { melee: 0, ranged: 0, sniper: 0, blast: 0 };
   const diedTo = {};
+  const areaDmg = {};
   let lastSource = '';
   const burstSeen = new Set();
   const lock = new Map(); // longshot -> { t0, notice, react, dir } for the shot it is charging now
@@ -363,14 +378,25 @@ export function runOnce(seed, skillName, opts = {}) {
         else if (p.owned.vinyl) want = 'vinyl';
         else if (p.owned.shotgun && d < 3.5) want = 'shotgun';
       }
-      // the newer weapons (only when owned, so a level without them plays as before)
+      // the newer weapons (only when owned, so a level without them plays as before). SWAP only goes forward round the owned
+      // weapons, and each swap costs a quarter of a second with the gun down, so a person with seven guns does not hop to the
+      // grenade in the middle of a fight: a special weapon is used only when it is at most 2 presses away and the way back to
+      // the usual weapon is at most 3.
+      const base = want;
       const live = (id) => p.owned[id] && p.ammo[id] > 0;
-      if (live('beam') && p.ammo.beam > 22 && seen && d <= 15 && (target.boss || target.def.ai === 'mimic')) want = 'beam';
+      const beamRange = sk.sigma > 0.1 ? 8 : sk.sigma > 0.04 ? 12 : 15; // the beam needs a steady crosshair
+      let spec = null;
+      if (live('beam') && p.ammo.beam > 22 && seen && d <= beamRange && (target.boss || target.def.ai === 'mimic')) spec = 'beam';
       const grenadeFlying = S.projectiles.some((pr) => pr.grenade);
       const pack = awake.filter((e) => !e.boss && !(e.stunT > 0) && !e.def.support && Math.hypot(e.x - p.x, e.z - p.z) < 6.5 && W.los(p.x, p.z, e.x, e.z));
-      if (live('grenade') && !grenadeFlying && (pack.length >= 3 || (pack.length >= 2 && hpFrac() < 0.5))) want = 'grenade';
+      if (live('grenade') && !grenadeFlying && (pack.length >= 3 || (pack.length >= 2 && hpFrac() < 0.5))) spec = 'grenade';
       const onTop = awake.filter((e) => !e.def.ranged && !e.def.support && e.def.ai !== 'shaken' && !(e.stunT > 0) && Math.hypot(e.x - p.x, e.z - p.z) < 3.4 && W.los(p.x, p.z, e.x, e.z));
-      if (live('airhorn') && (onTop.length >= 2 || (onTop.length >= 1 && hpFrac() < 0.45))) want = 'airhorn';
+      if (live('airhorn') && (onTop.length >= 2 || (onTop.length >= 1 && hpFrac() < 0.45))) spec = 'airhorn';
+      if (spec) {
+        const have = WEAPON_ORDER.filter((id) => p.owned[id]);
+        const presses = (a, b) => (have.indexOf(b) - have.indexOf(a) + have.length) % have.length;
+        if (presses(p.weapon, spec) <= 2 && presses(spec, base) <= 3) want = spec;
+      }
       if (p.weapon !== want && p.ammo[want] > 0) { input.keys.add('q'); swapT = 0.35; } else input.keys.delete('q');
     } else input.keys.delete('q');
     // a grenade is thrown once, not three times in a row
@@ -416,6 +442,8 @@ export function runOnce(seed, skillName, opts = {}) {
         }
       }
       dmgBy[cat] += hb - p.health;
+      const aid = (S.currentArea && S.currentArea.def.id) || '?';
+      areaDmg[aid] = (areaDmg[aid] || 0) + (hb - p.health);
       lastSource = who;
       if (TRACE === seed) console.log(`  t=${t.toFixed(1)} hp ${hb}->${p.health} ${cat} (${who}) area=${S.currentArea && S.currentArea.def.id}`);
     }
@@ -449,6 +477,7 @@ export function runOnce(seed, skillName, opts = {}) {
     dmgBy,
     diedIn: S.mode === 'dead' ? (S.currentArea && S.currentArea.def.id) : null,
     diedTo,
+    areaDmg,
     kills: S.kills,
     shots: S.shots,
     areaTimes,
@@ -495,6 +524,9 @@ function main() {
     if (rs.some((r) => r.use.grenade || r.use.airhorn || r.use.alt || r.use.beam)) bits.push(`grenades ${useSum('grenade')}, airhorns ${useSum('airhorn')}, alt bursts ${useSum('alt')}, beam ${useSum('beam')} s`);
     if (rs.some((r) => r.upgrades.clip || r.upgrades.reload || r.upgrades.altfire)) bits.push(`upgrades clip ${f(avg(rs.map((r) => r.upgrades.clip)), 1)} reload ${f(avg(rs.map((r) => r.upgrades.reload)), 1)} altfire ${f(avg(rs.map((r) => r.upgrades.altfire)), 1)}`);
     if (Object.keys(killers).length) bits.push(`killed by ${JSON.stringify(killers)}`);
+    const ad = {};
+    for (const r of rs) for (const [k, v] of Object.entries(r.areaDmg)) ad[k] = (ad[k] || 0) + v / rs.length;
+    if (Object.keys(ad).length) bits.push(`damage by area ${Object.entries(ad).map(([k, v]) => `${k} ${Math.round(v)}`).join(', ')}`);
     if (bits.length) console.log(`        ${bits.join('; ')}`);
   }
 }
