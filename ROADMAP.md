@@ -13,6 +13,22 @@ Verified by automated tests: the whole flow in a real headless browser (menus, b
 reload, swap, rockets, enemy bottles, areas and doors, death and retry, completion, debug mode); the level geometry and
 collision; a headless bot beats the level every time at three aim skills.
 
+## Graphics pass, drinks and Last Orders (branch `graphics-pass`, not merged to main)
+Added since the first-person rebuild: an HDR render pipeline with bloom and grading and three quality tiers, a PBR
+level with baked light, battered detailed robots, particles, five drinks with drinking animations, and the Last Orders
+laser with a third-person spin. Verified headless: world (4368 checks), models, drinks, UI, the full smoke test (38
+checks) and the bot run (casual and good bots win every time, a sloppy bot wins 93 percent of runs and loses in the
+backstage). Screenshots of the level and robots were reviewed; exposure was raised once.
+
+Known and unmeasured:
+- **Cost on a real phone.** Software WebGL, dancefloor view: low 3.0, medium 1.3, high 1.2 fps. That only says high
+  and medium cost about the same as each other there and low is cheaper; it says nothing about an A15 GPU. The level
+  is about 118k triangles and a full robot roster is up to about 150k if all were in view. If phones struggle, trim the
+  robots first (the models agent offered to), then the level.
+- **The drinking animations and the Freddie spin** have not been reviewed frame by frame in screenshots by the owner.
+- **Blender** is installed in the build container but not used by the game. Texture work has not started and needs the
+  owner's go-ahead, plus a decision on whether image files may enter a repo that is procedural-only today.
+
 ## Not verified: needs a human playing on a phone
 - **Difficulty.** Bots aim far better than a thumb in a small box. A sloppy bot still wins every time, losing about
   60 percent of its health on average. Real players will likely find it harder, since there is no aim assist.

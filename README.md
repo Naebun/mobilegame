@@ -17,6 +17,10 @@ Beat the Bouncer at the end and walk out to finish the level.
   (pellets and knockback), Tweeter SMG (fast, spread grows), Reverb Launcher (explosive).
 - **Ammo:** unlimited, but each clip is limited. Reloading is automatic when the clip empties, or press RELOAD.
 - **Headshots** do double damage. There is no aim assist.
+- **Drinks:** the power-ups. Walk onto one and Freddie drinks it, with a first-person animation. Dram heals, Orange
+  speeds him up, Heavy halves damage taken, Energy speeds up fire and reload. **Last Orders** is the super drink: the
+  camera goes third person, Freddie spins and a big laser wipes out the robots around him. It never works in a boss
+  room. Numbers are in `DRINKS` in `src/data.js`; the design is in `docs/drinks.md`.
 
 ## Controls
 
@@ -41,13 +45,16 @@ balanced for normal mode only.
 | `src/engine.js` | Loop, canvas sizing, multi-touch input, safe-area insets |
 | `src/game3d.js` | State machine, player, weapons and clips, robot AI, projectiles, areas and doors, renderer |
 | `src/data.js` | Weapons, enemies, level text and jokes. Tune the game here |
-| `src/world.js` | The level: procedural brick, stone and timber, collision, line of sight, path finding |
-| `src/models.js` | Robots, weapon models, pickups and projectiles |
+| `src/world.js` | The level: procedural PBR brick, stone and timber, baked AO and light pools, collision, line of sight, path finding |
+| `src/models.js` | Robots, weapon models, pickups, drink pickups and viewmodels, Freddie, projectiles |
+| `src/gfx.js`, `src/gfx-env.js`, `src/fx.js` | Render pipeline and quality tiers (HDR, bloom, grade), environment lighting, particles and dust |
 | `src/hud.js`, `src/screens.js` | The 2D layer: control boxes, HUD, title, controls, intro, death and completion screens |
 | `src/audio.js` | Web Audio synthesis: music loop and every sound effect, no audio files |
 | `src/consts.js`, `src/draw.js` | Shared constants and 2D helpers |
 | `vendor/three.module.min.js` | three.js r160 (MIT) |
 | `docs/fps-design.md` | The module contract the first-person build was made against |
+| `docs/graphics-pass.md`, `docs/drinks.md` | Contracts for the graphics pass and the drinks |
+| `docs/HANDOVER.md` | Where things stand and how to resume from a cold start |
 
 ## Run locally
 
@@ -76,7 +83,13 @@ npm run sim                  # headless bot plays the real game logic: is the le
 node scripts/harness/world-check.mjs     # level geometry, collision, rays, flow field (thousands of assertions)
 node scripts/harness/models-check.mjs    # every robot pose, every model
 node scripts/harness/ui-check.mjs        # HUD and screens at extreme inputs and view sizes
+node scripts/harness/drinks-check.mjs    # every drink, Last Orders rules, pickups
+node scripts/harness/tier-fps.mjs        # software frame rate per quality tier (relative only)
+scripts/setup-blender.sh                 # installs Blender (bpy) into a venv; not used by the game yet
 node scripts/shot.mjs <page> <out.png>   # screenshot any page with WebGL, for visual checks
 ```
+
+Quality tiers: `?q=low|medium|high` forces one; otherwise the game picks high and steps down if frames run slow.
+`?perf` shows a frame counter.
 
 Software WebGL runs at a few frames per second, so the smoke test waits for conditions instead of fixed times.

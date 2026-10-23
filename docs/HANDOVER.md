@@ -46,17 +46,19 @@ hours, 8 to 10 levels, iOS from the last four years) is in `docs/full-game-plan.
 - Contracts between modules: `docs/fps-design.md`, `docs/graphics-pass.md`, `docs/drinks.md`.
 
 ## Status at handover (check against `git log`)
-Done and tested: game logic, drinks, Last Orders flow, world checks (4368 assertions), headless smoke and sim.
+Done and verified headless on `graphics-pass`: the models agent's work is integrated (robot `update` and pickup
+`userData.update` are now called from `game3d.js`), level exposure raised to 1.3, `world-check` 4368/4368,
+`models-check`, `drinks-check` and `ui-check` pass, the smoke test passes (38 checks), and the bot run beats the level
+(casual 100, good 100, sloppy 93 percent). The Claude Artifact was republished as version 7 and includes all of this.
+
 Still open:
-1. Final report from the models agent (drinks, Freddie, graphics pass) and a review of its work.
-2. Look at screenshots of the new world, robots, each drinking animation and the Freddie spin. Nobody has judged the
-   3D look from screenshots since the graphics pass landed. Tune `world.look` (exposure, bloom, vignette, grade)
-   against `src/gfx.js`.
-3. Per-tier cost. Software WebGL before the pass: low 5.2, medium 2.6, high 1.8 fps. Compare after. Real phone
-   performance is **unmeasured**.
-4. Run everything (below), rebuild `dist/artifact.html`, republish the Claude Artifact (last published version
-   predates the graphics work), update README for the new modules.
-5. A human playtest. Difficulty, touch feel, audio and frame rate are all unverified on a real phone.
+1. Review screenshots of each drinking animation and the Freddie third-person spin. Level and robot shots were
+   reviewed. The others were only checked by the models agent.
+2. Cost on a real phone is unknown. Software numbers are in `ROADMAP.md`. High and medium cost about the same there,
+   so tiers may need re-spacing once a phone has been tried.
+3. Sloppy-bot win rate fell from 100 to 93 percent after the graphics pass (backstage deaths). Probably the bigger
+   robot hitboxes and shapes. Not tuned. A human playtest should decide.
+4. A human playtest: difficulty, touch feel, audio and frame rate are all unverified on a real phone.
 
 ## How to run and check
 ```
