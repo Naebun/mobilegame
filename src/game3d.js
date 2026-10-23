@@ -1274,7 +1274,7 @@ function updateLongshot(e, dt) {
     if (along > 0 && along < wall && lateral < def.shot.halfWidth + 0.2) reach = Math.min(reach, (along - 1.2) / cp);
     const len = Math.max(0.5, reach - 0.96); // the beam starts at the muzzle, 0.96 m along the barrel
     const k = clamp(e.stateT / total, 0, 1);
-    e.robot.setLaser(len, e.aimPitch, e.locked, k);
+    e.robot.setLaser(len, e.aimPitch, e.locked, k, laserNear(e, pv, len));
     e.robot.setPose('aim', e.stateT, k);
     if (e.stateT >= total) {
       fireSnipe(e, pv, wall, cp);
@@ -1288,7 +1288,7 @@ function updateLongshot(e, dt) {
 
   // recover: the shot has gone; the tracer lingers a moment
   e.tracerT -= dt;
-  if (e.tracerT > 0) e.robot.setLaser(e.tracerLen, e.aimPitch, true, 1);
+  if (e.tracerT > 0) e.robot.setLaser(e.tracerLen, e.aimPitch, true, 1, laserNear(e, pv, e.tracerLen));
   else e.robot.setLaser(0, e.aimPitch);
   e.robot.setPose('shoot', e.stateT, clamp(e.stateT / def.shot.recover, 0, 1));
   if (e.stateT >= def.shot.recover) {
@@ -1302,6 +1302,23 @@ function updateLongshot(e, dt) {
 
 // The shot: a straight line from the rifle's pivot along the locked yaw and pitch. It hurts Naebun if Naebun is within the
 // line's half-width and the line is not stopped by a wall or pillar first. Low cover does not stop it.
+// How clear the camera is of a Longshot's laser, 0 (on top of it) to 1 (5 m or more away). models.js thins and dims the line by
+// it, so a line aimed at the player does not flood the screen. Only the drawing changes: the line itself is the shot line.
+function laserNear(e, pv, len) {
+  const p = S.player;
+  const cp = Math.cos(e.aimPitch);
+  const dx = -Math.sin(e.yaw) * cp;
+  const dy = Math.sin(e.aimPitch);
+  const dz = -Math.cos(e.yaw) * cp;
+  const sx = e.x - Math.sin(e.yaw) * (pv.fwd + 0.96 * cp);
+  const sy = pv.up + dy * 0.96;
+  const sz = e.z - Math.cos(e.yaw) * (pv.fwd + 0.96 * cp);
+  const t = clamp((p.x - sx) * dx + (EYE - sy) * dy + (p.z - sz) * dz, 0, len); // the closest point on the line to the camera
+  const d = Math.hypot(sx + dx * t - p.x, sy + dy * t - EYE, sz + dz * t - p.z);
+  const n = clamp((d - 1.2) / 3.8, 0, 1);
+  return n * n * (3 - 2 * n);
+}
+
 function fireSnipe(e, pv, wall, cp) {
   const p = S.player;
   const def = e.def;

@@ -2624,9 +2624,15 @@ function longshotGeo(v) {
 // as hitscan along the rifle's line, so the ray starts at the rifle's pivot (SNIPE below) and the muzzle sits on it.
 // Poses: idle, walk, aim (t = seconds, k = charge 0..1: the scope lens heats up), shoot (recoil and flash), hurt, dead.
 // windup plays aim and swing plays shoot, so a generic driver never breaks it.
-// Extras: setLaser(len, pitch, locked, k) shows the laser line (len 0 hides it), pitches the rifle and returns nothing;
-// `locked` turns it from thin red to thick white-hot. `muzzle` is the rifle tip. `pivot` is the rifle pivot in robot space.
+// Extras: setLaser(len, pitch, locked, k, near) shows the laser line (len 0 hides it), pitches the rifle and returns nothing;
+// `locked` turns it from thin red to thick white-hot. `near` (0 to 1, default 1) is how clear the camera is of the line:
+// the width and the brightness fade as it falls, so a line aimed at the player cannot flood the screen. It never moves the
+// line: the start, the direction and the length are the same at every `near`. `muzzle` is the rifle tip. `pivot` is the
+// rifle pivot in robot space.
 const SNIPE = { up: 1.5, fwd: 0.3 };
+// The laser's brightness, as HDR multipliers: the thin core may pass 1, the wide layers stay under it so they read as red
+// and orange light instead of bloom to white. `minW` and `minB` are the width and brightness left when the camera is on top of it.
+const LASER = { core: 2.2, mid: 1.7, glow: 1.5, thinCore: 1.9, thinMid: 1.5, thinGlow: 1.3, minW: 0.25, minB: 0.3 };
 
 function makeLongshot() {
   const kind = 'longshot';
@@ -2736,6 +2742,7 @@ function makeLongshot() {
   let laserOn = false;
   let laserLen = 0;
   let laserLocked = false;
+  let laserNearNow = 1;
 
   function reset() {
     root.position.set(0, 0, 0);
@@ -2890,8 +2897,9 @@ function makeLongshot() {
     }
   }
 
-  // The laser. len 0 hides it. Locked: thick, white-hot. The pitch is where the rifle points (up is positive).
-  function setLaser(len, pitch, locked = false, k = 0) {
+  // The laser. len 0 hides it. Locked: thick, white-hot. The pitch is where the rifle points (up is positive). `near` fades
+  // the width and the brightness towards the camera (see LASER); the line itself does not move.
+  function setLaser(len, pitch, locked = false, k = 0, near = 1) {
     curPitch = clamp(num(pitch, 0), -0.7, 0.7);
     len = num(len, 0);
     laserOn = len > 0;
@@ -2900,14 +2908,18 @@ function makeLongshot() {
     len = clamp(len, 0.2, 80);
     laserLen = len;
     laserLocked = !!locked;
-    const wd = locked ? [0.022, 0.06, 0.15] : [0.008 + 0.008 * k, 0.026 + 0.02 * k, 0.08 + 0.07 * k];
+    const n = clamp(num(near, 1), 0, 1);
+    const wk = LASER.minW + (1 - LASER.minW) * n;
+    const bk = LASER.minB + (1 - LASER.minB) * n;
+    const wd = (locked ? [0.022, 0.06, 0.15] : [0.008 + 0.008 * k, 0.026 + 0.02 * k, 0.08 + 0.07 * k]).map((w) => w * wk);
     lparts.forEach((b, i) => b.scale.set(wd[i], wd[i], len));
-    lmats[0].color.copy(hdr(locked ? 0xffffff : 0xffb0a0, locked ? 8 : 5));
-    lmats[1].color.copy(hdr(locked ? 0xffe0a0 : 0xff3030, locked ? 4 : 3));
-    lmats[2].color.copy(hdr(locked ? 0xff8a30 : 0xff1a1a, locked ? 2.4 : 1.8));
+    lmats[0].color.copy(hdr(locked ? 0xffffff : 0xffb0a0, (locked ? LASER.core : LASER.thinCore) * bk));
+    lmats[1].color.copy(hdr(locked ? 0xffe0a0 : 0xff3030, (locked ? LASER.mid : LASER.thinMid) * bk));
+    lmats[2].color.copy(hdr(locked ? 0xff8a30 : 0xff1a1a, (locked ? LASER.glow : LASER.thinGlow) * bk));
     dot.position.z = -len;
-    dot.scale.setScalar(locked ? 1.3 : 0.5 + 0.4 * k);
-    dotMat.color.copy(hdr(locked ? 0xffe8b0 : 0xff4030, 3));
+    dot.scale.setScalar((locked ? 1.3 : 0.5 + 0.4 * k) * wk);
+    dotMat.color.copy(hdr(locked ? 0xffe8b0 : 0xff4030, 1.8 * bk));
+    laserNearNow = n;
   }
 
   function flash(on) {
@@ -2921,6 +2933,10 @@ function makeLongshot() {
     get laserOn() { return laserOn; },
     get laserLen() { return laserOn ? laserLen : 0; },
     get laserLocked() { return laserOn && laserLocked; },
+    get laserNear() { return laserNearNow; },
+    // the widest layer's width and the highest colour channel being drawn, for the checks
+    get laserWidth() { return laserOn ? lparts[2].scale.x : 0; },
+    get laserPeak() { return laserOn ? Math.max(...lmats.map((m) => Math.max(m.color.r, m.color.g, m.color.b))) : 0; },
   };
 }
 
@@ -3319,7 +3335,8 @@ function makeNurse() {
 
 // ---- Vending Mimic ----
 
-const MIM = { lift: 0.45 };
+// dormantGlow: how much of the full window, sign and display light a sleeping machine shows (0..1)
+const MIM = { lift: 0.45, dormantGlow: 0.32 };
 
 function mimicGeo(v) {
   const o = { seed: v + 41, tint: [0, 0.04, -0.04][v] };
@@ -3504,9 +3521,9 @@ function makeMimic() {
 
   // what a pose sets before apply(): lift (m), arm swing out (rad) and forward (rad), claw size 0..1, head tilt (rad),
   // eye size 0..1, flap angle (rad), angry 0..1 (window and sign colour), shake (m)
-  const Z = { lift: 0, armOut: 0, armFwd: 0, claw: 0, tilt: 0, eye: 0, flap: 0, angry: 0, shake: 0, lean: 0, dark: 0 };
+  const Z = { lift: 0, armOut: 0, armFwd: 0, claw: 0, tilt: 0, eye: 0, flap: 0, angry: 0, shake: 0, lean: 0, dark: 0, wake: 0 };
   function zero() {
-    Z.lift = 0; Z.armOut = 0; Z.armFwd = 0; Z.claw = 0; Z.tilt = 0; Z.eye = 0; Z.flap = 0; Z.angry = 0; Z.shake = 0; Z.lean = 0; Z.dark = 0;
+    Z.lift = 0; Z.armOut = 0; Z.armFwd = 0; Z.claw = 0; Z.tilt = 0; Z.eye = 0; Z.flap = 0; Z.angry = 0; Z.shake = 0; Z.lean = 0; Z.dark = 0; Z.wake = 0;
     root.position.set(0, 0, 0);
     root.rotation.set(0, 0, 0);
     bodyG.position.set(0, 0, 0);
@@ -3515,7 +3532,7 @@ function makeMimic() {
     for (const l of legs) l.rotation.set(0, 0, 0);
   }
   const awake = () => {
-    Z.lift = LIFT; Z.armOut = 0.33; Z.armFwd = 0.1; Z.claw = 1; Z.tilt = 0.26; Z.eye = 1; Z.flap = 0.5; Z.angry = 1;
+    Z.lift = LIFT; Z.armOut = 0.33; Z.armFwd = 0.1; Z.claw = 1; Z.tilt = 0.26; Z.eye = 1; Z.flap = 0.5; Z.angry = 1; Z.wake = 1;
   };
   function apply() {
     const f = clamp(Z.lift / LIFT, 0, 1.4);
@@ -3541,7 +3558,10 @@ function makeMimic() {
     jaw.visible = Z.flap > 0.12;
     mawMesh.visible = Z.flap > 0.08;
     mawMat.color.copy(hdr(0xff6a1a, 2.6 * clamp(Z.flap / 0.8, 0, 1)));
-    const d = 1 - clamp(Z.dark, 0, 1);
+    // a dormant machine glows like an ordinary one (well under the bloom threshold, so a dark level does not give it away);
+    // the light comes up to full as it wakes
+    const g = MIM.dormantGlow + (1 - MIM.dormantGlow) * clamp(Z.wake, 0, 1);
+    const d = (1 - clamp(Z.dark, 0, 1)) * g;
     winMat.color.copy(WIN_C).lerp(WIN_A, Z.angry).multiplyScalar(d);
     signMat.color.copy(SIGN_C).lerp(SIGN_A, Z.angry).multiplyScalar(d);
     dispMat.color.copy(hdr(Z.angry > 0.5 ? 0xff2a1a : 0x40ff80, 1.6)).multiplyScalar(d);
@@ -3568,6 +3588,7 @@ function makeMimic() {
     Z.eye = clamp(H * 1.4, 0, 1) * (1 + 0.5 * Math.sin(H * PI));
     Z.flap = 0.5 * smooth(clamp((k - 0.55) / 0.3, 0, 1)) + 0.7 * Math.sin(clamp((k - 0.55) / 0.35, 0, 1) * PI);
     Z.angry = smooth(clamp((k - 0.45) / 0.3, 0, 1));
+    Z.wake = smooth(clamp(k / 0.5, 0, 1)); // the lights come up with the shaking, before the eyes
     if (k > 0.82) bodyG.scale.y = 1 + 0.025 * Math.sin((k - 0.82) * 70) * (1 - k) * 5;
     legs.forEach((l, i) => { l.rotation.x = Math.sin(L * PI) * (i ? 0.3 : -0.3); });
     Z.dark = 0;
