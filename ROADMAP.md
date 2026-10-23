@@ -104,7 +104,7 @@ was suggested but not approved for level 1 specifically.
 - **Top-down version.** Replaced by this rebuild. It is in git history on `main` (squash commits up to PR #2).
 - **Top-down tuning work for levels 2 to 5** (a headless balance simulator and tuning passes) is on the branch
   `tune-levels`, unmerged. It only applies to the top-down game.
-- **Levels 3 and later** do not exist in the first-person game yet.
+- **Levels 3 and later** do not exist in the first-person game yet. Level 3 has a design document only (Grassmarket pubs, the Landlord, Fizzbang Turbo): `docs/level-3.md`. Building it needs the owner's explicit go-ahead.
 
 ## Rule: balance is for normal mode only
 Debug mode (2x fire rate, 2x damage, 2x health) is a testing aid. Never tune enemies, weapons, areas or anything in
