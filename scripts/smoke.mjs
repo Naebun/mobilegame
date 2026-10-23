@@ -184,7 +184,7 @@ try {
   await ptr('pointerdown', 2, lx, ly);
   check(await until('s.shots >= 2'), 'the launcher fires rockets');
   await ptr('pointerup', 2, lx, ly);
-  check(await until('s.projectiles.length === 0', null, 15000), 'rockets explode on impact and clean up');
+  check(await until('s.projectiles.length === 0', null, 60000), 'rockets explode on impact and clean up'); // game time runs slower than the clock on a busy machine
 
   // enemy bottles: a Bampot and Nephew bot with a clear line of sight throws one
   await hook('play');
@@ -328,6 +328,7 @@ try {
   const both = await readSave();
   check(both.best.normal && both.best.normal[1] === 321 && both.best.hard[1] === hardBest.best.hard[1], `the Normal best (321) is kept apart from the Hard one (${JSON.stringify(both.best)})`);
   await page.waitForTimeout(2200);
+  await until('s.deadT > 1', null, 60000); // the buttons appear after a second of game time, which a slow machine takes longer to reach
   await shot('dead');
   await pressButton('retry');
   check(await until("s.mode === 'play'"), 'RETRY restarts the level');
