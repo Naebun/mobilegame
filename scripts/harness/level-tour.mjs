@@ -11,7 +11,7 @@ const exe = readdirSync(base).filter((d) => d.startsWith('chromium-')).map((d) =
 const b = await chromium.launch({ executablePath: exe, args: ['--use-angle=swiftshader', '--use-gl=angle', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
 const page = await (await b.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1, hasTouch: true, isMobile: true })).newPage();
 const errs = []; page.on('pageerror', (e) => errs.push(e.message)); page.on('console', (m) => m.type() === 'error' && !/favicon|404/.test(m.text()) && errs.push(m.text()));
-await page.goto('http://localhost:8092/?test');
+await page.goto('http://localhost:8092/?test' + (process.env.QUERY || ''));
 await page.waitForFunction(() => window.__game && window.__game.getState().player, null, { timeout: 60000 });
 await page.evaluate(() => window.__game.testHook('play'));
 const shots = (process.env.AREAS || 'cloakroom,dancefloor,bar,vip,backstage').split(',');
@@ -31,7 +31,7 @@ for (const id of shots) {
     S.banner = null;
   }, id);
   await page.waitForTimeout(1800);
-  await page.screenshot({ path: `${SP}/tour-${id}.png` });
+  await page.screenshot({ path: `${SP}/tour${process.env.TAG || ''}-${id}.png` });
   console.log('shot', id);
 }
 console.log('errors:', errs.length ? errs : 'none');

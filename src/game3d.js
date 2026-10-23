@@ -7,6 +7,9 @@ import * as THREE from '../vendor/three.module.min.js';
 import * as audio from './audio.js';
 import { WALL_H, EYE, PLAYER_R, COLOURS } from './consts.js';
 import { buildWorld } from './world.js';
+import { createPipeline, TIERS, TIER_ORDER } from './gfx.js';
+import { makeEnvironment } from './gfx-env.js';
+import { createFx } from './fx.js';
 import {
   makeRobot, makeWeaponModel, makeWeaponPickup, makeHealthPickup, makeProjectile, makeMuzzleFlash, makeImpact,
 } from './models.js';
@@ -18,6 +21,13 @@ const TAU = Math.PI * 2;
 const HURT_DUR = 0.38; // matches the hurt animation length in models.js
 const BEST_KEY = 'mobilegame.fps.best';
 const DEBUG_KEY = 'mobilegame.debugMode';
+const QUALITY_KEY = 'mobilegame.quality';
+const FX_QUALITY = { high: 1, medium: 0.7, low: 0.4 };
+const DEFAULT_LOOK = { exposure: 1, bloom: 0.5, vignette: 0.35, grade: { lift: [0, 0, 0], gamma: [1, 1, 1], gain: [1, 1, 1] } };
+const query = typeof location !== 'undefined' ? new URLSearchParams(location.search) : new URLSearchParams('');
+// Quality: ?q=low|medium|high forces a tier (used by tests); otherwise start from the saved tier (default high)
+// and step down automatically if the device is clearly struggling. ?perf shows a frame-rate overlay.
+const Q = { tier: 'high', fixed: false, ema: 1 / 60, frames: 0, last: 0, perf: query.has('perf'), fps: 60 };
 // Debug mode is a testing aid for Freddie only. It must never feed back into balance: enemies, weapons' base stats,
 // areas and everything in data.js are tuned for normal mode alone.
 const DEBUG_MULT = { fire: 2, damage: 2, health: 2 };
@@ -95,7 +105,11 @@ export function init(view) {
   S.view = view;
   S.best = Number(read(BEST_KEY)) || 0;
   S.debugMode = read(DEBUG_KEY) === true;
-  world = buildWorld();
+  const forced = query.get('q');
+  const saved = read(QUALITY_KEY);
+  Q.fixed = !!TIERS[forced];
+  Q.tier = TIERS[forced] ? forced : (TIERS[saved] ? saved : 'high');
+  world = buildWorld({ quality: Q.tier });
   for (const d of world.doors) initialOpen[d.id] = d.open;
   flow = world.createFlowField();
   if (typeof document !== 'undefined' && document.getElementById('gl')) initRender(view);
@@ -106,12 +120,12 @@ export function init(view) {
 export function resize(view) {
   S.view = view;
   if (!R) return;
-  R.renderer.setPixelRatio(Math.min(view.dpr, 1.5));
-  R.renderer.setSize(view.w, view.h, false);
+  R.pipeline.resize(view);
   R.camera.aspect = view.w / view.h;
   R.camera.updateProjectionMatrix();
   R.wcam.aspect = view.w / view.h;
   R.wcam.updateProjectionMatrix();
+  R.fx.setScale((view.h * R.pipeline.pixelRatio) / (2 * Math.tan((R.camera.fov * Math.PI) / 360)));
 }
 
 export function gesture() {
@@ -122,6 +136,7 @@ function initRender(view) {
   const canvas = document.getElementById('gl');
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
   renderer.autoClear = false;
+  renderer.info.autoReset = false;
   renderer.setClearColor(COLOURS.bg, 1);
 
   const scene = new THREE.Scene();
@@ -141,6 +156,9 @@ function initRender(view) {
   const sun = new THREE.DirectionalLight(0xffffff, 0.9);
   sun.position.set(0.5, 1, 0.6);
   wscene.add(sun);
+  const env = makeEnvironment(renderer);
+  scene.environment = env;
+  wscene.environment = env;
   const wcam = new THREE.PerspectiveCamera(70, view.w / view.h, 0.02, 10);
   const wroot = new THREE.Group();
   wscene.add(wroot);
@@ -165,7 +183,12 @@ function initRender(view) {
     impacts.push({ obj: o, t: 0 });
   }
 
-  R = { renderer, scene, camera, torch, wscene, wcam, wroot, models, flashes, impacts, explosions: [], flashT: 0, muzzleT: 0 };
+  const wl = world.look || {};
+  const look = { ...DEFAULT_LOOK, ...wl, grade: { ...DEFAULT_LOOK.grade, ...(wl.grade || {}) } };
+  const pipeline = createPipeline(renderer, view, Q.tier);
+  const fx = createFx(scene);
+  fx.setQuality(FX_QUALITY[Q.tier]);
+  R = { renderer, scene, camera, torch, wscene, wcam, wroot, models, flashes, impacts, explosions: [], flashT: 0, muzzleT: 0, pipeline, fx, look };
   resize(view);
 }
 
@@ -292,6 +315,7 @@ function damageEnemy(e, amount, head, fromX, fromZ, knock) {
 }
 
 function killEnemy(e) {
+  if (R) R.fx.wreck(e.x, e.h * 0.6, e.z);
   e.dead = true;
   e.state = 'dead';
   e.deadT = 0;
@@ -740,6 +764,8 @@ function fire() {
   if (R) {
     R.muzzleT = 0.06;
     R.flashT = 0.05;
+    const f0 = forward3(p.yaw, p.pitch);
+    R.fx.muzzle(p.x + f0.x * 0.9 + Math.cos(p.yaw) * 0.18, EYE - 0.15 + f0.y * 0.9, p.z + f0.z * 0.9 - Math.sin(p.yaw) * 0.18, f0.x, f0.y, f0.z);
   }
 
   if (w.kind === 'projectile') {
@@ -768,8 +794,10 @@ function fire() {
       const head = hit.head;
       damageEnemy(hit.enemy, w.damage * m.damage * (head ? 2 : 1), head, p.x, p.z, w.knock / w.pellets * (w.pellets > 1 ? 2 : 1));
       spark(hit.x, hit.y, hit.z);
+      fxHit(hit, d, true, w.pellets);
     } else if (hit.t < w.range - 0.01) {
       spark(hit.x - d.x * 0.05, hit.y - d.y * 0.05, hit.z - d.z * 0.05);
+      fxHit(hit, d, false, w.pellets);
     }
   }
 }
@@ -797,6 +825,7 @@ function explode(pr, x, y, z) {
   audio.boom();
   S.player.shake = Math.max(S.player.shake, 0.25);
   if (R) {
+    R.fx.explosion(x, y, z, w.splashRadius);
     const mesh = new THREE.Mesh(
       new THREE.SphereGeometry(1, 10, 8),
       new THREE.MeshBasicMaterial({ color: 0xffaa44, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false }),
@@ -813,6 +842,15 @@ function explode(pr, x, y, z) {
     damageEnemy(e, w.splashDamage * fall * m.damage, false, x, z, w.knock);
   }
   alertNear(x, z, 22);
+}
+
+// Sparks, oil and smoke where a shot lands. Fewer per pellet for shotguns so the pool is never swamped.
+function fxHit(hit, d, robot, pellets) {
+  if (!R) return;
+  const n = Math.max(2, Math.round(7 / Math.sqrt(pellets)));
+  R.fx.sparks(hit.x, hit.y, hit.z, -d.x, 0.3, -d.z, n);
+  if (robot) R.fx.oil(hit.x, hit.y, hit.z, Math.max(1, Math.round(n / 2)));
+  else R.fx.smoke(hit.x - d.x * 0.05, hit.y, hit.z - d.z * 0.05, 1, 0.3, 0.3, 0.4);
 }
 
 function spark(x, y, z) {
@@ -1189,6 +1227,53 @@ function animateViewmodel(dt) {
   R.torch.intensity = 1.2 + (R.flashT > 0 ? 2.5 : 0);
 }
 
+// Steps the quality down when the device is clearly struggling (under about 25 fps for a few seconds).
+// Never steps up within a session, and the tier is remembered for next time. A 30 fps cap (Low Power Mode) is not
+// treated as struggling: that would lower quality without making anything faster.
+function trackFrame(dt) {
+  Q.frames++;
+  Q.ema += (dt - Q.ema) * 0.04;
+  Q.fps = 1 / Q.ema;
+  if (Q.fixed || Q.frames < 150 || Q.frames % 90 !== 0) return;
+  if (Q.ema > 0.04) {
+    const next = TIER_ORDER[TIER_ORDER.indexOf(Q.tier) + 1];
+    if (!next) return;
+    Q.tier = next;
+    Q.frames = 0;
+    Q.ema = 1 / 60;
+    R.pipeline.setTier(next);
+    R.fx.setQuality(FX_QUALITY[next]);
+    resize(S.view);
+    write(QUALITY_KEY, next);
+  }
+}
+
+let vignetteGrad = null;
+let vignetteKey = '';
+function drawVignette(ctx, view) {
+  const key = `${view.w}x${view.h}`;
+  if (key !== vignetteKey) {
+    vignetteGrad = ctx.createRadialGradient(view.w / 2, view.h / 2, Math.min(view.w, view.h) * 0.3, view.w / 2, view.h / 2, Math.hypot(view.w, view.h) * 0.55);
+    vignetteGrad.addColorStop(0, 'rgba(0,0,0,0)');
+    vignetteGrad.addColorStop(1, 'rgba(0,0,0,0.5)');
+    vignetteKey = key;
+  }
+  ctx.fillStyle = vignetteGrad;
+  ctx.fillRect(0, 0, view.w, view.h);
+}
+
+function drawPerf(ctx, view) {
+  const info = R.renderer.info;
+  ctx.font = '600 11px ui-monospace, Menlo, monospace';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.fillRect(4, view.safe.top + 70, 214, 30);
+  ctx.fillStyle = '#9dff9d';
+  ctx.fillText(`${Q.fps.toFixed(0)} fps  ${(Q.ema * 1000).toFixed(1)} ms  ${R.pipeline.tier}${Q.fixed ? ' (fixed)' : ''}`, 8, view.safe.top + 74);
+  ctx.fillText(`calls ${info.render.calls}  tris ${(info.render.triangles / 1000).toFixed(0)}k  ratio ${R.pipeline.pixelRatio}`, 8, view.safe.top + 88);
+}
+
 export function render(ctx, view, alpha) {
   const dtv = 1 / 60;
   ctx.clearRect(0, 0, view.w, view.h);
@@ -1196,12 +1281,17 @@ export function render(ctx, view, alpha) {
   placeCamera();
   animateWorld();
   animateViewmodel(dtv);
-  R.renderer.clear();
-  R.renderer.render(R.scene, R.camera);
-  if (S.mode === 'play' || S.mode === 'intro') {
-    R.renderer.clearDepth();
-    R.renderer.render(R.wscene, R.wcam);
-  }
+  const now = performance.now();
+  const dt = Math.min(0.05, Q.last ? (now - Q.last) / 1000 : 1 / 60);
+  Q.last = now;
+  trackFrame(dt);
+  R.fx.update(dt, R.camera, S.mode !== 'dead');
+  R.renderer.info.reset();
+  const showWeapon = S.mode === 'play' || S.mode === 'intro';
+  R.pipeline.render(R.scene, R.camera, showWeapon ? R.wscene : null, R.wcam, R.look, {
+    time: S.t, hurt: S.mode === 'play' ? S.player.hurt : 0, flash: R.flashT > 0 ? 1 : 0,
+  });
+  if (R.pipeline.tier === 'low') drawVignette(ctx, view);
 
   switch (S.mode) {
     case 'title':
@@ -1223,6 +1313,7 @@ export function render(ctx, view, alpha) {
     default:
       hud.drawPlayHud(ctx, view, buildHudState());
   }
+  if (Q.perf) drawPerf(ctx, view);
 }
 
 // ---- tests ----
