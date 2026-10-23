@@ -421,6 +421,23 @@ const CELLS = [
   { kind: 'reload', sub: 'UNDER THE RIGHT BOX', subW: 'BESIDE THE RIGHT BOX', head: 'RELOAD', cap: 'Reloads on its own when the clip is empty. Tap RELOAD to do it early. Ammo is unlimited, clips are not.' },
 ];
 const TIP = 'Clear every robot in an area to unlock the next door.';
+// Keyboard play on a computer (the same keys as readControls in game3d.js).
+const KEYS = 'PC:  WASD move   ARROWS aim   SPACE fire   R reload   Q swap';
+
+// The tip strip with the keyboard line under it, in one rounded box. h is the whole box height.
+function tipStrip(ctx, x, y, w, h, cx, keys = true) {
+  rrect(ctx, x, y, w, h, 10);
+  ctx.fillStyle = 'rgba(255,46,147,0.14)';
+  ctx.fill();
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = 'rgba(255,46,147,0.6)';
+  ctx.stroke();
+  const tf = fit(ctx, TIP, w - 24, 13, 700, 9);
+  outlined(ctx, tf.str, cx, keys ? y + h * 0.3 : y + h / 2 + 0.5, tf.size, '#ffe0ef', 'center', 700, 'rgba(4,2,8,0)');
+  if (!keys) return;
+  const kf = fit(ctx, KEYS, w - 24, 12, 700, 8);
+  outlined(ctx, kf.str, cx, y + h * 0.72, kf.size, '#a5f3fc', 'center', 700, 'rgba(4,2,8,0)');
+}
 
 // Landscape: the four cells in one row, the tip strip and the two buttons along the bottom.
 function drawControlsWide(ctx, view, st) {
@@ -434,7 +451,7 @@ function drawControlsWide(ctx, view, st) {
   const titleY = top + 24;
   heavy(ctx, 'CONTROLS', cx, titleY, 24, MAGENTA);
   const list = buttons('controls', view, st);
-  const tipH = 30;
+  const tipH = 56; // the tip and the keyboard line
   const tipY = list[0].y - 10 - (tipH - 6);
   const pad = 16;
   const gap = 10;
@@ -461,14 +478,7 @@ function drawControlsWide(ctx, view, st) {
     outlined(ctx, hf.str, ccx, ty, hf.size, c.kind === 'look' ? CYAN : '#ffffff', 'center', 800);
     paragraph(ctx, c.cap, ccx, ty + 19, cw - 6, capSize, '#d6d0ea', 'center', 500, capLh);
   });
-  rrect(ctx, sl + pad, tipY, W - pad * 2, tipH - 6, 10);
-  ctx.fillStyle = 'rgba(255,46,147,0.14)';
-  ctx.fill();
-  ctx.lineWidth = 1.5;
-  ctx.strokeStyle = 'rgba(255,46,147,0.6)';
-  ctx.stroke();
-  const tf = fit(ctx, TIP, W - 56, 13, 700, 9);
-  outlined(ctx, tf.str, cx, tipY + (tipH - 6) / 2 + 0.5, tf.size, '#ffe0ef', 'center', 700, 'rgba(4,2,8,0)');
+  tipStrip(ctx, sl + pad, tipY, W - pad * 2, tipH - 6, cx);
   drawButtons(ctx, list);
 }
 
@@ -491,7 +501,8 @@ export function drawControls(ctx, view, state) {
   const capLines = (c) => wrapLines(ctx, c.cap, cw - 6, capSize, 500, 6).length;
   const cap1 = Math.max(capLines(CELLS[0]), capLines(CELLS[1])) * capLh;
   const cap2 = Math.max(capLines(CELLS[2]), capLines(CELLS[3])) * capLh;
-  const tipH = view.h < 560 ? 30 : 34;
+  const withKeys = view.h >= 620; // a short portrait screen has no room for the keyboard line
+  const tipH = (view.h < 560 ? 30 : 34) + (withKeys ? 24 : 0);
   const headH = 11 + 20 + 4;
   const avail = startY - 10 - tipH - (titleY + 18);
   const diagH2 = view.h < 560 ? 50 : 56;
@@ -527,14 +538,7 @@ export function drawControls(ctx, view, state) {
 
   // tip strip, just above the buttons
   const ty = startY - 10 - tipH + 4;
-  rrect(ctx, 16, ty, view.w - 32, tipH - 6, 10);
-  ctx.fillStyle = 'rgba(255,46,147,0.14)';
-  ctx.fill();
-  ctx.lineWidth = 1.5;
-  ctx.strokeStyle = 'rgba(255,46,147,0.6)';
-  ctx.stroke();
-  const tf = fit(ctx, TIP, view.w - 56, 13, 700, 9);
-  outlined(ctx, tf.str, cx, ty + (tipH - 6) / 2 + 0.5, tf.size, '#ffe0ef', 'center', 700, 'rgba(4,2,8,0)');
+  tipStrip(ctx, 16, ty, view.w - 32, tipH - 6, cx, withKeys);
   drawButtons(ctx, list);
 }
 
