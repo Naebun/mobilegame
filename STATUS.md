@@ -39,18 +39,18 @@ running if you can avoid it.
 
 | Piece | Worktree and branch (id) | Last commit seen | Brief in short |
 | --- | --- | --- | --- |
-| Playtest kit and visual fixes | `agent-a0e968e42d8423870` | `5bf1b2f` vinyl gooseneck | `?perf` readout (`src/perf.js`, P key, `window.__perf`), `docs/playtest.md`, fix the hidden pistol torch, launcher lamp, gooseneck, Longshot laser blob, Mimic glow. Owns `weapons.py`, `weapon-meshes.js`, the torch and enemy bits of `models.js` |
+| Playtest kit and visual fixes | `agent-a0e968e42d8423870` | **Finished and merged into the integration branch** (`9d95a0f`). `perf-check` and `enemies-check` (181) added; the others pass | `?perf` readout (`src/perf.js`, P key, `window.__perf`), `docs/playtest.md`, pistol torch moved onto the slide's top rib, launcher lens moved to the horn's mouth, gooseneck lowered a little, Longshot laser fades near the camera, Mimic glow dimmed while dormant |
 | Textures | `agent-ad5988b83f3eaa676` | no commits yet, 19 files changed | Blender-baked tileable brick and flagstone first (then stone, timber, plaster), WebP in `assets/textures/`, loader `src/textures.js`, generated textures stay as the low-tier and Node fallback. Updates the "no image files" rule in `CLAUDE.md` |
 | Placement | `agent-ac666eb0ec6334ba4` | `fcb28a8` bots taught the new robots and weapons | Part A: teach `scripts/sim3d.mjs` bots the Longshot, Shaken, Nurse, Mimic and new weapons. Part B: place the prepared enemies, weapons, upgrades and ten records in levels 1 and 2, write `docs/placement.md`, rebalance, flip the "nothing is placed" assertions in `enemies-check` and `arsenal-check` |
 | Hard and Extra Hard | `agent-a4c45d83ea3d21186` | `e6c8ded` difficulty screen | `DIFFICULTY` table in `src/data.js`, difficulty screen after NEW GAME, save v2 with per-mode bests, `--difficulty` flag on the sim, `docs/difficulty.md`. Multipliers: Hard 1.5x damage, 1.25x health, 1.1x speed, wind-ups 10 percent quicker; Extra Hard 2x, 1.5x, 1.2x, 20 percent quicker. Telegraph floor about 0.35 s |
 
-Each worktree also has uncommitted changes (5, 19, 16 and 7 files when written), so the agents were mid-task. Each agent was
+The other three worktrees still had uncommitted changes when this was written, so those agents were mid-task. Each agent was
 told to commit on its own branch, never push or merge, and to finish with a report (what it built, every command run, what it
 did not verify). Those reports are in the old chat only.
 
 ### How to integrate them
 
-1. In `/home/user/mobilegame` (integration branch), merge them one at a time, smallest first: playtest kit, textures,
+1. In `/home/user/mobilegame` (integration branch), merge them one at a time, smallest first: (playtest kit is done), textures,
    difficulty, placement last. Conflict hotspots: `src/game3d.js`, `src/data.js`, `src/world.js`, `scripts/smoke.mjs`,
    `scripts/sim3d.mjs`, `scripts/harness/enemies-check.mjs`, `arsenal-check.mjs`, `CLAUDE.md`, `README.md`, `docs/HANDOVER.md`,
    `ROADMAP.md`. Regenerated data modules (`src/weapon-meshes.js`) should come from re-running the script, not hand merging.
