@@ -75,12 +75,12 @@ export const AREA_DEFS = [
 
 // Ambient tint baked into vertex colours. Much lower than level 1: here the torches do the lighting.
 export const AREA_STYLE = {
-  steps: { tint: [0.3, 0.34, 0.44] },
-  longvault: { tint: [0.2, 0.23, 0.3] },
-  casks: { tint: [0.3, 0.24, 0.2] },
-  close: { tint: [0.26, 0.24, 0.22] },
-  plague: { tint: [0.2, 0.27, 0.27] },
-  tour: { tint: [0.3, 0.22, 0.22] },
+  steps: { tint: [0.17, 0.19, 0.24] },
+  longvault: { tint: [0.11, 0.13, 0.17] },
+  casks: { tint: [0.17, 0.13, 0.11] },
+  close: { tint: [0.14, 0.13, 0.12] },
+  plague: { tint: [0.11, 0.15, 0.15] },
+  tour: { tint: [0.17, 0.12, 0.12] },
 };
 export const WALL_STYLE = {
   steps: { upper: 'stone', ut: [0.9, 0.92, 0.95], dado: 0 },
@@ -119,9 +119,9 @@ export const LEVEL_DEF = {
   startYaw: -Math.PI / 2,
   exitR: 1.5,
   fog: { colour: 0x04060a, near: 2, far: 26 },
-  ambient: { sky: 0x7d8cab, ground: 0x34302f, intensity: 0.4 },
+  ambient: { sky: 0x7d8cab, ground: 0x34302f, intensity: 0.16 },
   look: { exposure: 1.35, bloom: 0.7, vignette: 0.5, grade: { lift: [0.006, 0.012, 0.022], gamma: [0.98, 1.0, 1.02], gain: [1.0, 1.0, 1.04] } },
   dark: true, // nearly black: Naebun has to fit the torch to the pistol and switch it on
-  fill: { colour: 0xb8c4e0, intensity: 0.12, range: 5, decay: 1.6 }, // just enough to see your own feet
-  torch: { colour: 0xfff0d8, intensity: 32, distance: 24, angle: 0.4, penumbra: 0.55, decay: 1.5, beam: 16 },
+  fill: { colour: 0xb8c4e0, intensity: 0.07, range: 5, decay: 1.6 }, // just enough to see your own feet
+  torch: { colour: 0xfff0d8, intensity: 32, distance: 24, angle: 0.4, penumbra: 0.9, decay: 1.5, beam: 16 },
 };

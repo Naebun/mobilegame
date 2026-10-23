@@ -437,7 +437,7 @@ function makeTorchBeam() {
       varying float vT; varying vec3 vN; varying vec3 vV;
       void main() {
         float f = abs(dot(normalize(vN), normalize(vV)));
-        float a = pow(f, 1.7) * pow(1.0 - vT, 1.5) * smoothstep(0.0, 0.05, vT) * uI;
+        float a = pow(f, 1.7) * pow(1.0 - vT, 2.4) * smoothstep(0.0, 0.05, vT) * uI;
         gl_FragColor = vec4(uColor * a, 1.0);
       }`,
     transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false,
@@ -2650,7 +2650,7 @@ function updateTorch() {
   u.uL.value = len;
   u.uR0.value = 0.025;
   u.uR1.value = tbeam.tanA * len;
-  u.uI.value = 0.22 * T.k * flick;
+  u.uI.value = 0.12 * T.k * flick;
   tbeam.mesh.position.copy(_tp);
   tbeam.mesh.quaternion.setFromUnitVectors(_tz, _td);
   tbeam.mesh.visible = true;
