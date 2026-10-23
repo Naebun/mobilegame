@@ -1,69 +1,18 @@
-// The Cowgate: level geometry, collision, pathing and content for the first-person game.
+// Level geometry, collision, pathing and lighting for the first-person game, built from a level definition
+// (src/levels/*.js: map, areas, styles, atmosphere). Level 1 (the Cowgate) keeps its dressing in this file; later levels
+// bring a decor object (src/levels/*-decor.js) that fills the same slots.
 // Everything is procedural and DOM-free, so it also runs under plain Node for headless tests.
 // Build order: parse the ASCII map -> queries -> baked-light emitters -> merged geometry -> doors and lights.
 import * as THREE from '../vendor/three.module.min.js';
 import { TILE, WALL_H, COLOURS } from './consts.js';
+import { LEVEL_DEF as COWGATE } from './levels/cowgate.js';
+import { LEVEL_DEF as VAULTS } from './levels/vaults.js';
+import { makeVaultsDecor } from './levels/vaults-decor.js';
 
 const T = TILE;
-const COLS = 36;
-const ROWS = 48;
+const makeDecor = (lv, env) => (lv.id === 'vaults' ? makeVaultsDecor(lv, env) : null);
+export const LEVEL_DEFS = { 1: COWGATE, 2: VAULTS };
 
-// Legend. Solid: # wall, P pillar, S speaker stack, T stairs. Low cover (blocks walking, not bullets):
-// b bar counter, j DJ booth, v booth, x crate or flight case, r coat or costume rail, o round table.
-// 1-6 door tiles (two per door), . floor. Markers that sit on floor: @ start, E exit (two tiles),
-// d fizzbang, w bampot, K bouncer, G shotgun, M smg, L launcher; drinks H dram, O orange, B heavy, N energy, X last orders.
-// <map>
-const MAP = [
-  '####################################',
-  '####....xxx.....xx........xx.......#',
-  '#..#...............................#',
-  '#EE6................d..............#',
-  '#EE6......K.....P.......P..........#',
-  '#..#..................d............#',
-  '####.........B...................H.#',
-  '####..........rr....rr.............#',
-  '###############################55###',
-  '#.....vvv...N.vvv..X..vvv..........#',
-  '#..................................#',
-  '#.L...............d.......d...w..w.#',
-  '#..........................H.......#',
-  '###44###############################',
-  '#...........................#x.....#',
-  '#........w..................#......#',
-  '#..................w........#...H..#',
-  '#...........................#.....x#',
-  '#....bbbbbbbbbbbbbbbbbbbbB..#.....x#',
-  '#..........o................#......#',
-  '#..o...d........P....d.............#',
-  '#.............d....................#',
-  '#.................o.....o..........#',
-  '###############################33###',
-  '#...........S.jjjjjjjj.S...........#',
-  '#...........S.jjjjjjjjNS...........#',
-  '#...d.........jjjjjjjj.............#',
-  '#...........w....X.........d.......#',
-  '#v....S...........................S#',
-  '#v....S......................P....S#',
-  '#.....S...P........................#',
-  '#..............P........P.......d..#',
-  '#..M...............................#',
-  '#.................................S#',
-  '#.....S...P........SS........P....S#',
-  '#v....S....................H...d...#',
-  '#v....S............................#',
-  '#..................................#',
-  '###################22###############',
-  '########..............##############',
-  '#TTT..x#..............##############',
-  '#TTT...#...Orrr..P....##############',
-  '#......#..............##############',
-  '#......1..G..d....d...##############',
-  '#..@...1.......rrr....##############',
-  '#......#..............##############',
-  '#x....x#...xx.........##############',
-  '####################################',
-];
-// </map>
 
 // ---- tile kinds ----
 const FLOOR = 0;
@@ -84,17 +33,12 @@ const rgb = (hex) => { const c = new THREE.Color(hex); return [c.r, c.g, c.b]; }
 const mul = (c, k) => [c[0] * k, c[1] * k, c[2] * k];
 const jit = (h, amp) => 1 + (((h >>> 3) % 1000) / 1000 - 0.5) * 2 * amp;
 
-const AREA_DEFS = [
-  { id: 'stairwell', name: 'THE COWGATE: STAIRWELL', objective: 'Head into the club', rect: { c0: 1, r0: 40, c1: 7, r1: 46 }, unlocks: [] },
-  { id: 'cloakroom', name: 'THE COWGATE: CLOAKROOM', objective: 'Clear the cloakroom', rect: { c0: 8, r0: 38, c1: 21, r1: 46 }, unlocks: ['d2'] },
-  { id: 'dancefloor', name: 'THE COWGATE: DANCEFLOOR', objective: 'Clear the dancefloor', rect: { c0: 1, r0: 23, c1: 34, r1: 37 }, unlocks: ['d3'] },
-  { id: 'bar', name: 'THE COWGATE: BAR', objective: 'Clear the bar', rect: { c0: 1, r0: 13, c1: 34, r1: 22 }, unlocks: ['d4'] },
-  { id: 'vip', name: 'THE COWGATE: VIP CORRIDOR', objective: 'Clear the VIP corridor', rect: { c0: 1, r0: 8, c1: 34, r1: 12 }, unlocks: ['d5'] },
-  { id: 'backstage', name: 'THE COWGATE: BACKSTAGE', objective: 'Take down the bouncer', rect: { c0: 1, r0: 1, c1: 34, r1: 7 }, unlocks: ['d6'] },
-];
 
 // ---- parse the map ----
-function parseMap() {
+function parseMap(lv) {
+  const { cols: COLS, rows: ROWS, map: MAP } = lv;
+  const solidChars = lv.solid || SOLID_CHARS;
+  const coverChars = lv.cover || COVER_CHARS;
   const kind = new Uint8Array(COLS * ROWS);
   const sub = new Array(COLS * ROWS).fill('');
   const doorTiles = {}; // digit -> [[c, r], ...]
@@ -104,9 +48,9 @@ function parseMap() {
       const ch = MAP[r][c];
       const i = r * COLS + c;
       sub[i] = ch;
-      if (SOLID_CHARS[ch] !== undefined) kind[i] = SOLID_CHARS[ch];
-      else if (COVER_CHARS.includes(ch)) kind[i] = COVER;
-      else if (ch >= '1' && ch <= '6') {
+      if (solidChars[ch] !== undefined) kind[i] = solidChars[ch];
+      else if (coverChars.includes(ch)) kind[i] = COVER;
+      else if (ch >= '1' && ch <= String(lv.doorCount)) {
         kind[i] = DOOR;
         (doorTiles[ch] = doorTiles[ch] || []).push([c, r]);
       } else if (ch !== '.') marks.push({ ch, c, r });
@@ -118,13 +62,16 @@ function parseMap() {
 const tileCentre = (c, r) => [(c + 0.5) * T, (r + 0.5) * T];
 
 // opts.quality: 'high' (default), 'medium' or 'low'. Texture size, normal and roughness maps, subdivision and effects scale with it.
+// opts.level: 1 (the Cowgate, default) or 2 (the Vaults).
 export function buildWorld(opts = {}) {
   const quality = opts && QUALITY[opts.quality] ? opts.quality : 'high';
-  const { kind, sub, doorTiles, marks } = parseMap();
+  const lv = (opts && LEVEL_DEFS[opts.level]) || COWGATE;
+  const { cols: COLS, rows: ROWS } = lv;
+  const { kind, sub, doorTiles, marks } = parseMap(lv);
   const at = (c, r) => (c < 0 || r < 0 || c >= COLS || r >= ROWS ? WALL : kind[r * COLS + c]);
 
   // ---- areas ----
-  const areas = AREA_DEFS.map((d) => ({ id: d.id, name: d.name, objective: d.objective, rect: { ...d.rect }, spawns: [], unlocks: [...d.unlocks] }));
+  const areas = lv.areas.map((d) => ({ id: d.id, name: d.name, objective: d.objective, rect: { ...d.rect }, spawns: [], unlocks: [...d.unlocks] }));
   const areaIdx = new Int8Array(COLS * ROWS).fill(-1);
   areas.forEach((a, n) => {
     for (let r = a.rect.r0; r <= a.rect.r1; r++) for (let c = a.rect.c0; c <= a.rect.c1; c++) if (areaIdx[r * COLS + c] < 0) areaIdx[r * COLS + c] = n;
@@ -135,7 +82,7 @@ export function buildWorld(opts = {}) {
   const doors = [];
   const doorState = []; // internal: { t, target, tiles, axis, w }
   const doorAtTile = new Int8Array(COLS * ROWS).fill(-1);
-  for (let n = 1; n <= 6; n++) {
+  for (let n = 1; n <= lv.doorCount; n++) {
     const tiles = doorTiles[String(n)];
     const [c0, r0] = tiles[0];
     const [c1, r1] = tiles[1];
@@ -151,17 +98,17 @@ export function buildWorld(opts = {}) {
   const doorIndex = (id) => doors.findIndex((d) => d.id === id);
 
   // ---- spawns, pickups, start, exit ----
-  const entryOf = [null, doors[0], doors[1], doors[2], doors[3], doors[4]];
+  const entryOf = lv.entryDoor.map((id) => (id ? doors.find((d) => d.id === id) : null));
   const pickups = [];
   const counts = {};
-  let start = { x: 7, z: 89, yaw: -Math.PI / 2 };
+  let start = { x: 0, z: 0, yaw: lv.startYaw };
   const exitTiles = [];
-  const KIND_OF = { d: 'fizzbang', w: 'bampot', K: 'bouncer' };
-  const PICK_OF = { G: ['weapon', 'shotgun'], M: ['weapon', 'smg'], L: ['weapon', 'launcher'], H: ['drink', 'dram'], O: ['drink', 'orange'], B: ['drink', 'heavy'], N: ['drink', 'energy'], X: ['drink', 'lastorders'] };
+  const KIND_OF = lv.kinds;
+  const PICK_OF = lv.picks;
   for (const m of marks) {
     const [x, z] = tileCentre(m.c, m.r);
     const an = areaOfTile(m.c, m.r);
-    if (m.ch === '@') start = { x, z, yaw: -Math.PI / 2 };
+    if (m.ch === '@') start = { x, z, yaw: lv.startYaw };
     else if (m.ch === 'E') exitTiles.push([x, z]);
     else if (KIND_OF[m.ch]) {
       const e = entryOf[an];
@@ -176,7 +123,7 @@ export function buildWorld(opts = {}) {
   const exit = {
     x: exitTiles.reduce((s, p) => s + p[0], 0) / exitTiles.length,
     z: exitTiles.reduce((s, p) => s + p[1], 0) / exitTiles.length,
-    r: 1.5,
+    r: lv.exitR,
   };
 
   // ---- tile queries ----
@@ -423,7 +370,7 @@ export function buildWorld(opts = {}) {
   }
 
   // ---- visuals ----
-  const visuals = buildVisuals({ kind, sub, at, areas, areaOfTile, doors, doorAtTile, doorState, exit, start, raycast, quality });
+  const visuals = buildVisuals({ lv, kind, sub, at, areas, areaOfTile, doors, doorAtTile, doorState, exit, start, raycast, quality });
 
   function update(dt, time) {
     const t = time === undefined ? (visuals.clock += dt) : time;
@@ -440,9 +387,12 @@ export function buildWorld(opts = {}) {
 
   return {
     group: visuals.group,
-    fog: { colour: 0x0b0608, near: 6, far: 40 },
-    ambient: { sky: 0xb0a09a, ground: 0x6e5c54, intensity: 2.2 },
-    look: { exposure: 1.3, bloom: 0.55, vignette: 0.35, grade: { lift: [0.012, 0.004, 0.016], gamma: [1.0, 0.98, 0.95], gain: [1.05, 1.0, 0.94] } },
+    level: lv.number,
+    id: lv.id,
+    fog: lv.fog,
+    ambient: lv.ambient,
+    look: lv.look,
+    torch: lv.torch,
     quality,
     start,
     exit,
@@ -1232,26 +1182,6 @@ const QUALITY = {
   low: { detail: false, S: 256, nrm: false, rgh: false, std: false, bevel: false, fine: false, spots: 0, shafts: false, haze: false, steam: false, sway: false },
 };
 
-const AREA_STYLE = {
-  // ambient tint baked into vertex colours; low on purpose, the baked pools and the real lights do the lighting
-  stairwell: { tint: [0.46, 0.5, 0.6] },
-  cloakroom: { tint: [0.6, 0.46, 0.36] },
-  dancefloor: { tint: [0.52, 0.37, 0.4] },
-  bar: { tint: [0.6, 0.46, 0.34] },
-  vip: { tint: [0.52, 0.36, 0.34] },
-  backstage: { tint: [0.44, 0.5, 0.58] },
-};
-const WALL_STYLE = {
-  stairwell: { upper: 'stone', ut: [1.0, 1.0, 0.96], dado: 0 },
-  cloakroom: { upper: 'brick', ut: [1.0, 0.94, 0.9], dado: 1.15, dmesh: 'paint', dt: [0.2, 0.34, 0.25] },
-  dancefloor: { upper: 'brick', ut: [0.82, 0.72, 0.72], dado: 0 },
-  bar: { upper: 'brick', ut: [1.05, 0.9, 0.82], dado: 1.2, dmesh: 'wood', dt: [0.62, 0.46, 0.32] },
-  vip: { upper: 'paint', ut: [0.98, 0.88, 0.72], dado: 1.3, dmesh: 'paint', dt: [0.46, 0.1, 0.14] },
-  backstage: { upper: 'paint', ut: [0.8, 0.84, 0.84], dado: 1.2, dmesh: 'paint', dt: [0.12, 0.26, 0.2] },
-};
-const FLOOR_STYLE = { stairwell: 'flag', cloakroom: 'flag', dancefloor: 'floorboards', bar: 'floorboards', vip: 'carpet', backstage: 'concrete' };
-const FLOOR_TINT = { stairwell: [0.95, 0.95, 1.0], cloakroom: [1.0, 0.92, 0.88], dancefloor: [0.9, 0.82, 0.8], bar: [1.0, 0.9, 0.8], vip: [1.0, 0.9, 0.9], backstage: [0.95, 1.0, 1.05] };
-
 const C = {
   iron: [0.2, 0.2, 0.22], ironD: [0.07, 0.07, 0.08], steel: [0.55, 0.55, 0.58], brass: [0.78, 0.56, 0.2], chrome: [0.85, 0.85, 0.88], rust: [0.24, 0.14, 0.09],
   rubber: [0.03, 0.03, 0.035], black: [0.035, 0.035, 0.04], leather: [0.3, 0.06, 0.08],
@@ -1261,11 +1191,15 @@ const glowc = (hex, k = 1) => mul(rgb(hex), k); // HDR: k above 1 on purpose, so
 const WALL_YS = [0, 0.3, 0.8, 1.5, 2.5, 3.1, WALL_H];
 
 function buildVisuals(ctx) {
-  const { kind, sub, at, areas, areaOfTile, doors, doorAtTile, raycast, quality } = ctx;
+  const { lv, kind, sub, at, areas, areaOfTile, doors, doorAtTile, raycast, quality } = ctx;
+  const { cols: COLS, rows: ROWS } = lv;
+  const { areaStyle: AREA_STYLE, wallStyle: WALL_STYLE, floorStyle: FLOOR_STYLE, floorTint: FLOOR_TINT } = lv;
   const Q = QUALITY[quality];
   const tex = buildTextures(Q);
   const aid = (an) => areas[an].id;
   const sprite = Q.spots || Q.steam ? softSprite(64, 1.6) : null;
+  const COW = lv.id === 'cowgate';
+  const D = COW ? null : makeDecor(lv, { Q, areas, at, areaOfTile, doors, doorAtTile, exit: ctx.exit, start: ctx.start, hash, ihash });
 
   // ---- wall faces (data first: the decor below decides which lights exist before anything is baked) ----
   const faces = [];
@@ -1288,7 +1222,8 @@ function buildVisuals(ctx) {
     const { c, r, nz, h, id } = fc;
     if (fc.jamb) continue;
     let what = null;
-    if (id === 'bar' && r === 13 && nz === 1 && c >= 5 && c <= 24 && c % 2 === 1) what = 'alcove-shelves';
+    if (D) what = D.plan(fc);
+    else if (id === 'bar' && r === 13 && nz === 1 && c >= 5 && c <= 24 && c % 2 === 1) what = 'alcove-shelves';
     else if (id === 'cloakroom' && r === 38 && nz === 1 && c >= 9 && c <= 16 && c % 2 === 1) what = 'alcove-bulb';
     else if (id === 'vip' && r === 8 && nz === 1 && c % 4 === 2 && c >= 6 && c <= 28) what = 'alcove-mirror';
     else if (id === 'vip' && r === 13 && nz === -1 && c % 4 === 0 && c >= 8 && c <= 28) what = 'alcove-mirror';
@@ -1317,6 +1252,8 @@ function buildVisuals(ctx) {
     [10, 27.5, 1], [15, 27.5, 0], [20, 27.5, 1], [25, 27.5, 0], [30, 27.5, 1],
     [14, 36, 0], [20, 36, 1], [26, 36, 0],
   ];
+  if (D) D.lights(emit, faces, plan);
+  if (COW) {
   PENDANT.forEach(([, ps]) => ps.forEach(([c, r]) => emit(c, r, 2.6, 0xffa24a, 1.25, 8.5, true)));
   BULBS.forEach(([id, ps]) => ps.forEach(([c, r]) => emit(c, r, 2.6, id === 'stairwell' ? 0xffb85a : 0xffd890, id === 'stairwell' ? 1.7 : 1.05, 9, true)));
   CANS.forEach(([c, r, red]) => emit(c, r, 2.8, red ? 0xff2412 : 0xff7a14, 1.35, 11, true));
@@ -1332,6 +1269,7 @@ function buildVisuals(ctx) {
   for (const [fc, what] of plan) {
     if (what === 'sconce') emit((fc.f.cx + fc.nx * 0.3) / T, (fc.f.cz + fc.nz * 0.3) / T, 1.9, 0xffa860, 0.85, 5.5);
     if (what === 'alcove-bulb') emit((fc.f.cx + fc.nx * 0.3) / T, (fc.f.cz + fc.nz * 0.3) / T, 1.2, 0xff6a30, 0.7, 4);
+  }
   }
 
   // Tile-level occlusion: for every light, a 0.5 unit grid of "can this cell see the light", so pools stop at walls.
@@ -1502,6 +1440,7 @@ function buildVisuals(ctx) {
     neon: new Mesher(1, null), shaftS: new Mesher(1, null), shaftL: new Mesher(1, null),
   };
   const bb = (m, x0, y0, z0, x1, y1, z1, col, b = 0.04, floor = false) => (Q.bevel ? m.bbox(x0, y0, z0, x1, y1, z1, col, b, { floor }) : m.box(x0, y0, z0, x1, y1, z1, col));
+  if (D) D.init({ THREE, M, bb, obox, disc, annulus, ribbon, patch, frame, Mesher, C, glowc, mul, rgb, jit, clamp, WALL_H, T, faces, sub, raycast });
 
   // ---- walls: every visible tile face, subdivided where the baked occlusion and light change fastest ----
   const hw = T / 2;
@@ -1517,6 +1456,7 @@ function buildVisuals(ctx) {
     const st = WALL_STYLE[f.id];
     let upper = st.upper;
     let ut = st.ut;
+    if (D) { const v = D.wallVariant(f, st); if (v) { upper = v[0]; ut = v[1]; } }
     if (f.id === 'dancefloor' && f.h % 6 === 0) { upper = 'paint'; ut = [0.2, 0.17, 0.18]; } // painted over black
     if (f.id === 'cloakroom' && f.h % 8 === 0) { upper = 'paint'; ut = [0.95, 0.88, 0.74]; }
     if (f.id === 'bar' && f.h % 9 === 0) { upper = 'paint'; ut = [0.7, 0.55, 0.4]; }
@@ -1538,7 +1478,7 @@ function buildVisuals(ctx) {
 
   // timber beams across the rooms: planned now so the plaster under them can be baked darker
   const beamBoxes = [];
-  for (const an of [1, 2, 3, 5]) {
+  if (COW) for (const an of [1, 2, 3, 5]) {
     const a = areas[an];
     for (let c = a.rect.c0 + 2; c <= a.rect.c1; c += 4) {
       let start = -1;
@@ -1578,7 +1518,7 @@ function buildVisuals(ctx) {
       const colf = (i, j, p) => { const k = jit(hash(Math.round(p[0] * 4), Math.round(p[2] * 4), 5), 0.07); return [ft[0] * k, ft[1] * k, ft[2] * k]; };
       fm.grid([x0, 0, z0], [x0 + T, 0, z0], [x0, 0, z0 + T], us, vs, colf, [0, 1, 0]);
       const cj = (i, j, p) => { const k = jit(hash(Math.round(p[0] * 4), Math.round(p[2] * 4), 9), 0.08); return [0.9 * k, 0.82 * k, 0.74 * k]; };
-      M.plaster.grid([x0, WALL_H, z0], [x0 + T, WALL_H, z0], [x0, WALL_H, z0 + T], Q.detail ? us : [0, 1], Q.detail ? vs : [0, 1], cj, [0, -1, 0]);
+      if (!(D && D.ceilingTile(c, r, an, cj))) M.plaster.grid([x0, WALL_H, z0], [x0 + T, WALL_H, z0], [x0, WALL_H, z0 + T], Q.detail ? us : [0, 1], Q.detail ? vs : [0, 1], cj, [0, -1, 0]);
     }
   }
 
@@ -1676,6 +1616,7 @@ function buildVisuals(ctx) {
       const ch = sub[r * COLS + c];
       const k = at(c, r);
       if (k === FLOOR || k === WALL || k === DOOR) continue;
+      if (D) { D.prop(ch, c, r, k); continue; }
       const cx = (c + 0.5) * T;
       const cz = (r + 0.5) * T;
       const an = areaOfTile(c, r);
@@ -1846,6 +1787,8 @@ function buildVisuals(ctx) {
   }
 
   // ---- ceilings: timber beams, brick ribs in the VIP, iron pipes ----
+  const STEAM = COW ? [[44, 3.1, 3.5, 0, 1], [12.5, 3.1, 81.9, 0, 1]] : [];
+  if (COW) {
   for (const [x, z0, z1] of beamBoxes) {
     bb(M.wood, x - 0.17, WALL_H - 0.36, z0, x + 0.17, WALL_H, z1, [0.4, 0.28, 0.18], 0.035);
     for (let z = z0 + 2; z < z1 - 1; z += 4) bb(M.metal, x - 0.2, WALL_H - 0.3, z - 0.07, x + 0.2, WALL_H - 0.22, z + 0.07, C.iron, 0.01); // iron strap
@@ -1878,7 +1821,6 @@ function buildVisuals(ctx) {
     }
   }
   // steam valves: a red wheel on the backstage and stairwell pipes (the steam itself is animated below)
-  const STEAM = [[44, 3.1, 3.5, 0, 1], [12.5, 3.1, 81.9, 0, 1]];
   for (const [x, y, z] of STEAM) {
     M.metal.box(x - 0.1, y - 0.12, z - 0.5, x + 0.1, y + 0.08, z - 0.3, C.iron);
     M.metal.frustum(x, z - 0.52, 0.16, 0.16, y - 0.02, y + 0.0, 10, [0.55, 0.08, 0.06]);
@@ -2076,14 +2018,16 @@ function buildVisuals(ctx) {
   for (const [c, r, rad, wet] of [[8.5, 33.5, 0.9, 0], [22, 29.5, 0.7, 0], [27.5, 33, 0.8, 0], [12, 36, 0.6, 0], [30, 26, 0.7, 0], [16, 29, 0.5, 0], [9.5, 20.5, 0.8, 0], [20, 22, 0.6, 0], [26, 20, 0.7, 0], [4.5, 16.5, 0.6, 0], [14, 45, 0.9, 1], [18, 40.5, 0.7, 1], [4.5, 43, 0.6, 1], [5.5, 45.5, 0.5, 1], [16.5, 46, 0.6, 1]]) {
     patch(M.glass, c * T, 0.016, r * T, rad * 0.8, 11, wet ? [0.03, 0.04, 0.05] : [0.025, 0.02, 0.018], c * 7 + r);
   }
+  } // end of the Cowgate dressing
+  if (D) D.dress();
 
   // ---- the mirror ball, its spots, haze and steam ----
   const BX = 17.5 * T;
   const BY = 2.55;
   const BZ = 30.5 * T;
-  M.metal.tube([BX, BY + 0.38, BZ], [BX, WALL_H, BZ], 0.012, C.steel, 4);
+  if (COW) M.metal.tube([BX, BY + 0.38, BZ], [BX, WALL_H, BZ], 0.012, C.steel, 4);
   const hazeM = new Mesher(14, null);
-  if (Q.haze) {
+  if (COW && Q.haze) {
     for (const [x0, z0, x1, z1] of [[2, 48, 70, 76], [2, 28, 56, 46], [2, 18, 70, 26]]) {
       const fade = (a, lo, hi) => clamp(Math.min(a - lo, hi - a) / 5, 0, 1); // soft borders, so the sheet has no visible edge
       const us = [0, 0.04, 0.12, 0.88, 0.96, 1];
@@ -2114,7 +2058,7 @@ function buildVisuals(ctx) {
   };
   const basic = (swayed = false) => { const m = new THREE.MeshBasicMaterial({ vertexColors: true }); return swayed && Q.sway ? withSway(m) : m; };
   const group = new THREE.Group();
-  group.name = 'cowgate';
+  group.name = lv.id;
   const add = (m) => { if (m) group.add(m); return m; };
   add(M.brick.mesh(textured('brick', 1.0)));
   add(M.paint.mesh(textured('paint', 1.0)));
@@ -2146,13 +2090,12 @@ function buildVisuals(ctx) {
   for (const [m, mat] of [[M.shaftS, shaftSMat], [M.shaftL, shaftLMat]]) { const mesh = add(m.mesh(mat)); if (mesh) mesh.renderOrder = 2; }
 
   // mirror ball: faceted, chrome, turning; its light spots are a small dynamic mesh of soft additive quads
-  const ball = new THREE.Mesh(new THREE.IcosahedronGeometry(0.4, 2), Q.std
+  const ball = !COW ? null : new THREE.Mesh(new THREE.IcosahedronGeometry(0.4, 2), Q.std
     ? new THREE.MeshStandardMaterial({ color: 0xd8d8e0, metalness: 1, roughness: 0.06, flatShading: true, envMapIntensity: 2.2 })
     : new THREE.MeshLambertMaterial({ color: 0x909098, emissive: 0x100e0c, flatShading: true }));
-  ball.position.set(BX, BY, BZ);
-  group.add(ball);
+  if (ball) { ball.position.set(BX, BY, BZ); group.add(ball); }
   let spots = null;
-  const SPOTN = Q.spots;
+  const SPOTN = COW ? Q.spots : 0;
   if (SPOTN) {
     const pos = new Float32Array(SPOTN * 12);
     const uv = new Float32Array(SPOTN * 8);
@@ -2218,7 +2161,7 @@ function buildVisuals(ctx) {
 
   // haze hangs low over the big rooms and drifts
   let hazeTexture = null;
-  if (Q.haze) {
+  if (COW && Q.haze) {
     hazeTexture = hazeTex();
     const hm = new THREE.MeshBasicMaterial({ map: hazeTexture, color: new THREE.Color(0xc89060).multiplyScalar(0.5), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
     const hz = hazeM.mesh(hm);
@@ -2300,17 +2243,20 @@ function buildVisuals(ctx) {
   doors.forEach((d, i) => paintLamp(i, d.open));
 
   // lights: four, one per big room that needs warmth. The integrator adds the camera light.
-  const lights = {
+  const lights = COW ? {
     dance: new THREE.PointLight(0xff4a22, 40, 26, 2),
     bar: new THREE.PointLight(0xffa860, 26, 22, 2),
     vip: new THREE.PointLight(0xff9a70, 20, 24, 2),
     back: new THREE.PointLight(0xdfe8d8, 24, 24, 2),
-  };
-  lights.dance.position.set(17.5 * T, 2.6, 31 * T);
-  lights.bar.position.set(14 * T, 2.6, 18 * T);
-  lights.vip.position.set(17.5 * T, 2.4, 11 * T);
-  lights.back.position.set(19 * T, 2.7, 4 * T);
+  } : {};
+  if (COW) {
+    lights.dance.position.set(17.5 * T, 2.6, 31 * T);
+    lights.bar.position.set(14 * T, 2.6, 18 * T);
+    lights.vip.position.set(17.5 * T, 2.4, 11 * T);
+    lights.back.position.set(19 * T, 2.7, 4 * T);
+  }
   Object.values(lights).forEach((l) => group.add(l));
+  if (D) D.finish({ group, textured, flat, basic, additive, sprite });
   const base = { dance: 40, bar: 26, vip: 20, back: 24 };
   const red = new THREE.Color(0xff3a1c);
   const amber = new THREE.Color(0xff9a30);
@@ -2329,11 +2275,13 @@ function buildVisuals(ctx) {
     const flickBar = 0.94 + 0.06 * Math.sin(time * 13.1) * Math.sin(time * 7.3);
     const tired = ihash(Math.floor(time * 11), 0, 91) < 0.05 ? 0.3 : 1;
     const bulbA = ihash(Math.floor(time * 13), 0, 93) < 0.1 ? 0.2 : 0.96 + 0.04 * Math.sin(time * 31);
-    lights.dance.color.copy(red).lerp(amber, 0.5 + 0.5 * Math.sin(time * 0.9));
-    lights.dance.intensity = base.dance * (0.82 + 0.18 * pulse);
-    lights.bar.intensity = base.bar * flickBar;
-    lights.vip.intensity = base.vip * (0.96 + 0.04 * Math.sin(time * 2.1));
-    lights.back.intensity = base.back * tired;
+    if (COW) {
+      lights.dance.color.copy(red).lerp(amber, 0.5 + 0.5 * Math.sin(time * 0.9));
+      lights.dance.intensity = base.dance * (0.82 + 0.18 * pulse);
+      lights.bar.intensity = base.bar * flickBar;
+      lights.vip.intensity = base.vip * (0.96 + 0.04 * Math.sin(time * 2.1));
+      lights.back.intensity = base.back * tired;
+    }
     gMat.bar.color.setScalar(flickBar);
     gMat.b.color.setScalar(tired);
     gMat.a.color.setScalar(bulbA);
@@ -2341,8 +2289,9 @@ function buildVisuals(ctx) {
     shaftSMat.opacity = 0.55 + 0.45 * pulse;
     const ok = ihash(Math.floor(time * 10), 0, 92) > 0.08;
     neonMat.color.setScalar(ok ? 0.92 + 0.08 * Math.sin(time * 40) : 0.25);
-    ball.rotation.y = time * 0.42;
+    if (ball) ball.rotation.y = time * 0.42;
     if (spots) updateSpots(time);
+    if (D) D.animate(time);
     if (steam) updateSteam(time);
     if (hazeTexture) { hazeTexture.offset.x = time * 0.006; hazeTexture.offset.y = time * 0.003; }
   }
