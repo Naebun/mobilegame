@@ -62,6 +62,8 @@ const S = {
   hitMarker: 0,
   headshot: false,
   allClear: false,
+  camK: 0, // 0 first person .. 1 third person (Last Orders pulls the camera out)
+  camYaw: 0, // where the third-person camera sits: behind this heading
   laser: null, // the super power-up spin: { t, dur, charge, yaw0, beam, len, sounded }
   drink: null, // the drink being drunk: { id, t, dur, opened, gulpT, applied }
   buffs: { speed: 0, guard: 0, rapid: 0 }, // seconds left
@@ -200,6 +202,11 @@ function initRender(view) {
     }
   }
 
+  // Freddie himself, seen only when Last Orders pulls the camera out to third person
+  const freddie = M.makeFreddie ? M.makeFreddie() : fallbackFreddie();
+  freddie.group.visible = false;
+  scene.add(freddie.group);
+
   // the laser: a white-hot core inside a wide magenta glow, both HDR so they bloom; unit length along -z
   const beam = new THREE.Group();
   const beamPart = (w, colour, power, opacity) => {
@@ -232,8 +239,32 @@ function initRender(view) {
   const pipeline = createPipeline(renderer, view, Q.tier);
   const fx = createFx(scene);
   fx.setQuality(FX_QUALITY[Q.tier]);
-  R = { renderer, scene, camera, torch, wscene, wcam, wroot, models, flashes, impacts, explosions: [], flashT: 0, muzzleT: 0, pipeline, fx, look, drinkVms, beam, beamParts: [beamCore, beamMid, beamGlow], fov: 85 };
+  R = { renderer, scene, camera, torch, wscene, wcam, wroot, models, flashes, impacts, explosions: [], flashT: 0, muzzleT: 0, pipeline, fx, look, drinkVms, beam, beamParts: [beamCore, beamMid, beamGlow], fov: 85, freddie };
   resize(view);
+}
+
+// Stand-in until models.js provides makeFreddie: a simple figure with a cannon, enough to see the spin.
+function fallbackFreddie() {
+  const g = new THREE.Group();
+  const mat = (c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.7 });
+  const box = (w, h, d, x, y, z, c) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(c));
+    m.position.set(x, y, z);
+    g.add(m);
+    return m;
+  };
+  box(0.55, 0.8, 0.32, 0, 1.15, 0, 0x6d28d9);
+  box(0.2, 0.75, 0.2, -0.14, 0.4, 0, 0x2a3a5a);
+  box(0.2, 0.75, 0.2, 0.14, 0.4, 0, 0x2a3a5a);
+  box(0.3, 0.3, 0.3, 0, 1.75, 0, 0xf0c8a0);
+  box(0.36, 0.1, 0.36, 0, 1.92, 0, 0xff2e93);
+  box(0.16, 0.16, 0.9, -0.2, 1.25, -0.5, 0x6d28d9);
+  box(0.16, 0.16, 0.9, 0.2, 1.25, -0.5, 0x6d28d9);
+  box(0.5, 0.5, 0.7, 0, 1.25, -1.0, 0x333344);
+  const muzzle = new THREE.Object3D();
+  muzzle.position.set(0, 1.25, -1.4);
+  g.add(muzzle);
+  return { group: g, height: 1.9, setPose() {}, muzzle };
 }
 
 function resetLevel() {
@@ -284,6 +315,7 @@ function resetLevel() {
   S.newBest = false;
   S.drink = null;
   S.laser = null;
+  S.camK = 0;
   S.buffs.speed = S.buffs.guard = S.buffs.rapid = 0;
   flowT = 0;
   flow.update(S.player.x, S.player.z);
@@ -1075,7 +1107,8 @@ function updateDrink(dt) {
   if (!d.applied && k >= 0.65) {
     d.applied = true;
     audio.drinkDone(d.id);
-    applyDrink(d.id);
+    if (DRINKS[d.id].super) audio.pickup(); // the super drink's effect is the laser, which starts when the animation ends
+    else applyDrink(d.id);
   }
   if (k >= 1) {
     S.drink = null;
@@ -1102,6 +1135,7 @@ function laserBlocked() {
 function startLaser() {
   const p = S.player;
   const cfg = DRINKS.lastorders.laser;
+  S.camYaw = p.yaw;
   S.laser = { t: 0, dur: cfg.seconds, charge: cfg.charge, tail: cfg.tail, yaw0: p.yaw, beam: false, len: 0, sounded: false, ended: false };
   p.vx = p.vz = 0;
   S.banner = { title: 'LAST ORDERS!', sub: DRINKS.lastorders.line, t: 2.4, max: 2.4 };
@@ -1239,6 +1273,8 @@ export function update(dt, input, view) {
   if (S.banner && (S.banner.t -= dt) <= 0) S.banner = null;
   if (S.toast && (S.toast.t -= dt) <= 0) S.toast = null;
   S.hitMarker = Math.max(0, S.hitMarker - dt * 5);
+  S.camK += ((S.laser && S.laser.t < S.laser.dur - 0.15 ? 1 : 0) - S.camK) * Math.min(1, dt * 7);
+  if (S.camK < 0.002) S.camK = 0;
 
   switch (S.mode) {
     case 'title':
@@ -1334,7 +1370,7 @@ const BUFF_MAX = { speed: DRINKS.orange.seconds, guard: DRINKS.heavy.seconds, ra
 const hudState = {
   health: 0, maxHealth: 0, hurt: 0, damageDirs: null, weapon: { id: '', name: '', clip: 0, clipSize: 0, reload: null },
   weapons: null, hitMarker: 0, headshot: false, toast: null, banner: null, objective: '', enemiesLeft: 0, areaName: '',
-  boss: null, score: 0, timeSec: 0, debugMode: false, move: null, look: null, firing: false, buffs: null,
+  boss: null, score: 0, timeSec: 0, debugMode: false, move: null, look: null, firing: false, buffs: null, cinematic: 0,
 };
 
 function buildHudState() {
@@ -1359,6 +1395,7 @@ function buildHudState() {
   h.score = S.score;
   h.timeSec = S.runT;
   h.debugMode = S.debugMode;
+  h.cinematic = S.camK;
   h.buffs = Object.entries(S.buffs).filter(([, t]) => t > 0).map(([id, t]) => ({ id, t, max: BUFF_MAX[id] }));
   h.move = S.ui.move;
   h.look = S.ui.look;
@@ -1387,27 +1424,76 @@ function placeCamera() {
     roll = 0.9 * k;
   }
   const laser = S.laser && S.laser.beam;
-  if (S.laser) roll += Math.sin(S.t * 9) * 0.035;
-  const fov = laser ? 100 : 85;
-  if (Math.abs(R.fov - fov) > 0.05) {
-    R.fov += (fov - R.fov) * 0.12;
-    camera.fov = R.fov;
+  const sh = p.shake * p.shake * 0.5 + (laser ? 0.04 : 0);
+  let cx = p.x + (Math.random() - 0.5) * sh * 0.3;
+  let cz = p.z + (Math.random() - 0.5) * sh * 0.3;
+  let yaw = p.yaw;
+  let pitch = p.pitch + (Math.random() - 0.5) * sh * 0.2;
+  roll += (Math.random() - 0.5) * sh * 0.2;
+  let fov = 85;
+
+  // Last Orders: ease out to a third-person camera behind and above Freddie, looking at him
+  const k = S.camK;
+  if (k > 0) {
+    const e = k * k * (3 - 2 * k);
+    const tx = p.x;
+    const tz = p.z;
+    const ty = 1.15;
+    const bx = Math.sin(S.camYaw);
+    const bz = Math.cos(S.camYaw);
+    const dist = Math.min(5.2, Math.max(1.6, world.raycast(tx, tz, bx, bz, 5.8) - 0.45)); // never inside a wall
+    const tpx = tx + bx * dist;
+    const tpz = tz + bz * dist;
+    const tpy = 2.7;
+    const tpYaw = Math.atan2(-(tx - tpx), -(tz - tpz));
+    const tpPitch = Math.atan2(ty - tpy, Math.hypot(tx - tpx, tz - tpz));
+    cx += (tpx - cx) * e;
+    cz += (tpz - cz) * e;
+    y += (tpy - y) * e;
+    yaw += wrap(tpYaw - yaw) * e;
+    pitch += (tpPitch - pitch) * e;
+    roll *= 1 - e;
+    fov += (72 - fov) * e;
+  }
+  if (Math.abs(R.fov - fov) > 0.02) {
+    R.fov = fov;
+    camera.fov = fov;
     camera.updateProjectionMatrix();
+  }
+  camera.position.set(cx, y, cz);
+  camera.rotation.set(pitch, yaw, roll);
+
+  // Freddie appears once the camera is out, spinning with the cannon; the beam leaves the cannon
+  const F = R.freddie;
+  F.group.visible = S.mode === 'play' && k > 0.2;
+  if (F.group.visible) {
+    F.group.position.set(p.x, 0, p.z);
+    F.group.rotation.y = p.yaw;
+    F.setPose(S.laser ? 'spin' : 'idle', S.laser ? S.laser.t : S.t, S.laser ? clamp(S.laser.t / S.laser.dur, 0, 1) : 0);
   }
   const bv = R.beam;
   bv.visible = !!laser;
   if (laser) {
     const L = S.laser;
-    bv.position.set(p.x - Math.sin(p.yaw) * 0.35, EYE - 0.5, p.z - Math.cos(p.yaw) * 0.35);
+    let ox = p.x - Math.sin(p.yaw) * 0.9;
+    let oy = 1.2;
+    let oz = p.z - Math.cos(p.yaw) * 0.9;
+    if (F.muzzle) {
+      F.group.updateMatrixWorld(true);
+      const v = R.tmpV || (R.tmpV = new THREE.Vector3());
+      F.muzzle.getWorldPosition(v);
+      ox = v.x;
+      oy = v.y;
+      oz = v.z;
+    }
+    bv.position.set(ox, oy, oz);
     bv.rotation.set(0, p.yaw, 0);
     const pulse = 1 + Math.sin(S.t * 40) * 0.08;
-    R.beamParts[0].scale.set(pulse, pulse, L.len);
-    R.beamParts[1].scale.set(pulse * 1.1, pulse * 1.1, L.len);
-    R.beamParts[2].scale.set(pulse * 1.3, pulse * 1.3, L.len);
+    const len = Math.max(1, L.len - 0.9);
+    R.beamParts[0].scale.set(pulse, pulse, len);
+    R.beamParts[1].scale.set(pulse * 1.1, pulse * 1.1, len);
+    R.beamParts[2].scale.set(pulse * 1.3, pulse * 1.3, len);
   }
-  const sh = p.shake * p.shake * 0.5 + (laser ? 0.05 : 0);
-  camera.position.set(p.x + (Math.random() - 0.5) * sh * 0.3, y, p.z + (Math.random() - 0.5) * sh * 0.3);
-  camera.rotation.set(p.pitch + (Math.random() - 0.5) * sh * 0.2, p.yaw, roll + (Math.random() - 0.5) * sh * 0.2);
 }
 
 function animateWorld() {
@@ -1510,7 +1596,7 @@ export function render(ctx, view, alpha) {
   trackFrame(dt);
   R.fx.update(dt, R.camera, S.mode !== 'dead');
   R.renderer.info.reset();
-  const showWeapon = S.mode === 'play' || S.mode === 'intro';
+  const showWeapon = (S.mode === 'play' || S.mode === 'intro') && S.camK < 0.05;
   R.pipeline.render(R.scene, R.camera, showWeapon ? R.wscene : null, R.wcam, R.look, {
     time: S.t, hurt: S.mode === 'play' ? S.player.hurt : 0, flash: R.flashT > 0 || (S.laser && S.laser.beam) ? 1 : 0,
   });
@@ -1565,7 +1651,7 @@ export function testHook(cmd, arg) {
       const w = WEAPONS[S.player.weapon];
       return {
         fireInterval: w.interval / mult().fire, damageMult: mult().damage, maxHealth: S.player.maxHealth, weapon: w.id, clip: S.player.ammo[w.id],
-        reloading: S.player.reloadT > 0, buffs: { ...S.buffs }, drinking: S.drink ? S.drink.id : null, laser: !!S.laser, yaw: S.player.yaw, health: S.player.health,
+        reloading: S.player.reloadT > 0, buffs: { ...S.buffs }, drinking: S.drink ? S.drink.id : null, laser: !!S.laser, yaw: S.player.yaw, third: S.camK > 0.5, camK: S.camK, health: S.player.health,
       };
     }
     default: return undefined;

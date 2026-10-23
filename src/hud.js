@@ -777,15 +777,20 @@ export function drawPlayHud(ctx, view, h) {
 
   if (num(h.hurt) > 0) drawVignette(ctx, view, h.hurt);
   if (dirs.length) drawDamageArcs(ctx, cx, cy, clamp(Math.min(view.w, view.h) * 0.2, 66, 104), dirs);
-  drawCrosshair(ctx, cx, cy);
-  drawHitMarker(ctx, cx, cy, clamp(num(h.hitMarker), 0, 1), !!h.headshot);
+  // Last Orders pulls the game into third person: the aiming furniture steps aside
+  const cine = clamp(num(h.cinematic), 0, 1);
+  const furniture = cine < 0.3;
+  if (furniture) {
+    drawCrosshair(ctx, cx, cy);
+    drawHitMarker(ctx, cx, cy, clamp(num(h.hitMarker), 0, 1), !!h.headshot);
+  }
 
   // top left: health, then score and time
   drawHealth(ctx, view, h, top, t);
   outlined(ctx, `SCORE ${Math.floor(clamp(num(h.score), 0, 1e12))}   ${fmtTime(h.timeSec)}`, 18, top + 40, 11, 'rgba(255,255,255,0.8)', 'left', 700);
 
   // top right: weapon row, then the debug badge
-  drawWeapons(ctx, view, Array.isArray(h.weapons) ? h.weapons : EMPTY, top);
+  if (furniture) drawWeapons(ctx, view, Array.isArray(h.weapons) ? h.weapons : EMPTY, top);
   if (h.debugMode) drawDebugBadge(ctx, view, top + 40);
 
   // top centre: area, objective, status
@@ -820,11 +825,13 @@ export function drawPlayHud(ctx, view, h) {
   if (h.toast) drawToast(ctx, view, h.toast, y + 18);
 
   // controls
-  drawMoveBox(ctx, L.moveBox, h.move, t);
-  drawLookBox(ctx, L.lookBox, h.look, !!h.firing, t);
-  drawReload(ctx, L.reloadBtn, w, t);
-  drawSwap(ctx, L.swapBtn);
-  drawAmmo(ctx, view, L, w, t);
+  if (furniture) {
+    drawMoveBox(ctx, L.moveBox, h.move, t);
+    drawLookBox(ctx, L.lookBox, h.look, !!h.firing, t);
+    drawReload(ctx, L.reloadBtn, w, t);
+    drawSwap(ctx, L.swapBtn);
+    drawAmmo(ctx, view, L, w, t);
+  }
   if (Array.isArray(h.buffs) && h.buffs.length) drawBuffs(ctx, L, h.buffs);
 
   if (h.banner) drawBanner(ctx, view, h.banner);

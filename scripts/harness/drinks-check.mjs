@@ -113,6 +113,16 @@ for (const id of ['orange', 'heavy', 'energy']) {
   const rapid = b.S.shots - s1;
   ok(rapid > base, `Bassline Energy raises the fire rate (${base} -> ${rapid} shots in 1.5 s)`);
 }
+// every drink says something sensible when it lands (no "undefined" in the toast)
+for (const id of DRINK_ORDER) {
+  const { S, input } = fresh();
+  game.testHook('hurt', 50);
+  game.testHook('drink', id);
+  step(input, Math.ceil((DRINKS[id].duration + 0.1) * 60));
+  const text = S.toast ? S.toast.text : '';
+  ok(id === 'lastorders' ? !/undefined/.test(text) : /^[A-Z ]+: /.test(text) && !/undefined|NaN/.test(text), `${DRINKS[id].name}: toast reads well (${JSON.stringify(text)})`);
+}
+
 // ---- the super power-up: Last Orders ----
 const LASER = DRINKS.lastorders.laser;
 const wrap = (a) => a - 2 * Math.PI * Math.floor((a + Math.PI) / (2 * Math.PI));
@@ -150,12 +160,14 @@ const runLaser = (input) => {
   let spun = 0;
   let prev = S.player.yaw;
   let guard = 0;
+  let thirdDuring = 0;
   while (S.laser && guard++ < 1200) {
     step(input, 1);
+    thirdDuring = Math.max(thirdDuring, S.camK);
     spun += Math.abs(wrap(S.player.yaw - prev));
     prev = S.player.yaw;
   }
-  return { started, spun, startPos, endPos: { x: S.player.x, z: S.player.z }, firedDuring: S.shots - shots, healthLost: health - S.player.health };
+  return { started, spun, thirdDuring, startPos, endPos: { x: S.player.x, z: S.player.z }, firedDuring: S.shots - shots, healthLost: health - S.player.health };
 };
 
 {
@@ -173,6 +185,7 @@ const runLaser = (input) => {
   input.keys.add(' ');
   const res = runLaser(input);
   ok(res.started, 'the spin starts when the drink is finished');
+  ok(res.thirdDuring > 0.9, `the game switches to a third-person camera for the spin (blend ${res.thirdDuring.toFixed(2)})`);
   ok(res.spun > 3.5 * Math.PI, `Freddie spins about two full turns (${(res.spun / (2 * Math.PI)).toFixed(2)} turns)`);
   ok(Math.hypot(res.endPos.x - res.startPos.x, res.endPos.z - res.startPos.z) < 0.05, 'Freddie cannot walk during the spin (walk key held the whole time)');
   ok(res.firedDuring === 0, 'Freddie cannot fire during the spin (fire key held the whole time)');
@@ -183,6 +196,8 @@ const runLaser = (input) => {
   ok(far.every((e) => !e.dead), `robots in other rooms, out of reach, are untouched (${far.length})`);
   ok(S.enemies.filter((e) => e.boss).every((e) => !e.dead), 'the boss is untouched');
   ok(game.testHook('stats').laser === false, 'the spin ends');
+  step(input, 90);
+  ok(game.getState().camK === 0 && !game.testHook('stats').third, 'the camera returns to first person afterwards');
   input.keys.delete('w');
   input.keys.delete(' ');
   step(input, 30);
