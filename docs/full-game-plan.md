@@ -73,6 +73,12 @@ Stretch levels, slotted in where they fit the route: **Edinburgh Castle and the 
 Gardens: stone ramparts, the One O'Clock Gun as a hazard and a joke) and **Salisbury Crags and the Radical Road**
 (just before the summit: a narrow cliff path, wind, long sightlines for ranged robots).
 
+**Approved enemy roster (owner approved all five, none built yet).** Shielded Fizzbang (melee, flank it), Fizzbang
+Shaken (melee exploder), Bampot Longshot (ranged sniper with a laser line), Bampot Nurse (support, revives robots) and
+the Vending Mimic (a dormant drinks machine that unfolds). They are not tied to level 1 or to the table below, which was
+a first draft: the per-level robots in the table are suggestions, and these five are the approved set. Details and the
+build notes are in `ROADMAP.md`. They stay unbuilt until the owner says to build them.
+
 All new robots keep the rule: Fizzbang types fight in melee, Bampot types can shoot. The Nurse supports and does not
 attack. Eight weapons in total, each with one or two upgrades found in the levels.
 

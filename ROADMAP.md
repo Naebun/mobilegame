@@ -46,6 +46,25 @@ the new names.
 - Graphics: the owner wants a more modern look than the current flat-shaded low-poly. Direction still to decide.
 - The full plan is in `docs/full-game-plan.md`.
 
+## Approved enemy ideas (not built)
+
+The owner approved all five of these for the game. They are **not built and must not be added** until the owner says so.
+They are not tied to level 1 and may appear in any level. Approval of an enemy is not permission to build a later
+level (see the standing rule). The melee and ranged rule holds: Fizzbang robots only fight in melee, Bampot robots can
+shoot.
+
+| # | Robot | Camp | Idea |
+| --- | --- | --- | --- |
+| 1 | Shielded Fizzbang | Melee | Carries a vending-machine door as a shield. Shots from the front do almost nothing, so the player flanks it, shoots it from behind, or uses the launcher or shotgun up close |
+| 2 | Fizzbang Shaken | Melee, exploder | A shaken can that rattles faster as it nears, then bursts in a fizzy blast when it dies or touches Freddie. It can set off neighbouring robots, so shooting it close is a mistake |
+| 3 | Bampot Longshot | Ranged, sniper | A tall bottle robot with a visible laser line that charges for a moment, then fires one heavy shot. Makes cover matter |
+| 4 | Bampot Nurse | Support | Does not attack, but revives dead robots after a few seconds unless killed first. Makes kill order matter |
+| 5 | Vending Mimic | Melee, dormant | An ordinary-looking drinks machine in a corner that unfolds into a robot when Freddie walks past. It is in the level from the start, so nothing appears from nowhere |
+
+Notes for whoever builds them: each needs a model and poses in `src/models.js`, a definition in `src/data.js`, AI in
+`src/game3d.js`, placement in the level data, a bot and headless check, and a screenshot review. The idea of the first
+three for level 1 (Shielded, Longshot, Mimic) was suggested but not approved for level 1 specifically.
+
 ## Parked
 - **Top-down version.** Replaced by this rebuild. It is in git history on `main` (squash commits up to PR #2).
 - **Top-down tuning work for levels 2 to 5** (a headless balance simulator and tuning passes) is on the branch
