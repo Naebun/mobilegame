@@ -41,7 +41,7 @@ try {
     );
   }, [type, id, x, y]);
   // Software WebGL runs at a few frames a second, so poll the game for a condition instead of sleeping.
-  const until = async (expr, arg, timeout = 20000) => {
+  const until = async (expr, arg, timeout = Number(process.env.SMOKE_WAIT || 20000)) => {
     try {
       await page.waitForFunction(([e, a]) => new Function('s', 'a', `return (${e})`)(window.__game.getState(), a), [expr, arg], { timeout, polling: 100 });
       return true;
@@ -53,7 +53,12 @@ try {
   };
   const hook = (cmd, arg) => page.evaluate(([c, a]) => window.__game.testHook(c, a), [cmd, arg]);
   const pressButton = async (id) => {
-    const b = (await hook('buttons')).find((x) => x.id === id);
+    // some buttons appear after a delay counted in game time, which software WebGL stretches: wait for it (SMOKE_WAIT, ms)
+    let b = null;
+    for (const t0 = Date.now(); !b && Date.now() - t0 < Number(process.env.SMOKE_WAIT || 20000);) {
+      b = (await hook('buttons')).find((x) => x.id === id);
+      if (!b) await page.waitForTimeout(250);
+    }
     if (!b) throw new Error(`no ${id} button in mode ${(await state()).mode}`);
     await tap(b.x + b.w / 2, b.y + b.h / 2);
   };
@@ -71,7 +76,7 @@ try {
   const shot = (name) => page.screenshot({ path: join(outDir, `smoke-${name}.png`) });
 
   // medium tier: the full post pipeline (HDR, bloom, MSAA) at a cost software WebGL can bear
-  await page.goto(`http://localhost:${port}/?test&q=medium`);
+  await page.goto(`http://localhost:${port}/?test&q=medium${process.env.EXTRA || ''}`);
   await page.waitForFunction(() => window.__game && window.__game.getState().player, null, { timeout: 60000 });
   await page.waitForTimeout(1500);
   const gl = await page.evaluate(() => { const c = document.getElementById('gl'); return { w: c.width, h: c.height, ok: !!c.getContext('webgl2') || !!c.getContext('webgl') }; });
@@ -80,7 +85,8 @@ try {
   await shot('title');
 
   // baked textures (src/textures.js): fetched in the background from the title screen, decoded, swapped in on medium
-  {
+  // (EXTRA='&baked=0' runs the rest of the smoke test on the generated textures, to tell the two apart)
+  if (!/baked=0/.test(process.env.EXTRA || '')) {
     const swapped = await page.waitForFunction(() => ['applied', 'failed'].includes(window.__game.testHook('baked').state), null, { timeout: 90000 }).then(() => true, () => false);
     const b = await hook('baked');
     check(swapped && b.state === 'applied', `baked textures load and swap in on the medium tier (${b.state}: ${b.names.join(', ')})`);

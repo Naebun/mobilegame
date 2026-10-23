@@ -181,5 +181,5 @@ shipped as WebP; carpet, concrete and plaster are still generated. Read `docs/te
   afterwards. The low tier, Node and any failed load keep the generated textures. `?baked=0` forces that for comparisons.
 - **Brick tile is 1.8 m by 0.9 m** (the generated one was 0.9 m square): `texture.repeat` carries the difference, and each brick
   wall face starts a whole number of double courses up the tile (`Mesher.off`), so the same bricks do not stack in a column.
-- **Tests:** `scripts/harness/textures-check.mjs` (Node), the baked checks in `scripts/smoke.mjs`.
+- **Tests:** `scripts/harness/textures-check.mjs` (Node), the baked checks in `scripts/smoke.mjs`. The smoke test is bound by software frame rate: on a busy machine (load above 15) its 20 s waits expire, so `SMOKE_WAIT=90000` stretches them, and `pressButton` now waits for a delayed button. `EXTRA='&baked=0'` runs it on the generated textures.
 - **Not known:** decode and upload time, GPU memory and frame rate on a phone. See `docs/textures.md`.
