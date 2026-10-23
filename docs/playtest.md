@@ -58,7 +58,7 @@ Standing in the middle of an area and turning to the four compass points, triang
 | Level 1 dance floor | 150k to 222k | 88k to 159k | 164k to 280k | 106k to 222k |
 | Level 2 Plague Cellar | 170k to 196k | 80k to 109k | 201k to 331k | 106k to 245k |
 
-Draw calls ran from about 35 to 276, and lights were 9 everywhere (four world lights, the torch spot, the camera fill, and
+Draw calls ran from 44 to 276 across those views, and lights were 9 everywhere (four world lights, the torch spot, the camera fill, and
 three flat ambient lights). The level's own merged geometry is about 150k to 170k at high. In the one view we took apart
 (Plague Cellar, landscape), hiding the robots took off about 110k and hiding the pickups about 180k in a second view, so the
 robots and floor pickups in sight are as much of the load as the walls. We think this is because nothing is culled for
