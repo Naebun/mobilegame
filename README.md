@@ -25,7 +25,8 @@ Beat the Bouncer at the end and walk out to finish the level.
 ## Controls
 
 Two grey boxes on screen. **Left box:** drag to move. **Right box:** drag to aim; while a thumb is down in it,
-the weapon fires on its own. **RELOAD** sits under the right box and **SWAP** (next weapon) under the left box.
+the weapon fires on its own. **Anywhere else on the screen:** drag to aim only, with no firing (a second
+aiming thumb, or a lighter way to look round). **RELOAD** sits under the right box and **SWAP** (next weapon) under the left box.
 On a desktop: WASD to move, arrow keys to look, space to fire, R to reload, Q to swap.
 
 ## Flow

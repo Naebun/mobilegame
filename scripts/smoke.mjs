@@ -122,6 +122,16 @@ try {
   await ptr('pointerup', 2, lx, ly);
   await until('s.player.reloadT === 0 && s.player.ammo.pistol === 12', null, 30000);
 
+  // free aim: a drag that starts outside both boxes turns the view but never fires
+  const yawF = (await state()).yaw;
+  const shotsF = (await state()).shots;
+  await ptr('pointerdown', 3, 195, 250);
+  for (let i = 1; i <= 10; i++) await ptr('pointermove', 3, 195 + i * 6, 250);
+  check(await until('Math.abs(s.player.yaw - a) > 0.2', yawF), 'dragging anywhere outside the boxes aims');
+  await page.waitForTimeout(800);
+  check((await state()).shots === shotsF, 'a free-aim touch does not fire');
+  await ptr('pointerup', 3, 255, 250);
+
   // swap and reload buttons
   await hook('giveWeapons');
   await tap(...center(L.swapBtn));
