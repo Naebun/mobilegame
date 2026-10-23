@@ -410,57 +410,92 @@ section('9. nothing visible from the previous area when a door opens');
   lines.forEach((l) => console.log('  ' + l));
 }
 
-// ---------------------------------------------------------------- 10 render budget and geometry sanity
-section('10. render budget');
+// ---------------------------------------------------------------- 10 render budget and geometry sanity, per quality tier
+section('10. render budget, per quality tier');
 {
-  const w = buildWorld();
-  let meshes = 0;
-  let lights = 0;
-  let tris = 0;
-  let badTri = 0;
-  let nanVerts = 0;
-  const v = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
-  const e1 = new THREE.Vector3();
-  const e2 = new THREE.Vector3();
-  const n = new THREE.Vector3();
-  const sn = new THREE.Vector3();
-  w.group.traverse((o) => {
-    if (o.isMesh) {
-      meshes++;
-      const g = o.geometry;
-      const pos = g.attributes.position;
-      const nor = g.attributes.normal;
-      const idx = g.index;
-      tris += (idx ? idx.count : pos.count) / 3;
-      for (let i = 0; i < pos.count * 3; i++) if (!Number.isFinite(pos.array[i])) { nanVerts++; break; }
-      // winding must agree with the stored normals (a back-face bug is invisible in Node otherwise)
-      if (o.material && o.material.side !== THREE.DoubleSide && nor && idx && o.userData.checkWinding !== false) {
-        for (let i = 0; i < idx.count; i += 3) {
-          for (let k = 0; k < 3; k++) v[k].fromBufferAttribute(pos, idx.getX(i + k));
-          e1.subVectors(v[1], v[0]);
-          e2.subVectors(v[2], v[0]);
-          n.crossVectors(e1, e2);
-          if (n.lengthSq() < 1e-12) continue;
-          sn.fromBufferAttribute(nor, idx.getX(i));
-          if (n.normalize().dot(sn) < 0.5) badTri++;
+  const budget = { high: 130000, medium: 130000, low: 75000 };
+  const reference = buildWorld();
+  const tiers = ['high', 'medium', 'low'];
+  ok(reference.quality === 'high', 'default quality is high');
+  ok(buildWorld({ quality: 'nonsense' }).quality === 'high', 'unknown quality falls back to high');
+  ok(buildWorld({}).quality === 'high', 'empty options give high');
+  for (const q of tiers) {
+    const t0 = performance.now();
+    const w = buildWorld({ quality: q });
+    const ms = performance.now() - t0;
+    let meshes = 0;
+    let lights = 0;
+    let tris = 0;
+    let badTri = 0;
+    let nanVerts = 0;
+    let standard = 0;
+    let withNormalMap = 0;
+    const v = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
+    const e1 = new THREE.Vector3();
+    const e2 = new THREE.Vector3();
+    const n = new THREE.Vector3();
+    const sn = new THREE.Vector3();
+    w.group.traverse((o) => {
+      if (o.isMesh) {
+        meshes++;
+        const g = o.geometry;
+        const pos = g.attributes.position;
+        const nor = g.attributes.normal;
+        const idx = g.index;
+        tris += (idx ? idx.count : pos.count) / 3;
+        for (let i = 0; i < pos.count * 3; i++) if (!Number.isFinite(pos.array[i])) { nanVerts++; break; }
+        if (o.material.isMeshStandardMaterial) standard++;
+        if (o.material.normalMap) withNormalMap++;
+        // winding must agree with the stored normals (a back-face bug is invisible in Node otherwise)
+        if (o.material && o.material.side !== THREE.DoubleSide && nor && idx) {
+          for (let i = 0; i < idx.count; i += 3) {
+            for (let k = 0; k < 3; k++) v[k].fromBufferAttribute(pos, idx.getX(i + k));
+            e1.subVectors(v[1], v[0]);
+            e2.subVectors(v[2], v[0]);
+            n.crossVectors(e1, e2);
+            if (n.lengthSq() < 1e-12) continue;
+            sn.fromBufferAttribute(nor, idx.getX(i));
+            if (n.normalize().dot(sn) < 0.5) badTri++;
+          }
         }
+        const col = g.attributes.color;
+        if (col) for (let i = 0; i < col.array.length; i++) if (!Number.isFinite(col.array[i])) { nanVerts++; break; }
       }
-    }
-    if (o.isLight && o.isPointLight) lights++;
-  });
-  console.log(`  meshes (draw calls) ${meshes}, point lights ${lights}, triangles ${tris}`);
-  ok(meshes <= 40, `draw calls ${meshes} <= 40`);
-  ok(lights <= 4, `point lights ${lights} <= 4`);
-  ok(nanVerts === 0, 'no NaN vertices');
-  ok(badTri === 0, `triangle winding agrees with normals (${badTri} bad)`);
-  ok(w.fog && w.ambient && w.group, 'fog, ambient and group present');
-  // update must be cheap and safe
-  const t0 = performance.now();
-  for (let i = 0; i < 600; i++) w.update(1 / 60, i / 60);
-  console.log(`  600 update() calls: ${(performance.now() - t0).toFixed(1)} ms`);
-  const ff = w.createFlowField();
+      if (o.isPointLight) lights++;
+    });
+    console.log(`  ${q.padEnd(6)} build ${ms.toFixed(0)} ms, ${meshes} draw calls, ${lights} point lights, ${tris} triangles, ${standard} standard materials, ${withNormalMap} with normal maps`);
+    ok(meshes <= 40, `${q}: draw calls ${meshes} <= 40`);
+    ok(lights <= 4, `${q}: point lights ${lights} <= 4`);
+    ok(tris <= budget[q], `${q}: triangles ${tris} <= ${budget[q]}`);
+    ok(ms < (q === 'high' ? 2500 : 1800), `${q}: build time ${ms.toFixed(0)} ms is sane (target under 1500 for high on a quiet machine)`);
+    ok(nanVerts === 0, `${q}: no NaN vertices or colours`);
+    ok(badTri === 0, `${q}: triangle winding agrees with normals (${badTri} bad)`);
+    ok(w.fog && w.ambient && w.group && w.look, `${q}: fog, ambient, group and look present`);
+    ok(q === 'low' ? standard === 0 : standard > 10, `${q}: material model (${standard} standard)`);
+    ok(q === 'low' ? withNormalMap === 0 : withNormalMap >= 8, `${q}: normal maps (${withNormalMap})`);
+    // the level itself must not depend on the tier
+    let diff = 0;
+    for (let r = 0; r < w.size.rows; r++) for (let c = 0; c < w.size.cols; c++) if (w.tileSolid(c, r) !== reference.tileSolid(c, r)) diff++;
+    ok(diff === 0 && JSON.stringify(w.pickups) === JSON.stringify(reference.pickups) && JSON.stringify(w.areas) === JSON.stringify(reference.areas), `${q}: same level data as high`);
+    // every animated thing stays finite and cheap over a long run
+    const t1 = performance.now();
+    for (let i = 0; i < 600; i++) w.update(1 / 60, i / 60);
+    const upd = performance.now() - t1;
+    let dyn = 0;
+    w.group.traverse((o) => { if (o.isMesh && o.geometry.attributes.position.usage === THREE.DynamicDrawUsage) for (const x of o.geometry.attributes.position.array) if (!Number.isFinite(x)) dyn++; });
+    console.log(`  ${q.padEnd(6)} 600 update() calls: ${upd.toFixed(1)} ms`);
+    ok(dyn === 0, `${q}: dynamic vertices stay finite`);
+    ok(upd < 400, `${q}: update() is cheap (${upd.toFixed(1)} ms for 600)`);
+  }
+  const look = reference.look;
+  ok(look.exposure > 0.5 && look.exposure < 2 && look.bloom > 0 && look.vignette >= 0 && Array.isArray(look.grade.lift) && Array.isArray(look.grade.gamma) && Array.isArray(look.grade.gain), 'look hints are sane');
+  // HDR emissive parts exist (vertex colours above 1 on basic materials) and ordinary surfaces stay at 0 to ~3
+  let hdr = 0;
+  reference.group.traverse((o) => { if (o.isMesh && o.material.isMeshBasicMaterial && o.geometry.attributes.color) for (const x of o.geometry.attributes.color.array) if (x > 1.5) { hdr++; break; } });
+  ok(hdr >= 4, `HDR glow meshes present (${hdr})`);
+  const ff = reference.createFlowField();
   const t1 = performance.now();
-  for (let i = 0; i < 20; i++) ff.update(w.start.x, w.start.z);
+  for (let i = 0; i < 20; i++) ff.update(reference.start.x, reference.start.z);
   console.log(`  flow field update: ${((performance.now() - t1) / 20).toFixed(2)} ms each`);
 }
 

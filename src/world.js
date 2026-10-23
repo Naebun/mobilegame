@@ -1412,6 +1412,7 @@ function buildVisuals(ctx) {
 
   // ---- the bake: ambient tint, smooth ambient occlusion, then occluded coloured pools ----
   const TINT = areas.map((a) => AREA_STYLE[a.id].tint);
+  const GAIN = Q.std ? 1 : 1.4; // Lambert has no environment diffuse, so the low tier is lifted a little
   const SW = new Float32Array(COLS * ROWS); // solid weight per tile, and whether anything solid is within one tile
   const SNEAR = new Uint8Array(COLS * ROWS);
   for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) { const k = at(c, r); SW[r * COLS + c] = k === WALL || k === PILLAR || k === SPEAKER || k === STAIRS ? 1 : k === COVER ? 0.55 : 0; }
@@ -1487,7 +1488,7 @@ function buildVisuals(ctx) {
       if (e.down) w *= 0.45 + 0.55 * clamp((e.y - y) / Math.max(d, 0.01) + 0.15, 0, 1);
       R += e.col[0] * w; G += e.col[1] * w; B += e.col[2] * w;
     }
-    return [Math.min(3, R), Math.min(3, G), Math.min(3, B)];
+    return [Math.min(3, R * GAIN), Math.min(3, G * GAIN), Math.min(3, B * GAIN)];
   };
 
   // ---- meshers, one per material ----

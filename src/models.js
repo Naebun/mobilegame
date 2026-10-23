@@ -1007,7 +1007,7 @@ export const WEAPON_IDS = ['pistol', 'shotgun', 'smg', 'launcher'];
 // Plinth ring colour per weapon and the colour of each gun's small indicator lamp.
 const WEAPON_COLOUR = { pistol: COLOURS.cyan, shotgun: COLOURS.amber, smg: 0xa77bff, launcher: COLOURS.magenta };
 const WOOD = 0x6b4a2c;
-const TAPE = 0x8a8678;
+const TAPE = 0x4c483f;
 const BRASS = 0x9a7a34;
 const PAPER = 0x2a2420; // speaker cone
 const STEEL = 0x55585e;
@@ -1167,7 +1167,7 @@ export function makeWeaponModel(id) {
 }
 
 // A plain glowing ring on the floor so pickups can be found in a dark room.
-function plinth(colour, k = 3.5, extra = null) {
+function plinth(colour, k = 2.2, extra = null) {
   const g = new THREE.Group();
   const ringGeo = once('plinth:ring', () => new THREE.TorusGeometry(0.4, 0.03, 6, 32));
   const rim = new THREE.Mesh(ringGeo, glowBasic(colour, k));
@@ -1244,10 +1244,10 @@ export function makeProjectile(kind) {
       gp(rcyl(0.02, 0.055, 0.05, 0.01, 14), PAPER, 'paper', [0, 0, 0.17], fwd),
     ], { ...GW, seed: 7 }));
     const body = new THREE.Mesh(geo, pbrMat());
-    const flame = new THREE.Mesh(once('proj:flame', () => new THREE.ConeGeometry(0.05, 0.4, 10, 1, true)), addHdr(0xff8a30, 4, 0.75));
+    const flame = new THREE.Mesh(once('proj:flame', () => new THREE.ConeGeometry(0.05, 0.4, 10, 1, true)), addHdr(0xff7a20, 2.4, 0.6));
     flame.rotation.x = HALF;
     flame.position.z = 0.4;
-    const core = new THREE.Mesh(once('proj:flame2', () => new THREE.ConeGeometry(0.028, 0.24, 10, 1, true)), addHdr(0xfff0c0, 5, 0.9));
+    const core = new THREE.Mesh(once('proj:flame2', () => new THREE.ConeGeometry(0.028, 0.24, 10, 1, true)), addHdr(0xffd890, 3, 0.8));
     core.rotation.x = HALF;
     core.position.z = 0.32;
     const waves = new THREE.Mesh(once('proj:waves', () => bake([0.06, 0.082, 0.104].map((r, i) => gp(torus(r, 0.005, 20, 4), 0xffffff, 'plastic', [0, 0, 0.5 + i * 0.07]))) ), addHdr(0x7fe8ff, 3, 0.7));
@@ -1271,13 +1271,13 @@ export function makeProjectile(kind) {
   const rag = new THREE.Mesh(once('proj:rag', () => new THREE.CylinderGeometry(0.014, 0.01, 0.06, 8)), glowBasic(0xd8d0b0, 1));
   rag.position.y = 0.17;
   spin.add(rag);
-  const flame = new THREE.Mesh(once('proj:bflame', () => new THREE.ConeGeometry(0.04, 0.13, 10)), glowBasic(0xffa030, 5));
+  const flame = new THREE.Mesh(once('proj:bflame', () => new THREE.ConeGeometry(0.04, 0.13, 10)), glowBasic(0xff9020, 3));
   flame.position.y = 0.25;
   spin.add(flame);
-  const flameOuter = new THREE.Mesh(once('proj:bflame2', () => new THREE.ConeGeometry(0.065, 0.2, 10)), addHdr(0xff6a1a, 2.5, 0.45));
+  const flameOuter = new THREE.Mesh(once('proj:bflame2', () => new THREE.ConeGeometry(0.065, 0.2, 10)), addHdr(0xff6a1a, 1.8, 0.4));
   flameOuter.position.y = 0.26;
   spin.add(flameOuter);
-  const halo = new THREE.Mesh(once('proj:halo', () => ball(0.16, 10, 8)), addHdr(0xff8a2a, 2, 0.12));
+  const halo = new THREE.Mesh(once('proj:halo', () => ball(0.16, 10, 8)), addHdr(0xff8a2a, 1.5, 0.05));
   halo.position.y = 0.1;
   g.add(spin, halo);
   return g;
@@ -1302,6 +1302,20 @@ function starShape(points, outer, inner) {
   return new THREE.ShapeGeometry(s);
 }
 
+// A soft round glow: vertex colours fall off to black towards the rim, which adds nothing when blended additively.
+function radialDisc(r, hex, k) {
+  const g = new THREE.CircleGeometry(r, 24);
+  const Pa = g.attributes.position;
+  const col = new Float32Array(Pa.count * 3);
+  for (let i = 0; i < Pa.count; i++) {
+    const f = Math.max(0, 1 - Math.hypot(Pa.getX(i), Pa.getY(i)) / r);
+    _c.set(hex).multiplyScalar(k * f * f);
+    col.set([_c.r, _c.g, _c.b], i * 3);
+  }
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  return g;
+}
+
 export function makeMuzzleFlash() {
   const g = new THREE.Group();
   g.name = 'muzzle-flash';
@@ -1310,14 +1324,14 @@ export function makeMuzzleFlash() {
     P(starShape(5, 0.1, 0.03), 0xffffff, 'plastic', [0, 0, 0.001], [0, 0, 0.3]),
   ], GW));
   const core = once('fx:flash-core', () => starShape(6, 0.07, 0.03));
-  const halo = once('fx:flash-halo', () => new THREE.CircleGeometry(0.2, 20));
+  const halo = once('fx:flash-halo', () => radialDisc(0.17, 0xff9a40, 2.2));
   const cone = once('fx:flash-cone', () => new THREE.ConeGeometry(0.08, 0.34, 10, 1, true));
-  const a = new THREE.Mesh(star, fxMat(0xffd890, 4, 0.95));
-  const b = new THREE.Mesh(core, fxMat(0xffffff, 5, 1));
+  const a = new THREE.Mesh(star, fxMat(0xffc870, 2.4, 0.95));
+  const b = new THREE.Mesh(core, fxMat(0xfff0d0, 3.2, 1));
   b.position.z = 0.002;
-  const h = new THREE.Mesh(halo, fxMat(0xff9a40, 2, 0.35));
+  const h = new THREE.Mesh(halo, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false }));
   h.position.z = -0.002;
-  const c = new THREE.Mesh(cone, fxMat(0xffa040, 3, 0.7));
+  const c = new THREE.Mesh(cone, fxMat(0xff9030, 2, 0.6));
   c.rotation.x = -HALF; // tip forward (-z), base at the muzzle
   c.position.z = -0.17;
   g.add(a, b, h, c);
@@ -1332,8 +1346,8 @@ export function makeImpact() {
     P(starShape(6, 0.11, 0.025), 0xffffff, 'plastic', [0, 0, 0], [0, HALF, 0.3]),
     P(starShape(6, 0.11, 0.025), 0xffffff, 'plastic', [0, 0, 0], [HALF, 0, 0.6]),
   ], GW));
-  g.add(new THREE.Mesh(geo, fxMat(0xffe0a0, 4, 1)));
-  const dot = new THREE.Mesh(once('fx:impact-dot', () => new THREE.SphereGeometry(0.035, 8, 6)), fxMat(0xffffff, 5, 0.9));
+  g.add(new THREE.Mesh(geo, fxMat(0xffc880, 2.6, 1)));
+  const dot = new THREE.Mesh(once('fx:impact-dot', () => new THREE.SphereGeometry(0.035, 8, 6)), fxMat(0xfff0d0, 3.2, 0.9));
   g.add(dot);
   return g;
 }
@@ -1467,7 +1481,7 @@ export function makeDrinkPickup(id) {
   if (!D) throw new Error(`makeDrinkPickup: unknown drink "${id}"`);
   const g = new THREE.Group();
   g.name = `pickup-drink-${id}`;
-  g.add(plinth(D.ring, id === 'lastorders' ? 6 : 4, D.ring2 ?? null));
+  g.add(plinth(D.ring, id === 'lastorders' ? 3.2 : 2.4, D.ring2 ?? null));
   const { group, parts } = buildDrink(id);
   // Pickups read from across a room: the cap and tab stay on, the fizz and puff stay off.
   const item = new THREE.Group();
