@@ -5,6 +5,8 @@
 import * as THREE from '../vendor/three.module.min.js';
 import { COLOURS } from './consts.js';
 import { DRINK_MESHES } from './drink-meshes.js';
+import { WEAPON_MESHES } from './weapon-meshes.js';
+import { createArsenal, ARSENAL_WEAPON_IDS, ARSENAL_UPGRADE_IDS } from './arsenal.js';
 
 const cache = new Map();
 function once(key, make) {
@@ -650,6 +652,7 @@ const variantCount = {};
 export function makeRobot(kind) {
   if (kind === 'shielded') return makeShielded();
   if (kind === 'tourguide') return makeTourGuide();
+  if (PREPARED[kind]) return PREPARED[kind]();
   const spec = SPEC[kind];
   if (!spec) throw new Error(`makeRobot: unknown kind "${kind}"`);
   const variant = (variantCount[kind] = (variantCount[kind] ?? -1) + 1) % VARIANTS;
@@ -2139,6 +2142,1567 @@ function makeTourGuide() {
   };
 }
 
+// >>> PREPARED ENEMIES BEGIN (models for the four approved enemies that are not placed in any level)
+// ---------------------------------------------------------------------------------------------
+// Prepared enemies: built and tested, not placed in any level (docs/enemies-next.md). Same rig conventions as the
+// robots above: feet at the origin, facing -z, setPose(state, t, k) resets and poses every call and is safe with any
+// values. Extras are listed on each builder. Kinds: 'shaken', 'longshot', 'nurse', 'mimic'.
+// ---------------------------------------------------------------------------------------------
+
+export const PREPARED_KINDS = ['shaken', 'longshot', 'nurse', 'mimic'];
+const PI = Math.PI;
+const PI2 = Math.PI * 2;
+
+// Soft additive glow, one material per robot so each can fade on its own.
+const peGlow = (hex, k, opacity) => new THREE.MeshBasicMaterial({
+  color: hdr(hex, k), transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false,
+});
+
+// A patch of cylinder wall (a curved decal): radius r, height h, `arc` radians centred on the front (-z).
+const wallPatch = (r, h, arc, centre = Math.PI) => new THREE.CylinderGeometry(r, r, h, 16, 1, true, centre - arc / 2, arc);
+
+// ---- Fizzbang Shaken ----
+
+function shakenGeo(v) {
+  const HIP = 0.5;
+  const R = 0.44;
+  const o = { seed: v + 11, tint: [0, 0.05, -0.04][v] };
+  const YEL = 0xb4c02a;
+  const body = dent(lathe([
+    [0, 0.52], [0.3, 0.52], [0.37, 0.55], [0.42, 0.62], [R, 0.72], [R, 1.24], [0.42, 1.34], [0.37, 1.42], [0.345, 1.46], [0.345, 1.5],
+    [0.3, 1.5], [0.29, 1.43], [0, 1.43],
+  ], 26), [[0.38, 0.95, -0.2, 0.2, 0.05], [-0.3, 1.1, -0.3, 0.17, 0.04], [0.1, 0.68, 0.44, 0.2, 0.04]]);
+  // surface point at angle a round the can (0 = dead ahead), pushed out by `off`
+  const at = (a, y, off = 0.01) => [Math.sin(a) * (R + off), y, -Math.cos(a) * (R + off)];
+  const fang = once('sk:fang', () => cone(0.034, 0.1, 5));
+  const teeth = [];
+  for (let i = 0; i < 8; i++) {
+    const a = -0.5 + i * (1.0 / 7);
+    teeth.push(P(fang, 0xece2c4, 'plastic', at(a, 1.0, 0.014), [0, -a, PI]));
+    if (i < 7) teeth.push(P(fang, 0xece2c4, 'plastic', at(a + 0.07, 0.84, 0.014), [0, -a - 0.07, 0]));
+  }
+  const coil = Array.from({ length: 41 }, (_, i) => {
+    const a = (i / 40) * 5 * PI2;
+    return [Math.cos(a) * 0.1, -0.07 - (i / 40) * 0.34, Math.sin(a) * 0.1];
+  });
+  const dialA = 1.3;
+  const dialAt = (y, off) => at(dialA, y, off);
+  const ball0 = (r) => ball(r, 10, 7);
+  return {
+    leg: bake([
+      P(rcyl(0.14, 0.14, 0.05, 0.015, 14), C.steelD, 'metal', [0, -0.04, 0]),
+      P(tube(coil, 0.022, 160, 5), 0xa9aeb2, 'metal', [0, 0, 0], [0, 0, 0], [1, 1, 1], { rust: 0.15 }),
+      P(rcyl(0.15, 0.15, 0.04, 0.012, 14), C.steelD, 'metal', [0, -0.43, 0]),
+      P(rcyl(0.17, 0.2, 0.07, 0.025, 16), C.rubber, 'rubber', [0, -0.47, 0]),
+      P(rbox(0.2, 0.06, 0.16, 0.03), C.rubber, 'rubber', [0, -0.465, -0.1]),
+    ], { originY: HIP, ...o }),
+    torso: bake([
+      P(body, YEL, 'gloss', [0, 0, 0], [0, 0, 0], [1, 1, 1], { rust: 0.22 }),
+      P(rcyl(R + 0.007, R + 0.007, 0.34, 0.01, 28), 0xe9e0c6, 'paper', [0, 0.97, 0]),
+      P(torus(R + 0.01, 0.014, 28, 5), 0x2a56a8, 'paint', [0, 0.79, 0], [HALF, 0, 0]),
+      P(torus(R + 0.01, 0.014, 28, 5), 0x2a56a8, 'paint', [0, 1.15, 0], [HALF, 0, 0]),
+      P(torus(R - 0.04, 0.016, 28, 5), C.chrome, 'chrome', [0, 0.57, 0], [HALF, 0, 0]),
+      P(torus(0.318, 0.026, 26, 5), C.chrome, 'chrome', [0, 1.5, 0], [HALF, 0, 0]),
+      // the face: brows, a jagged grin
+      ...[-1, 1].map((s) => P(rbox(0.19, 0.05, 0.045, 0.014), 0x1b1412, 'paint', at(s * 0.4, 1.31, 0.015), [0, -s * 0.4, -s * 0.5])),
+      P(wallPatch(R + 0.008, 0.21, 1.3), 0x0e0807, 'paint', [0, 0.92, 0]),
+      ...teeth,
+      // a pressure dial and a valve on the sides
+      P(rcyl(0.075, 0.075, 0.03, 0.01, 16).rotateX(HALF), C.chrome, 'chrome', dialAt(1.05, 0.0), [0, -dialA, 0]),
+      P(rcyl(0.062, 0.062, 0.012, 0.004, 16).rotateX(HALF), 0xe8e2cf, 'paper', dialAt(1.05, 0.02), [0, -dialA, 0]),
+      ...[0, 1, 2, 3, 4].map((i) => P(rbox(0.012, 0.03, 0.006, 0.002), i > 2 ? 0xb02a22 : 0x1c1c1e, 'plastic', [
+        dialAt(1.05, 0.028)[0] + Math.cos(dialA) * Math.sin(-0.9 + i * 0.45) * 0.05, 1.05 + Math.cos(-0.9 + i * 0.45) * 0.05, dialAt(1.05, 0.028)[2] + Math.sin(dialA) * Math.sin(-0.9 + i * 0.45) * 0.05,
+      ], [0, -dialA, 0.9 - i * 0.45])),
+      P(rcyl(0.04, 0.04, 0.16, 0.012, 10).rotateX(HALF), C.brass, 'brass', [at(-1.2, 0.8, 0.07)[0], 0.8, at(-1.2, 0.8, 0.07)[2]], [0, 1.2, 0]),
+      P(torus(0.07, 0.012, 14, 5), C.steelD, 'metal', [at(-1.2, 0.8, 0.14)[0], 0.8, at(-1.2, 0.8, 0.14)[2]], [0, 1.2, 0]),
+      ...bolts(10, R - 0.06, 0.56, C.steelD, 0.018),
+    ], { base: [0, HIP, 0], ...o }),
+    lid: bake([
+      P(rcyl(0.325, 0.325, 0.03, 0.012, 24), C.chrome, 'chrome', [0, 1.52, 0], [0, 0, 0], [1, 1, 1], { rust: 0.15 }),
+      P(rbox(0.22, 0.012, 0.09, 0.004), 0x0d0b0a, 'paint', [0, 1.536, -0.1]),
+      P(rcyl(0.04, 0.04, 0.03, 0.01, 10), C.steelD, 'metal', [0, 1.54, 0.06]),
+      P(torus(0.06, 0.016, 14, 5), C.chrome, 'chrome', [0, 1.65, 0.17], [0.6, 0, 0]),
+      P(rbox(0.1, 0.014, 0.2, 0.006), C.chrome, 'chrome', [0, 1.58, 0.1], [-0.4, 0, 0]),
+    ], { base: [0, 1.52, 0], ...o }),
+    needle: bake([
+      P(rbox(0.01, 0.052, 0.008, 0.002), 0xc23a2a, 'plastic', [0, 0.026, 0]),
+    ], { originY: 1.5, ...o }),
+    foam: bake([
+      [0, 0, 0, 0.2], [0.14, -0.06, 0.05, 0.15], [-0.15, -0.04, -0.03, 0.14], [0.05, 0.1, -0.04, 0.13], [-0.06, 0.08, 0.08, 0.12],
+      [0.2, 0.04, -0.1, 0.1], [-0.2, 0.02, 0.1, 0.1], [0, 0.2, 0, 0.09], [0.1, 0.16, 0.1, 0.07],
+    ].map(([x, y, z, r]) => P(ball0(r), 0xf1ede0, 'plastic', [x, y, z])), { originY: 1.6, ...o }),
+    eye: rcyl(0.1, 0.1, 0.05, 0.015, 16).rotateX(HALF),
+    arm: bake([
+      P(ball(0.09, 10, 7), C.chrome, 'chrome'),
+      P(rcyl(0.042, 0.042, 0.4, 0.012, 12), C.steel, 'metal', [0, -0.24, 0], [0, 0, 0], [1, 1, 1], { rust: 0.2 }),
+      P(torus(0.058, 0.014, 12, 5), C.brass, 'brass', [0, -0.1, 0], [HALF, 0, 0]),
+      P(rcyl(0.07, 0.07, 0.04, 0.012, 12), C.brass, 'brass', [0, -0.44, 0]),
+      P(ball(0.13, 12, 8), 0x23191b, 'rubber', [0, -0.55, 0]),
+    ], { originY: 1.12, ...o }),
+    shell: (() => {
+      const g = lathe([[0, 0.52], [0.33, 0.52], [0.41, 0.58], [0.46, 0.7], [0.46, 1.26], [0.43, 1.37], [0.36, 1.45], [0.3, 1.47], [0, 1.47]], 22);
+      g.translate(0, -1.0, 0);
+      return g;
+    })(),
+    ring: new THREE.RingGeometry(0.955, 1, 56).rotateX(-HALF),
+    disc: new THREE.CircleGeometry(1, 40).rotateX(-HALF),
+  };
+}
+
+// The Fizzbang Shaken: melee only, an exploder. A squat fizzy can on spring legs with a mean face, foam bubbling out
+// of its opened top and a pressure dial. Poses: idle and walk (k = how hard it is rattling, 0..1), prime (k = how far
+// through the fuse, 0..1: it swells, glows and shakes hard, with a ring on the floor showing the blast), hurt, dead
+// (the can pops its lid, collapses into a foam puddle). windup/aim play prime, swing/shoot play prime at k = 1.
+// Extras: setBlast(radius) sizes the floor ring (default 3.2); `primed` is true while the prime pose is showing.
+function makeShaken() {
+  const kind = 'shaken';
+  const variant = (variantCount[kind] = (variantCount[kind] ?? -1) + 1) % VARIANTS;
+  const geo = once(`robot:${kind}:${variant}`, () => shakenGeo(variant));
+  const mat = pbrMat();
+  const phase = (robotCount++) * 1.7;
+  const HIP = 0.5;
+  const meshes = [];
+  const mk = (g, m, parent, x = 0, y = 0, z = 0) => {
+    const mesh = new THREE.Mesh(g, m);
+    mesh.position.set(x, y, z);
+    mesh.userData.base = m;
+    parent.add(mesh);
+    meshes.push(mesh);
+    return mesh;
+  };
+  const group = new THREE.Group();
+  group.name = `robot-${kind}`;
+  const root = new THREE.Group();
+  group.add(root);
+  const legL = mk(geo.leg, mat, root, -0.2, HIP, 0);
+  const legR = mk(geo.leg, mat, root, 0.2, HIP, 0);
+  const upper = new THREE.Group();
+  upper.position.y = HIP;
+  root.add(upper);
+  mk(geo.torso, mat, upper);
+  const lid = mk(geo.lid, mat, upper, 0, 1.52 - HIP, 0);
+  const foam = mk(geo.foam, mat, upper, 0, 1.6 - HIP, 0);
+  const eyeMat = new THREE.MeshBasicMaterial({ color: hdr(0xfff0a0, 3.2), fog: false });
+  const EYE_A = 0.36;
+  const eyes = [-1, 1].map((s) => {
+    const e = mk(geo.eye, eyeMat, upper, Math.sin(s * EYE_A) * 0.447, 1.2 - HIP, -Math.cos(EYE_A) * 0.447);
+    e.rotation.y = -s * EYE_A;
+    return e;
+  });
+  const armL = new THREE.Group();
+  const armR = new THREE.Group();
+  armL.position.set(-0.46, 1.12 - HIP, 0);
+  armR.position.set(0.46, 1.12 - HIP, 0);
+  upper.add(armL, armR);
+  mk(geo.arm, mat, armL);
+  mk(geo.arm, mat, armR);
+  // dial needle, turned to face out of the can's right side
+  const needleG = new THREE.Group();
+  needleG.position.set(Math.sin(1.3) * 0.475, 1.05 - HIP, -Math.cos(1.3) * 0.475);
+  needleG.rotation.y = -1.3;
+  upper.add(needleG);
+  const needle = mk(geo.needle, mat, needleG);
+  needle.position.y = 0;
+  // blast glow, floor ring and foam puddle: additive or flat, not part of the flash
+  const shellMat = peGlow(0xff3012, 1.8, 0);
+  const shell = new THREE.Mesh(geo.shell, shellMat);
+  shell.position.y = 1.0 - HIP;
+  shell.visible = false;
+  upper.add(shell);
+  const ringMat = peGlow(0xff4a1a, 3, 0);
+  const fillMat = peGlow(0xff3a12, 1.2, 0);
+  const ring = new THREE.Mesh(geo.ring, ringMat);
+  const fill = new THREE.Mesh(geo.disc, fillMat);
+  ring.position.y = fill.position.y = 0.035;
+  ring.visible = fill.visible = false;
+  group.add(ring, fill);
+  let blastR = 3.2;
+  const puddle = new THREE.Mesh(geo.foam, mat);
+  puddle.userData.base = mat;
+  puddle.visible = false;
+  group.add(puddle);
+  meshes.push(puddle);
+
+  const rig = flickerRig(phase, eyeMat, null);
+  const white = whiteMat();
+  let primed = false;
+  const eyeScale = (s) => {
+    for (const e of eyes) e.scale.set(s, s, 1);
+  };
+
+  function reset() {
+    root.position.set(0, 0, 0);
+    root.rotation.set(0, 0, 0);
+    legL.rotation.set(0, 0, 0);
+    legR.rotation.set(0, 0, 0);
+    legL.scale.set(1, 1, 1);
+    legR.scale.set(1, 1, 1);
+    upper.position.set(0, HIP, 0);
+    upper.rotation.set(0, 0, 0);
+    upper.scale.set(1, 1, 1);
+    armL.rotation.set(0, 0, -0.35);
+    armR.rotation.set(0, 0, 0.35);
+    if (lid.parent !== upper) upper.add(lid);
+    lid.position.set(0, 1.52 - HIP, 0);
+    lid.rotation.set(0, 0, 0);
+    foam.position.set(0, 1.6 - HIP, 0);
+    foam.scale.set(1, 1, 1);
+    foam.visible = true;
+    needle.rotation.set(0, 0, 0);
+    needleG.rotation.set(0, -1.3, 0);
+    shell.visible = false;
+    shell.scale.set(1, 1, 1);
+    shellMat.opacity = 0;
+    ring.visible = fill.visible = false;
+    puddle.visible = false;
+    for (const e of eyes) {
+      e.visible = true;
+      e.scale.set(1, 1, 1);
+    }
+  }
+
+  // The rattle: a quick shudder of the whole can. lv 0..1 sets how fast and how far; never quite periodic.
+  function rattle(t, lv, amp = 1) {
+    const f = lerp(8, 32, lv);
+    const a = (0.006 + 0.03 * lv) * amp;
+    const c = (t + phase) * f;
+    upper.position.x += a * Math.sin(c * 1.0) * (0.6 + 0.4 * Math.sin(c * 0.37));
+    upper.position.z += a * 0.6 * Math.sin(c * 1.31 + 1.2);
+    upper.rotation.z += a * 1.6 * Math.sin(c * 0.83 + 0.4);
+    upper.rotation.x += a * 1.2 * Math.sin(c * 1.11 + 2);
+    foam.position.y += a * 0.8 * Math.sin(c * 1.7);
+    armL.rotation.x += a * 5 * Math.sin(c * 0.9 + 1);
+    armR.rotation.x += a * 5 * Math.sin(c * 1.05 + 2);
+    needle.rotation.z = -1.2 + 2.4 * clamp(lv + a * 3 * Math.sin(c * 2), 0, 1);
+    eyeScale(1 + 0.16 * lv);
+    foam.scale.set(1 + 0.25 * lv, 1 + 0.35 * lv, 1 + 0.25 * lv);
+  }
+
+  function idle(t, lv) {
+    const s = t + phase;
+    upper.scale.y = 1 + 0.012 * Math.sin(s * 2.4);
+    upper.rotation.z = 0.012 * Math.sin(s * 1.1);
+    armL.rotation.x = 0.06 * Math.sin(s * 1.7);
+    armR.rotation.x = 0.06 * Math.sin(s * 1.7 + 1.5);
+    foam.scale.set(1 + 0.05 * Math.sin(s * 3), 1 + 0.08 * Math.sin(s * 2.3), 1);
+    rattle(t, lv * 0.7, 1);
+  }
+
+  // Bouncing along on its springs: a hop per step, squash and stretch, arms flung about.
+  function walk(t, lv) {
+    const c = (t + phase) * lerp(6.5, 10, lv);
+    const s = Math.sin(c);
+    const hop = Math.abs(s);
+    root.position.y = hop * 0.2;
+    legL.scale.y = 1 - 0.28 * (1 - hop) * (s > 0 ? 1 : 0.4);
+    legR.scale.y = 1 - 0.28 * (1 - hop) * (s > 0 ? 0.4 : 1);
+    upper.scale.set(1 - 0.05 * (hop - 0.5), 1 + 0.08 * (hop - 0.5), 1 - 0.05 * (hop - 0.5));
+    upper.rotation.x = -0.12;
+    upper.rotation.z = 0.05 * s;
+    armL.rotation.x = -s * 0.8;
+    armR.rotation.x = s * 0.8;
+    armL.rotation.z = -0.35 - 0.2 * lv;
+    armR.rotation.z = 0.35 + 0.2 * lv;
+    foam.scale.set(1, 1 + 0.1 * Math.sin(c * 2), 1);
+    rattle(t, lv, 1);
+  }
+
+  // The fuse. k 0..1: swells, the shell glows, foam heaves up, the ring on the floor shows how far the blast reaches.
+  function prime(t, k) {
+    const e = easeIn(k);
+    const c = (t + phase) * 44;
+    const jx = Math.sin(c) * (0.025 + 0.05 * k);
+    const jz = Math.sin(c * 1.3 + 1) * (0.02 + 0.04 * k);
+    upper.scale.set(1 + 0.12 * e, 1 + 0.2 * e, 1 + 0.12 * e);
+    upper.position.x += jx;
+    upper.position.z += jz;
+    upper.rotation.z = 0.05 * Math.sin(c * 0.9);
+    upper.rotation.x = 0.1 + 0.04 * Math.sin(c * 1.1);
+    root.position.y = 0.05 + 0.04 * Math.abs(Math.sin(c * 0.5));
+    armL.rotation.z = -1.2;
+    armR.rotation.z = 1.2;
+    armL.rotation.x = Math.sin(c * 0.8) * 0.6;
+    armR.rotation.x = Math.sin(c * 0.8 + 2) * 0.6;
+    legL.scale.y = 0.8 + 0.1 * Math.sin(c * 0.7);
+    legR.scale.y = 0.8 + 0.1 * Math.sin(c * 0.7 + 1);
+    foam.scale.set(1.2 + 0.9 * e, 1.2 + 1.6 * e, 1.2 + 0.9 * e);
+    foam.position.y += 0.1 * e + 0.03 * Math.sin(c * 1.3);
+    lid.rotation.x = -0.2 * e + 0.05 * Math.sin(c * 1.2) * e;
+    lid.position.y += 0.05 * e + 0.015 * Math.sin(c * 1.9) * e;
+    needle.rotation.z = -1.2 + 2.4 * clamp(0.8 + 0.2 * Math.sin(c), 0, 1);
+    eyeScale(1.3 + 0.25 * e);
+    const flick = 0.75 + 0.25 * Math.sin(c * 0.6) * Math.sin(c * 0.23);
+    shell.visible = true;
+    shell.scale.setScalar(1 + 0.05 * Math.sin(c * 0.5));
+    shellMat.opacity = (0.1 + 0.4 * k) * flick;
+    ring.visible = fill.visible = true;
+    ring.scale.set(blastR, 1, blastR);
+    fill.scale.set(blastR * (0.3 + 0.7 * k), 1, blastR * (0.3 + 0.7 * k));
+    ringMat.opacity = (0.3 + 0.65 * k) * (0.7 + 0.3 * Math.sin(c * 0.45));
+    fillMat.opacity = 0.05 + 0.18 * k * flick;
+  }
+
+  function hurt(t, lv) {
+    idle(t, lv);
+    const s = Math.max(0, 1 - t / 0.4);
+    upper.rotation.x += 0.4 * s * (1 + 0.3 * Math.cos(t * 18));
+    upper.rotation.z += Math.sin(t * 38) * s * 0.12;
+    root.position.z = 0.1 * s;
+    armL.rotation.x += 0.7 * s;
+    armR.rotation.x += 0.7 * s;
+    foam.scale.y += 0.6 * s;
+    eyeScale(1 + 0.5 * s);
+  }
+
+  // Pops: the lid flies off with a plume of foam, the can folds up on its springs and lies in a puddle of foam.
+  function dead(k) {
+    const a = clamp(k / 0.3, 0, 1);
+    const sag = smooth(clamp((k - 0.08) / 0.6, 0, 1));
+    root.position.y = -0.275 * sag + 0.12 * Math.sin(a * PI) * (1 - sag);
+    legL.scale.y = 1 - 0.55 * sag;
+    legR.scale.y = 1 - 0.55 * sag;
+    legL.rotation.z = 0.5 * sag;
+    legR.rotation.z = -0.4 * sag;
+    upper.scale.set(1 + 0.25 * sag, 1 - 0.55 * sag, 1 + 0.25 * sag);
+    upper.rotation.z = 0.18 * sag;
+    upper.rotation.x = 0.1 * sag;
+    // lid: up, over and down beside the can (it leaves the can for the group so the can's squash does not bend it)
+    const fl = clamp(k / 0.55, 0, 1);
+    const land = smooth(clamp((fl - 0.55) / 0.45, 0, 1));
+    group.add(lid);
+    lid.position.set(0.9 * fl, 1.52 + 2.4 * Math.sin(fl * PI) * (1 - land * 0.2) - 1.46 * land, -0.35 * fl);
+    lid.rotation.set(fl * PI2 * 2, fl * 5, 0.5 * Math.sin(fl * PI));
+    foam.scale.set(1 + 1.4 * Math.sin(a * HALF), 1 + 2.2 * Math.sin(a * HALF) * (1 - sag), 1 + 1.4 * Math.sin(a * HALF));
+    foam.position.y += 0.1 * a - 0.5 * sag;
+    foam.visible = sag < 0.9;
+    puddle.visible = k > 0.1;
+    const pu = easeOut(clamp((k - 0.1) / 0.5, 0, 1));
+    puddle.position.set(0, 0.07, 0);
+    puddle.scale.set(2.6 * pu + 0.01, 0.33 * pu + 0.01, 2.6 * pu + 0.01);
+    armL.rotation.set(0.6 * sag, 0, -1.4 * sag - 0.35);
+    armR.rotation.set(-0.4 * sag, 0, 1.2 * sag + 0.35);
+    needle.rotation.z = 1.2 - 2.4 * sag;
+    const on = k < 0.1 || (k < 0.45 && Math.sin(k * 80) > 0);
+    for (const e of eyes) e.visible = on;
+  }
+
+  function setPose(state, t, k) {
+    t = Math.max(0, num(t, 0));
+    k = clamp(num(k, 0), 0, 1);
+    reset();
+    const wantPrime = state === 'prime' || state === 'windup' || state === 'aim' || state === 'swing' || state === 'shoot';
+    if (wantPrime !== primed) {
+      primed = wantPrime;
+      if (primed) rig.tintEyes(0xff2a10, 2.3);
+      else rig.tintEyes(0xfff0a0, 3.2);
+    }
+    switch (state) {
+      case 'walk': walk(t, k); break;
+      case 'prime': case 'windup': case 'aim': prime(t, k); break;
+      case 'swing': case 'shoot': prime(t, 1); break;
+      case 'hurt': hurt(t, k); break;
+      case 'dead': dead(k); break;
+      default: idle(t, k);
+    }
+  }
+
+  function flash(on) {
+    for (const m of meshes) m.material = on ? white : m.userData.base;
+  }
+
+  setPose('idle', 0, 0);
+  return {
+    group, height: 1.85, radius: 0.5, headY: 1.3, eyes, setPose, flash, update: (dt) => rig.update(dt), muzzle: null,
+    setBlast(r) { blastR = clamp(num(r, 3.2), 0.5, 12); },
+    get primed() { return primed; },
+  };
+}
+
+// ---- Bampot Longshot ----
+
+function longshotGeo(v) {
+  const HIP = 1.1;
+  const R = 0.41;
+  const o = { seed: v + 21, tint: [0, 0.04, -0.05][v] };
+  const GLASS = 0x2c5a3c;
+  const GUN = 0x3c4048;
+  const body = dent(lathe([
+    [0, 1.02], [0.3, 1.02], [0.37, 1.06], [0.4, 1.14], [R, 1.24], [R, 1.7], [0.38, 1.84], [0.3, 1.96], [0.2, 2.05], [0.15, 2.13],
+    [0.14, 2.22], [0.14, 2.42], [0.12, 2.42], [0, 2.42],
+  ], 24), [[-0.3, 1.35, -0.28, 0.2, 0.045], [0.38, 1.6, -0.1, 0.17, 0.04], [0.1, 1.2, 0.4, 0.18, 0.04]]);
+  const lensS = once('ls:eyeS', () => rcyl(0.042, 0.042, 0.03, 0.01, 14).rotateX(HALF));
+  const lensL = once('ls:eyeL', () => rcyl(0.07, 0.07, 0.03, 0.01, 16).rotateX(HALF));
+  const along = (geo) => geo.rotateX(HALF); // lay a cylinder along z
+  return {
+    thigh: bake([
+      P(ball(0.085, 10, 7), C.chrome, 'chrome', [0, 0, 0]),
+      P(rcyl(0.075, 0.06, 0.5, 0.025, 14), C.steel, 'metal', [0, -0.27, 0], [0, 0, 0], [1, 1, 1], { rust: 0.2 }),
+      P(torus(0.07, 0.018, 14, 5), C.rubber, 'rubber', [0, -0.14, 0], [HALF, 0, 0]),
+      P(ball(0.07, 10, 7), C.chrome, 'chrome', [0, -0.55, 0]),
+    ], { originY: HIP, ...o }),
+    shin: bake([
+      P(rcyl(0.055, 0.045, 0.42, 0.02, 12), C.steelD, 'metal', [0, -0.24, 0], [0, 0, 0], [1, 1, 1], { rust: 0.25 }),
+      P(rcyl(0.07, 0.07, 0.04, 0.012, 12), C.brass, 'brass', [0, -0.1, 0]),
+      P(ball(0.055, 8, 6), C.chrome, 'chrome', [0, -0.46, 0]),
+      P(rbox(0.2, 0.08, 0.34, 0.035), C.rubber, 'rubber', [0, -0.51, -0.06]),
+    ], { originY: HIP - 0.55, ...o }),
+    torso: bake([
+      P(body, GLASS, 'gloss', [0, 0, 0], [0, 0, 0], [1, 1, 1], { rust: 0.2 }),
+      P(rcyl(0.3, 0.34, 0.1, 0.03, 18), 0x1e1f24, 'paint', [0, 1.06, 0]),
+      P(rcyl(R + 0.006, R + 0.006, 0.42, 0.01, 26), 0xd9cfae, 'paper', [0, 1.5, 0]),
+      P(torus(R + 0.01, 0.012, 26, 5), 0x14161a, 'paint', [0, 1.29, 0], [HALF, 0, 0]),
+      P(torus(R + 0.01, 0.012, 26, 5), 0x14161a, 'paint', [0, 1.71, 0], [HALF, 0, 0]),
+      // crosshair on the label
+      P(torus(0.1, 0.012, 20, 4), 0x14161a, 'paint', [0, 1.5, -(R + 0.012)]),
+      P(rbox(0.27, 0.018, 0.012, 0.004), 0x14161a, 'paint', [0, 1.5, -(R + 0.014)]),
+      P(rbox(0.018, 0.27, 0.012, 0.004), 0x14161a, 'paint', [0, 1.5, -(R + 0.014)]),
+      P(ball(0.022, 8, 6), 0xb81c1c, 'plastic', [0, 1.5, -(R + 0.02)]),
+      // bandolier of brass rounds
+      P(rbox(0.075, 0.8, 0.04, 0.012), 0x4a3320, 'leather', [0, 1.55, -0.405], [0, 0, 0.55]),
+      ...Array.from({ length: 7 }, (_, i) => P(rcyl(0.02, 0.02, 0.07, 0.008, 8), C.brass, 'brass', [-0.13 + i * 0.043, 1.55 + 0.27 - i * 0.086 + 0.0, -0.43], [0, 0, 0.55])),
+      // shoulder joints, a battery pack on the back with a cable to the rifle
+      ...[-1, 1].map((s) => P(ball(0.08, 10, 7), C.chrome, 'chrome', [s * 0.42, 1.68, 0])),
+      P(rbox(0.36, 0.52, 0.16, 0.04), C.steelD, 'metal', [0, 1.52, 0.46], [0, 0, 0], [1, 1, 1], { rust: 0.4 }),
+      P(rbox(0.28, 0.04, 0.17, 0.012), C.brass, 'brass', [0, 1.72, 0.46]),
+      P(rbox(0.28, 0.04, 0.17, 0.012), C.brass, 'brass', [0, 1.32, 0.46]),
+      P(rcyl(0.025, 0.025, 0.2, 0.008, 8), C.chrome, 'chrome', [0.12, 1.88, 0.46]),
+      P(tube([[-0.12, 1.75, 0.5], [-0.3, 1.8, 0.4], [-0.44, 1.7, 0.2], [-0.44, 1.6, -0.1]], 0.016, 20, 5), C.rubber, 'rubber'),
+    ], { base: [0, HIP, 0], ...o }),
+    head: bake([
+      P(rcyl(0.19, 0.19, 0.13, 0.025, 20), 0x15171a, 'rubber', [0, 2.3, 0]),
+      P(rcyl(0.082, 0.082, 0.05, 0.015, 16).rotateX(HALF), C.steelD, 'metal', [0.08, 2.3, -0.175]),
+      P(rcyl(0.055, 0.055, 0.045, 0.012, 14).rotateX(HALF), C.steelD, 'metal', [-0.075, 2.3, -0.172]),
+      P(torus(0.165, 0.025, 18, 5), C.brass, 'brass', [0, 2.43, 0], [HALF, 0, 0]),
+      P(rcyl(0.12, 0.1, 0.1, 0.02, 14), 0xb08a58, 'wood', [0, 2.47, 0]),
+      // a tweed flat cap, worn at an angle
+      P(rcyl(0.3, 0.27, 0.075, 0.03, 22), 0x4f4d2c, 'cloth', [0.02, 2.545, 0], [0, 0, 0.1]),
+      P(rcyl(0.22, 0.28, 0.06, 0.025, 22), 0x43412a, 'cloth', [0.0, 2.58, 0.0], [0, 0, 0.1]),
+      P(rbox(0.3, 0.022, 0.2, 0.01), 0x2c2c1c, 'leather', [0.0, 2.52, -0.29], [-0.18, 0, 0.1]),
+      P(ball(0.028, 8, 6), 0x8a2a2a, 'cloth', [0.03, 2.63, 0]),
+      // a ranging aerial on the side
+      P(rcyl(0.007, 0.007, 0.32, 0.003, 6), C.steel, 'metal', [0.17, 2.6, 0.08]),
+      P(ball(0.016, 6, 4), 0xff3a2a, 'plastic', [0.17, 2.77, 0.08]),
+    ], { base: [0, 2.25, 0], ...o }),
+    eyeS: lensS,
+    eyeL: lensL,
+    lamp: ball(0.028, 8, 6),
+    rifle: bake([
+      P(along(rcyl(0.026, 0.026, 0.95, 0.01, 12)), GUN, 'metal', [0, 0, -0.425], [0, 0, 0], [1, 1, 1], { rust: 0.1 }),
+      P(along(rcyl(0.04, 0.04, 0.4, 0.012, 12)), C.steelD, 'metal', [0, 0, -0.25], [0, 0, 0], [1, 1, 1], { rust: 0.2 }),
+      ...[-0.6, -0.54, -0.48].map((z) => P(along(rcyl(0.043, 0.043, 0.014, 0.004, 12)), C.brass, 'brass', [0, 0, z])),
+      P(along(rcyl(0.043, 0.043, 0.1, 0.012, 12)), C.steel, 'metal', [0, 0, -0.91]),
+      ...[-0.9, -0.93].map((z) => P(rbox(0.1, 0.012, 0.014, 0.004), 0x050505, 'plastic', [0, 0, z])),
+      P(rbox(0.08, 0.11, 0.32, 0.02), C.steelD, 'metal', [0, 0, 0.08], [0, 0, 0], [1, 1, 1], { rust: 0.25 }),
+      P(rbox(0.07, 0.02, 0.025, 0.008), C.steel, 'metal', [0.07, 0.03, 0.12]),
+      P(ball(0.022, 8, 6), C.steel, 'metal', [0.105, 0.03, 0.12]),
+      P(rbox(0.07, 0.15, 0.36, 0.03), 0x6b4a2c, 'wood', [0, -0.03, 0.4], [0.1, 0, 0]),
+      P(rbox(0.05, 0.14, 0.06, 0.02), 0x6b4a2c, 'wood', [0, -0.13, 0.14], [0.3, 0, 0]),
+      P(rbox(0.05, 0.12, 0.08, 0.015), C.steelD, 'metal', [0, -0.1, 0.0]),
+      P(along(rcyl(0.035, 0.035, 0.4, 0.012, 14)), 0x1a1a1e, 'metal', [0, 0.13, -0.02]),
+      P(along(rcyl(0.056, 0.042, 0.1, 0.015, 14)), 0x1a1a1e, 'metal', [0, 0.13, -0.26]),
+      P(along(rcyl(0.04, 0.05, 0.07, 0.012, 14)), 0x1a1a1e, 'metal', [0, 0.13, 0.22]),
+      ...[-0.1, 0.12].map((z) => P(rbox(0.03, 0.06, 0.04, 0.01), C.steelD, 'metal', [0, 0.085, z])),
+      P(ball(0.018, 6, 4), C.brass, 'brass', [0.045, 0.14, -0.02]),
+      P(ball(0.018, 6, 4), C.brass, 'brass', [0, 0.18, -0.02]),
+      ...[-1, 1].map((s) => P(rbox(0.012, 0.012, 0.3, 0.004), C.steel, 'metal', [s * 0.045, -0.05, -0.5], [0, -s * 0.08, 0])),
+    ], { originY: 1.5, ...o }),
+    lens: new THREE.CircleGeometry(0.048, 16).rotateY(Math.PI),
+    boneU: bake([
+      P(rcyl(0.045, 0.04, 0.43, 0.015, 10), C.steel, 'metal', [0, -0.215, 0], [0, 0, 0], [1, 1, 1], { rust: 0.2 }),
+      P(ball(0.05, 8, 6), C.chrome, 'chrome', [0, -0.45, 0]),
+    ], { originY: 1.6, ...o }),
+    boneL: bake([
+      P(rcyl(0.04, 0.032, 0.4, 0.014, 10), C.steelD, 'metal', [0, -0.2, 0], [0, 0, 0], [1, 1, 1], { rust: 0.25 }),
+      P(ball(0.06, 8, 6), 0x23191b, 'rubber', [0, -0.42, 0]),
+    ], { originY: 1.2, ...o }),
+    dotGeo: ball(0.1, 8, 6),
+  };
+}
+
+// The Bampot Longshot: Bampot camp, so it shoots, from far away. A tall slim bottle in dark green glass, a tweed flat
+// cap, goggles with a small amber eye and a big scope lens, and a long rifle held across its chest. The game fires it
+// as hitscan along the rifle's line, so the ray starts at the rifle's pivot (SNIPE below) and the muzzle sits on it.
+// Poses: idle, walk, aim (t = seconds, k = charge 0..1: the scope lens heats up), shoot (recoil and flash), hurt, dead.
+// windup plays aim and swing plays shoot, so a generic driver never breaks it.
+// Extras: setLaser(len, pitch, locked, k) shows the laser line (len 0 hides it), pitches the rifle and returns nothing;
+// `locked` turns it from thin red to thick white-hot. `muzzle` is the rifle tip. `pivot` is the rifle pivot in robot space.
+const SNIPE = { up: 1.5, fwd: 0.3 };
+
+function makeLongshot() {
+  const kind = 'longshot';
+  const variant = (variantCount[kind] = (variantCount[kind] ?? -1) + 1) % VARIANTS;
+  const geo = once(`robot:${kind}:${variant}`, () => longshotGeo(variant));
+  const mat = pbrMat();
+  const phase = (robotCount++) * 1.7;
+  const HIP = 1.1;
+  const meshes = [];
+  const mk = (g, m, parent, x = 0, y = 0, z = 0) => {
+    const mesh = new THREE.Mesh(g, m);
+    mesh.position.set(x, y, z);
+    mesh.userData.base = m;
+    parent.add(mesh);
+    meshes.push(mesh);
+    return mesh;
+  };
+  const group = new THREE.Group();
+  group.name = `robot-${kind}`;
+  const root = new THREE.Group();
+  group.add(root);
+  const legs = [-1, 1].map((s) => {
+    const g = new THREE.Group();
+    g.position.set(s * 0.2, HIP, 0);
+    root.add(g);
+    mk(geo.thigh, mat, g);
+    const knee = new THREE.Group();
+    knee.position.y = -0.55;
+    g.add(knee);
+    mk(geo.shin, mat, knee);
+    return { g, knee };
+  });
+  const upper = new THREE.Group();
+  upper.position.y = HIP;
+  root.add(upper);
+  mk(geo.torso, mat, upper);
+  const headG = new THREE.Group();
+  headG.position.y = 2.25 - HIP;
+  upper.add(headG);
+  mk(geo.head, mat, headG);
+  const eyeMat = new THREE.MeshBasicMaterial({ color: hdr(0xffc21a, 3), fog: false });
+  const eyes = [mk(geo.eyeS, eyeMat, headG, -0.075, 2.3 - 2.25, -0.19), mk(geo.eyeL, eyeMat, headG, 0.08, 2.3 - 2.25, -0.2)];
+  const lampMat = new THREE.MeshBasicMaterial({ color: hdr(0xff2a1a, 2.4), fog: false });
+  mk(geo.lamp, lampMat, upper, 0, 1.46 - HIP, 0.56);
+
+  // the rifle, on its own pivot so it can swing up to the aim and kick back
+  const rifleG = new THREE.Group();
+  upper.add(rifleG);
+  mk(geo.rifle, mat, rifleG);
+  const lensMat = new THREE.MeshBasicMaterial({ color: hdr(0xff2a1a, 1.4), fog: false });
+  const lens = new THREE.Mesh(geo.lens, lensMat);
+  lens.position.set(0, 0.13, -0.312);
+  rifleG.add(lens);
+  const muzzle = new THREE.Object3D();
+  muzzle.name = 'muzzle';
+  muzzle.position.set(0, 0, -0.96);
+  rifleG.add(muzzle);
+  const flare = makeMuzzleFlash();
+  flare.scale.setScalar(2.2);
+  flare.visible = false;
+  muzzle.add(flare);
+
+  // the laser: a thin core in a red glow, unit length along the rifle's -z
+  const laserG = new THREE.Group();
+  laserG.visible = false;
+  muzzle.add(laserG);
+  const beamGeo = once('ls:beam', () => new THREE.BoxGeometry(1, 1, 1).translate(0, 0, -0.5));
+  const lmats = [peGlow(0xffffff, 6, 1), peGlow(0xff3030, 3, 0.55), peGlow(0xff1a1a, 1.8, 0.22)];
+  const lparts = lmats.map((m) => {
+    const b = new THREE.Mesh(beamGeo, m);
+    b.frustumCulled = false;
+    laserG.add(b);
+    return b;
+  });
+  const dotMat = peGlow(0xff4030, 3, 0.8);
+  const dot = new THREE.Mesh(geo.dotGeo, dotMat);
+  dot.frustumCulled = false;
+  laserG.add(dot);
+
+  // arms: two telescoping bones each, hands on the grip and under the fore-end
+  const boneUR = mk(geo.boneU, mat, upper);
+  const boneLR = mk(geo.boneL, mat, upper);
+  const boneUL = mk(geo.boneU, mat, upper);
+  const boneLL = mk(geo.boneL, mat, upper);
+  const SR = new THREE.Vector3(0.42, 1.68 - HIP, 0);
+  const SL = new THREE.Vector3(-0.42, 1.68 - HIP, 0);
+  const poleR = new THREE.Vector3(0.8, -0.7, 0.35);
+  const poleL = new THREE.Vector3(-0.8, -0.7, 0.35);
+  const down = new THREE.Vector3(0, -1, 0);
+  const _G = new THREE.Vector3();
+  const _E = new THREE.Vector3();
+  const _v = new THREE.Vector3();
+  function solveArm(S, local, pole, bu, bl) {
+    _G.set(local[0], local[1], local[2]).applyEuler(rifleG.rotation).add(rifleG.position);
+    const st = twoBone(S, _G, pole, 0.45, 0.42, _E);
+    bu.position.copy(S);
+    bu.quaternion.setFromUnitVectors(down, _v.copy(_E).sub(S).normalize());
+    bu.scale.set(1, st, 1);
+    bl.position.copy(_E);
+    bl.quaternion.setFromUnitVectors(down, _v.copy(_G).sub(_E).normalize());
+    bl.scale.set(1, st, 1);
+  }
+
+  const rig = flickerRig(phase, eyeMat, lampMat);
+  const white = whiteMat();
+  let curPitch = 0;
+  let laserOn = false;
+  let laserLen = 0;
+  let laserLocked = false;
+
+  function reset() {
+    root.position.set(0, 0, 0);
+    root.rotation.set(0, 0, 0);
+    for (const l of legs) {
+      l.g.rotation.set(0, 0, 0);
+      l.knee.rotation.set(0, 0, 0);
+    }
+    upper.position.set(0, HIP, 0);
+    upper.rotation.set(0, 0, 0);
+    upper.scale.set(1, 1, 1);
+    headG.position.set(0, 2.25 - HIP, 0);
+    headG.rotation.set(0, 0, 0);
+    if (rifleG.parent !== upper) upper.add(rifleG);
+    rifleG.position.set(0, 1.4 - HIP, -0.25);
+    rifleG.rotation.set(-0.55, 0, 0);
+    flare.visible = false;
+    lensMat.color.copy(hdr(0xff2a1a, 1.4));
+    for (const e of eyes) {
+      e.visible = true;
+      e.scale.set(1, 1, 1);
+    }
+  }
+
+  function idle(t) {
+    const s = t + phase;
+    upper.scale.y = 1 + 0.008 * Math.sin(s * 2.0);
+    upper.rotation.z = 0.02 * Math.sin(s * 1.0);
+    upper.rotation.x = 0.015 * Math.sin(s * 0.8 + 1);
+    headG.rotation.y = 0.35 * Math.sin(s * 0.45);
+    headG.rotation.x = 0.04 * Math.sin(s * 1.2);
+    rifleG.rotation.x = -0.55 + 0.02 * Math.sin(s * 1.5);
+    lensMat.color.copy(hdr(0xff2a1a, 1.2 + 0.4 * Math.sin(s * 3)));
+  }
+
+  function walk(t) {
+    const c = t * 5.2 + phase;
+    const sL = Math.sin(c);
+    legs[0].g.rotation.x = sL * 0.5;
+    legs[1].g.rotation.x = -sL * 0.5;
+    legs[0].knee.rotation.x = clamp(-Math.sin(c + 0.9), 0, 1) * 0.9;
+    legs[1].knee.rotation.x = clamp(Math.sin(c + 0.9), 0, 1) * 0.9;
+    root.position.y = Math.abs(Math.cos(c)) * 0.05 - 0.02;
+    upper.rotation.z = sL * 0.04;
+    upper.rotation.x = 0.04 + 0.02 * Math.cos(c * 2);
+    headG.rotation.y = -sL * 0.06 + 0.2 * Math.sin(t * 0.5 + phase);
+    rifleG.rotation.x = -0.6 + 0.03 * Math.cos(c * 2);
+    rifleG.position.y += 0.02 * Math.cos(c * 2);
+    rifleG.position.x = 0.02 * sL;
+  }
+
+  // Shoulder the rifle, lay the cheek on the stock, line it up. k is the charge: the scope lens heats up.
+  function aim(t, k) {
+    const a = easeOut(clamp(t / 0.3, 0, 1));
+    rifleG.rotation.x = lerp(-0.55, curPitch, a) + 0.0035 * Math.sin(t * 9) * (1 - k);
+    rifleG.position.y = lerp(1.4 - HIP, SNIPE.up - HIP, a);
+    rifleG.position.z = lerp(-0.25, -SNIPE.fwd, a);
+    headG.rotation.x = 0.16 * a; // (the body does not lean: the rifle's pitch must be exactly the shot's)
+    headG.position.z = -0.04 * a;
+    legs[0].g.rotation.x = 0.12 * a;
+    legs[1].g.rotation.x = -0.14 * a;
+    legs[1].knee.rotation.x = 0.1 * a;
+    const heat = 1.4 + 3.2 * k + (laserOn ? 0.8 : 0);
+    lensMat.color.copy(hdr(k > 0.97 ? 0xfff0c0 : 0xff2a1a, heat));
+    for (const e of eyes) e.scale.set(1 + 0.25 * k, 1 + 0.25 * k, 1);
+  }
+
+  function shoot(k) {
+    const r = Math.exp(-k * 8);
+    rifleG.rotation.x = curPitch + 0.32 * r;
+    rifleG.position.y = SNIPE.up - HIP + 0.03 * r;
+    rifleG.position.z = -SNIPE.fwd + 0.2 * r;
+    upper.rotation.x = 0.06 - 0.22 * r;
+    headG.rotation.x = 0.16 - 0.15 * r;
+    legs[0].g.rotation.x = 0.12 + 0.15 * r;
+    legs[1].g.rotation.x = -0.14 - 0.2 * r;
+    root.position.z = 0.18 * r;
+    flare.visible = k < 0.28;
+    flare.rotation.z = k * 40;
+    lensMat.color.copy(hdr(0xffffff, 1.5 + 4 * r));
+    for (const e of eyes) e.scale.set(1.3, 1.3, 1);
+  }
+
+  function hurt(t) {
+    idle(t);
+    const s = Math.max(0, 1 - t / 0.4);
+    upper.rotation.x += 0.35 * s * (1 + 0.3 * Math.cos(t * 18));
+    upper.rotation.z += Math.sin(t * 38) * s * 0.1;
+    root.position.z = 0.1 * s;
+    headG.rotation.x = 0.4 * s;
+    rifleG.rotation.x += 0.3 * s;
+    for (const e of eyes) e.scale.set(1 + 0.5 * s, 1 + 0.5 * s, 1);
+  }
+
+  // Topples backwards, the knees go, the cap rolls off and the rifle is flung clear.
+  function dead(k) {
+    const fall = easeIn(clamp(k / 0.75, 0, 1));
+    const bounce = k > 0.75 ? Math.sin(clamp((k - 0.75) / 0.25, 0, 1) * PI) * 0.05 : 0;
+    const theta = fall * HALF;
+    root.rotation.x = theta;
+    root.rotation.z = 0.12 * fall;
+    root.position.y = 0.4 * Math.sin(theta) + bounce;
+    root.position.z = 0.35 * fall;
+    upper.rotation.z = 0.2 * fall;
+    const pop = smooth(clamp((k - 0.5) / 0.4, 0, 1));
+    headG.position.x = 0.5 * pop;
+    headG.position.y = 2.25 - HIP - 0.25 * pop;
+    headG.position.z = -0.3 * pop;
+    headG.rotation.z = -0.9 * pop;
+    headG.rotation.y = 0.5 * pop;
+    legs[0].g.rotation.x = 0.5 * fall;
+    legs[1].g.rotation.x = -0.3 * fall;
+    legs[0].knee.rotation.x = 0.8 * fall;
+    legs[1].knee.rotation.x = 1.0 * fall;
+    // the rifle leaves the robot for the group and lands flat in front of it
+    const th = smooth(clamp(k / 0.7, 0, 1));
+    group.add(rifleG);
+    rifleG.position.set(0.55 * th, lerp(1.4, 0.07, easeIn(th)), -0.6 - 0.7 * th);
+    rifleG.rotation.set(lerp(-0.55, 0, th), 0.9 * th, 0.15 * Math.sin(th * PI * 2) * (1 - th));
+    const on = k < 0.12 || (k < 0.5 && Math.sin(k * 90) > 0);
+    for (const e of eyes) e.visible = on;
+  }
+
+  function setPose(state, t, k) {
+    t = Math.max(0, num(t, 0));
+    k = clamp(num(k, 0), 0, 1);
+    reset();
+    switch (state) {
+      case 'walk': walk(t); break;
+      case 'aim': case 'windup': aim(t, state === 'windup' ? 0 : k); break;
+      case 'shoot': case 'swing': shoot(k); break;
+      case 'hurt': hurt(t); break;
+      case 'dead': dead(k); break;
+      default: idle(t);
+    }
+    if (state !== 'dead') {
+      rifleG.updateMatrix();
+      solveArm(SR, [0, -0.12, 0.15], poleR, boneUR, boneLR);
+      solveArm(SL, [0, -0.04, -0.36], poleL, boneUL, boneLL);
+    } else {
+      // limp arms hang from the shoulders
+      for (const [S, bu, bl, sx] of [[SR, boneUR, boneLR, 1], [SL, boneUL, boneLL, -1]]) {
+        _G.copy(S).add(_v.set(sx * 0.3 * k, -0.8, 0.1 * k));
+        const st = twoBone(S, _G, sx > 0 ? poleR : poleL, 0.45, 0.42, _E);
+        bu.position.copy(S);
+        bu.quaternion.setFromUnitVectors(down, _v.copy(_E).sub(S).normalize());
+        bu.scale.set(1, st, 1);
+        bl.position.copy(_E);
+        bl.quaternion.setFromUnitVectors(down, _v.copy(_G).sub(_E).normalize());
+        bl.scale.set(1, st, 1);
+      }
+    }
+  }
+
+  // The laser. len 0 hides it. Locked: thick, white-hot. The pitch is where the rifle points (up is positive).
+  function setLaser(len, pitch, locked = false, k = 0) {
+    curPitch = clamp(num(pitch, 0), -0.7, 0.7);
+    len = num(len, 0);
+    laserOn = len > 0;
+    laserG.visible = laserOn;
+    if (!laserOn) return;
+    len = clamp(len, 0.2, 80);
+    laserLen = len;
+    laserLocked = !!locked;
+    const wd = locked ? [0.022, 0.06, 0.15] : [0.008 + 0.008 * k, 0.026 + 0.02 * k, 0.08 + 0.07 * k];
+    lparts.forEach((b, i) => b.scale.set(wd[i], wd[i], len));
+    lmats[0].color.copy(hdr(locked ? 0xffffff : 0xffb0a0, locked ? 8 : 5));
+    lmats[1].color.copy(hdr(locked ? 0xffe0a0 : 0xff3030, locked ? 4 : 3));
+    lmats[2].color.copy(hdr(locked ? 0xff8a30 : 0xff1a1a, locked ? 2.4 : 1.8));
+    dot.position.z = -len;
+    dot.scale.setScalar(locked ? 1.3 : 0.5 + 0.4 * k);
+    dotMat.color.copy(hdr(locked ? 0xffe8b0 : 0xff4030, 3));
+  }
+
+  function flash(on) {
+    for (const m of meshes) m.material = on ? white : m.userData.base;
+  }
+
+  setPose('idle', 0, 0);
+  return {
+    group, height: 2.7, radius: 0.42, headY: 2.1, eyes, setPose, flash, update: (dt) => rig.update(dt), muzzle, setLaser,
+    pivot: SNIPE,
+    get laserOn() { return laserOn; },
+    get laserLen() { return laserOn ? laserLen : 0; },
+    get laserLocked() { return laserOn && laserLocked; },
+  };
+}
+
+// ---- Bampot Nurse ----
+
+function nurseGeo(v) {
+  const HIP = 0.38;
+  const R = 0.53;
+  const o = { seed: v + 31, tint: [0, 0.04, -0.05][v] };
+  const AMBER = 0x7a4420;
+  const CLOTH = 0xe6e2d4;
+  const GREEN = 0x2fa862;
+  const body = dent(lathe([
+    [0, 0.3], [0.36, 0.3], [0.45, 0.36], [0.51, 0.5], [R, 0.7], [0.52, 0.95], [0.46, 1.12], [0.34, 1.24], [0.22, 1.3], [0.18, 1.36], [0, 1.36],
+  ], 24), [[-0.3, 0.6, -0.42, 0.2, 0.04], [0.4, 0.9, -0.3, 0.17, 0.035], [0.1, 0.5, 0.5, 0.18, 0.04]]);
+  const at = (a, y, off = 0.01) => [Math.sin(a) * (R + off), y, -Math.cos(a) * (R + off)];
+  const vial = once('nu:vial', () => rcyl(0.035, 0.035, 0.14, 0.012, 8));
+  const vials = Array.from({ length: 9 }, (_, i) => {
+    const a = -0.95 + i * (1.9 / 8);
+    return P(vial, [0x3fb36a, 0xc8902a, 0xb03a30, 0x6fa8c8][i % 4], 'glass', at(a, 0.52, 0.045), [0, -a, 0]);
+  });
+  const along = (g) => g.rotateX(HALF);
+  return {
+    leg: bake([
+      P(rcyl(0.1, 0.1, 0.22, 0.03, 12), CLOTH, 'cloth', [0, -0.13, 0]),
+      P(rbox(0.27, 0.13, 0.4, 0.05), 0xe9e6dc, 'rubber', [0, -0.31, -0.07]),
+      P(rbox(0.28, 0.03, 0.2, 0.012), 0x6a7a6a, 'rubber', [0, -0.33, -0.18]),
+    ], { originY: HIP, ...o }),
+    torso: bake([
+      P(body, AMBER, 'gloss', [0, 0, 0], [0, 0, 0], [1, 1, 1], { rust: 0.15 }),
+      P(torus(0.19, 0.03, 18, 5), C.brass, 'brass', [0, 1.33, 0], [HALF, 0, 0]),
+      // the apron, its cross, and a belt of vials
+      P(wallPatch(R + 0.008, 0.62, 1.05), CLOTH, 'cloth', [0, 0.84, 0]),
+      P(rbox(0.24, 0.075, 0.02, 0.01), GREEN, 'paint', [0, 0.86, -(R + 0.02)]),
+      P(rbox(0.075, 0.24, 0.02, 0.01), GREEN, 'paint', [0, 0.86, -(R + 0.02)]),
+      P(torus(R + 0.01, 0.02, 28, 5), 0x4a3320, 'leather', [0, 0.5, 0], [HALF, 0, 0]),
+      ...vials,
+      // bag on the back, and a drip stand rising behind the head with a bag of green fluid
+      P(rbox(0.42, 0.34, 0.2, 0.05), 0xe2dfd0, 'cloth', [0, 0.95, 0.56]),
+      P(rbox(0.2, 0.06, 0.02, 0.008), GREEN, 'paint', [0, 0.97, 0.665]),
+      P(rbox(0.06, 0.2, 0.02, 0.008), GREEN, 'paint', [0, 0.97, 0.665]),
+      P(rcyl(0.016, 0.016, 1.12, 0.006, 8), C.chrome, 'chrome', [0.22, 1.5, 0.5]),
+      P(rbox(0.34, 0.025, 0.025, 0.008), C.chrome, 'chrome', [0.08, 2.05, 0.5]),
+      P(rbox(0.09, 0.015, 0.05, 0.006), C.steel, 'metal', [0.22, 0.94, 0.5]),
+      P(tube([[-0.08, 1.75, 0.5], [-0.12, 1.5, 0.5], [-0.05, 1.2, 0.5], [0.0, 1.05, 0.45], [-0.15, 1.0, 0.1]], 0.012, 24, 4), 0xcfd8d4, 'glass'),
+    ], { base: [0, HIP, 0], ...o }),
+    head: bake([
+      P(ball(0.27, 16, 12), 0xeeece2, 'gloss', [0, 1.5, 0]),
+      P(rbox(0.3, 0.14, 0.1, 0.04), 0x8fb4c4, 'cloth', [0, 1.43, -0.205]),
+      ...[-1, 1].map((s) => P(rbox(0.02, 0.025, 0.3, 0.008), 0x8fb4c4, 'cloth', [s * 0.255, 1.46, -0.06], [0, 0.0, 0])),
+      P(torus(0.27, 0.014, 22, 4), C.steel, 'metal', [0, 1.38, 0], [HALF, 0, 0]),
+      // the cap
+      P(rbox(0.5, 0.17, 0.3, 0.06, true), 0xf2f0e6, 'cloth', [0, 1.82, 0.03], [-0.14, 0, 0]),
+      P(rbox(0.54, 0.05, 0.34, 0.02), 0xdedbcd, 'cloth', [0, 1.73, 0.0], [-0.1, 0, 0]),
+      P(rbox(0.13, 0.035, 0.02, 0.01), GREEN, 'paint', [0, 1.835, -0.135], [-0.14, 0, 0]),
+      P(rbox(0.035, 0.13, 0.02, 0.01), GREEN, 'paint', [0, 1.835, -0.135], [-0.14, 0, 0]),
+    ], { base: [0, 1.36, 0], ...o }),
+    eye: rcyl(0.052, 0.052, 0.03, 0.01, 14).rotateX(HALF),
+    lamp: ball(0.05, 10, 8),
+    arm: bake([
+      P(ball(0.08, 10, 7), C.chrome, 'chrome'),
+      P(rcyl(0.075, 0.06, 0.38, 0.025, 12), CLOTH, 'cloth', [0, -0.22, 0]),
+      P(torus(0.065, 0.018, 12, 4), 0xc8c4b4, 'cloth', [0, -0.4, 0], [HALF, 0, 0]),
+      P(ball(0.075, 10, 8), 0xf0efe8, 'rubber', [0, -0.47, 0]),
+    ], { originY: 1.08, ...o }),
+    // the syringe is held in the right hand and points on down the arm
+    syringe: bake([
+      P(rcyl(0.034, 0.034, 0.48, 0.012, 12), 0xcfe0e0, 'glass', [0, -0.78, 0]),
+      P(rcyl(0.045, 0.045, 0.03, 0.01, 12), C.chrome, 'chrome', [0, -0.54, 0]),
+      P(rcyl(0.014, 0.014, 0.12, 0.005, 8), C.chrome, 'chrome', [0, -0.48, 0]),
+      P(torus(0.04, 0.012, 12, 4), C.chrome, 'chrome', [0, -0.43, 0], [HALF, 0, 0]),
+      P(rcyl(0.04, 0.03, 0.04, 0.01, 10), C.rubber, 'rubber', [0, -1.04, 0]),
+      P(cone(0.012, 0.2, 6), C.chrome, 'chrome', [0, -1.16, 0], [Math.PI, 0, 0]),
+    ], { originY: 1.08, ...o }),
+    fluid: new THREE.CylinderGeometry(0.024, 0.024, 0.38, 8).translate(0, -0.77, 0),
+    lantern: bake([
+      P(rcyl(0.075, 0.09, 0.03, 0.01, 10), C.brass, 'brass', [0, -0.08, 0]),
+      P(rcyl(0.09, 0.075, 0.03, 0.01, 10), C.brass, 'brass', [0, 0.1, 0]),
+      ...[0, 1, 2, 3].map((i) => P(rcyl(0.008, 0.008, 0.16, 0.003, 6), C.brass, 'brass', [Math.cos(i * HALF + 0.78) * 0.075, 0.01, Math.sin(i * HALF + 0.78) * 0.075])),
+      P(torus(0.045, 0.01, 12, 4), C.brass, 'brass', [0, 0.18, 0]),
+      P(tube([[0, 0.14, 0], [0, 0.3, 0.0]], 0.006, 8, 4), C.brass, 'brass'),
+    ], { originY: 0.6, ...o }),
+    bag: new THREE.BoxGeometry(0.1, 0.17, 0.045),
+    beamGeo: new THREE.BoxGeometry(1, 1, 1).translate(0, 0, -0.5),
+    pillar: (() => {
+      const g = new THREE.CylinderGeometry(0.42, 0.5, 1.7, 18, 1, true);
+      g.translate(0, 0.85, 0);
+      const P_ = g.attributes.position;
+      const col = new Float32Array(P_.count * 3);
+      for (let i = 0; i < P_.count; i++) {
+        const f = Math.pow(1 - clamp(P_.getY(i) / 1.7, 0, 1), 1.6);
+        col[i * 3] = 0.12 * f;
+        col[i * 3 + 1] = 0.7 * f;
+        col[i * 3 + 2] = 0.3 * f;
+      }
+      g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+      return g;
+    })(),
+    pool: radialDisc(0.9, 0x5fffa8, 2.4).rotateX(-HALF),
+    ringFx: new THREE.RingGeometry(0.62, 0.7, 36).rotateX(-HALF),
+  };
+}
+
+// The Bampot Nurse: Bampot camp, support, never attacks. An apothecary bottle in amber glass on stubby clogs, a white
+// nurse's cap with a green cross, a mask and mint-green eyes, a belt of vials, a drip stand on its back, a syringe in
+// one hand and a lantern in the other. Poses: idle, walk (the flee shuffle), revive (t = seconds, k = progress through
+// the revive 0..1: syringe out, lantern up, everything glowing), hurt, dead. aim/windup play revive, shoot/swing play
+// revive at k = 1.
+// Extras: setBeam(lx, ly, lz, k) draws the revive beam from the syringe tip to a point in robot space (the corpse) with
+// a glowing pillar and ring there, k 0..1 the progress; setBeam(null) hides it. `tip` is the syringe tip.
+function makeNurse() {
+  const kind = 'nurse';
+  const variant = (variantCount[kind] = (variantCount[kind] ?? -1) + 1) % VARIANTS;
+  const geo = once(`robot:${kind}:${variant}`, () => nurseGeo(variant));
+  const mat = pbrMat();
+  const phase = (robotCount++) * 1.7;
+  const HIP = 0.38;
+  const meshes = [];
+  const mk = (g, m, parent, x = 0, y = 0, z = 0) => {
+    const mesh = new THREE.Mesh(g, m);
+    mesh.position.set(x, y, z);
+    mesh.userData.base = m;
+    parent.add(mesh);
+    meshes.push(mesh);
+    return mesh;
+  };
+  const group = new THREE.Group();
+  group.name = `robot-${kind}`;
+  const root = new THREE.Group();
+  group.add(root);
+  const legL = mk(geo.leg, mat, root, -0.2, HIP, 0);
+  const legR = mk(geo.leg, mat, root, 0.2, HIP, 0);
+  const upper = new THREE.Group();
+  upper.position.y = HIP;
+  root.add(upper);
+  mk(geo.torso, mat, upper);
+  const headG = new THREE.Group();
+  headG.position.y = 1.36 - HIP;
+  upper.add(headG);
+  mk(geo.head, mat, headG);
+  const eyeMat = new THREE.MeshBasicMaterial({ color: hdr(0x7affb4, 3), fog: false });
+  const eyes = [-1, 1].map((s) => {
+    const e = mk(geo.eye, eyeMat, headG, s * 0.105, 1.56 - 1.36, -0.25);
+    e.rotation.y = -s * 0.4;
+    return e;
+  });
+  const bagMat = new THREE.MeshBasicMaterial({ color: hdr(0x5fff9a, 1.1), fog: false });
+  const bags = [0, 1].map((i) => {
+    const b = new THREE.Mesh(geo.bag, bagMat);
+    b.position.set(0.0 + i * 0.16, 1.93 - HIP, 0.5);
+    upper.add(b);
+    return b;
+  });
+
+  // right arm: the syringe
+  const armR = new THREE.Group();
+  armR.position.set(0.5, 1.08 - HIP, 0);
+  upper.add(armR);
+  mk(geo.arm, mat, armR);
+  mk(geo.syringe, mat, armR);
+  const fluidMat = new THREE.MeshBasicMaterial({ color: hdr(0x5fff9a, 1.2), fog: false });
+  armR.add(new THREE.Mesh(geo.fluid, fluidMat));
+  const tip = new THREE.Object3D();
+  tip.name = 'tip';
+  tip.position.set(0, -1.27, 0);
+  armR.add(tip);
+  // left arm: the lantern
+  const armL = new THREE.Group();
+  armL.position.set(-0.5, 1.08 - HIP, 0);
+  upper.add(armL);
+  mk(geo.arm, mat, armL);
+  const lanternG = new THREE.Group();
+  lanternG.position.set(0, -0.62, -0.02);
+  armL.add(lanternG);
+  mk(geo.lantern, mat, lanternG);
+  const lampMat = new THREE.MeshBasicMaterial({ color: hdr(0x7affb4, 2.2), fog: false });
+  const lampMesh = new THREE.Mesh(geo.lamp, lampMat);
+  lampMesh.position.y = 0.01;
+  lanternG.add(lampMesh);
+  const haloMat = peGlow(0x5fffa0, 1.3, 0.14);
+  const halo = new THREE.Mesh(ball(0.3, 10, 8), haloMat);
+  halo.visible = false; // a soft ball read as a hard-edged disc; the lamp's HDR colour blooms on its own
+
+  // the revive beam: three nested boxes from the syringe tip to the target, plus a pillar and ring at the corpse
+  const beamG = new THREE.Group();
+  beamG.visible = false;
+  group.add(beamG);
+  const bmats = [peGlow(0xe8fff0, 5, 1), peGlow(0x6dffb0, 3, 0.5), peGlow(0x2fe88a, 1.8, 0.2)];
+  const bparts = bmats.map((m) => {
+    const b = new THREE.Mesh(geo.beamGeo, m);
+    b.frustumCulled = false;
+    beamG.add(b);
+    return b;
+  });
+  const fxG = new THREE.Group();
+  fxG.visible = false;
+  group.add(fxG);
+  const pillarMat = new THREE.MeshBasicMaterial({
+    vertexColors: true, transparent: true, opacity: 1, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false,
+  });
+  const pillar = new THREE.Mesh(geo.pillar, pillarMat);
+  const poolMat = new THREE.MeshBasicMaterial({
+    vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false,
+  });
+  const pool = new THREE.Mesh(geo.pool, poolMat);
+  const fxRingMat = peGlow(0x7affb4, 3, 0.9);
+  const fxRing = new THREE.Mesh(geo.ringFx, fxRingMat);
+  pool.position.y = fxRing.position.y = 0.04;
+  fxG.add(pillar, pool, fxRing);
+  for (const m of [pillar, pool, fxRing]) m.frustumCulled = false;
+
+  const rig = flickerRig(phase, eyeMat, null);
+  const white = whiteMat();
+  let glowK = 0;
+  const _t = new THREE.Vector3();
+  const _d = new THREE.Vector3();
+  const _fwd = new THREE.Vector3(0, 0, -1);
+
+  function reset() {
+    root.position.set(0, 0, 0);
+    root.rotation.set(0, 0, 0);
+    legL.rotation.set(0, 0, 0);
+    legR.rotation.set(0, 0, 0);
+    upper.position.set(0, HIP, 0);
+    upper.rotation.set(0, 0, 0);
+    upper.scale.set(1, 1, 1);
+    headG.position.set(0, 1.36 - HIP, 0);
+    headG.rotation.set(0, 0, 0);
+    armR.rotation.set(0.85, 0, 0.12);
+    armL.rotation.set(0.1, 0, -0.12);
+    lanternG.rotation.set(0, 0, 0);
+    glowK = 0;
+    for (const e of eyes) {
+      e.visible = true;
+      e.scale.set(1, 1, 1);
+    }
+  }
+
+  function glow(k) {
+    glowK = k;
+    lampMat.color.copy(hdr(0x7affb4, 2.2 + 3.4 * k));
+    haloMat.opacity = 0.14 + 0.3 * k;
+    halo.scale.setScalar(1 + 0.5 * k);
+    fluidMat.color.copy(hdr(0x5fff9a, 1.2 + 2.6 * k));
+    bagMat.color.copy(hdr(0x5fff9a, 1.1 + 0.8 * k));
+  }
+
+  function idle(t) {
+    const s = t + phase;
+    upper.scale.y = 1 + 0.012 * Math.sin(s * 2.0);
+    upper.rotation.z = 0.04 * Math.sin(s * 1.1);
+    upper.rotation.x = 0.02 * Math.sin(s * 0.9 + 1);
+    armR.rotation.x = 0.85 + 0.05 * Math.sin(s * 1.5);
+    armL.rotation.x = 0.1 + 0.07 * Math.sin(s * 1.3 + 1);
+    lanternG.rotation.x = -0.12 * Math.sin(s * 1.3 + 1.6);
+    headG.rotation.y = 0.3 * Math.sin(s * 0.5);
+    headG.rotation.x = 0.03 * Math.sin(s * 1.2);
+    glow(0.15 * (0.5 + 0.5 * Math.sin(s * 2)));
+  }
+
+  // The flee: a quick little waddle.
+  function walk(t) {
+    const c = t * 7 + phase;
+    const sL = Math.sin(c);
+    legL.rotation.x = sL * 0.55;
+    legR.rotation.x = -sL * 0.55;
+    root.position.y = Math.abs(sL) * 0.05;
+    upper.rotation.z = sL * 0.1;
+    upper.rotation.x = -0.08 + 0.02 * Math.cos(c * 2);
+    armR.rotation.x = 0.9 - sL * 0.35;
+    armL.rotation.x = 0.3 + sL * 0.45;
+    armL.rotation.z = -0.2;
+    lanternG.rotation.x = -0.3 * sL;
+    headG.rotation.y = 0.5 * Math.sin(c * 0.5);
+    headG.rotation.x = 0.04 - 0.03 * Math.cos(c * 2);
+    glow(0.2);
+  }
+
+  // Syringe out towards the corpse, lantern held high, a tremble that quickens as the revive nears its end.
+  function revive(t, k) {
+    const a = easeOut(clamp(t / 0.35, 0, 1));
+    const trem = Math.sin(t * (18 + 26 * k)) * 0.012 * (0.4 + k);
+    armR.rotation.x = lerp(0.85, 1.5, a) + trem;
+    armR.rotation.z = lerp(0.12, 0.05, a);
+    armL.rotation.x = lerp(0.1, 2.3, a) + trem * 0.6;
+    armL.rotation.z = lerp(-0.12, -0.25, a);
+    lanternG.rotation.x = -armL.rotation.x + 0.15 * Math.sin(t * 3);
+    upper.rotation.x = 0.14 * a + 0.01 * Math.sin(t * 9);
+    upper.rotation.z = 0.02 * Math.sin(t * 7);
+    headG.rotation.x = 0.18 * a;
+    root.position.y = 0.012 * Math.sin(t * (14 + 20 * k));
+    legL.rotation.x = 0.1 * a;
+    legR.rotation.x = -0.12 * a;
+    glow(0.35 + 0.65 * k + 0.1 * Math.sin(t * 16));
+    for (const e of eyes) e.scale.set(1 + 0.3 * a, 1 + 0.3 * a, 1);
+  }
+
+  function hurt(t) {
+    idle(t);
+    const s = Math.max(0, 1 - t / 0.4);
+    upper.rotation.x += 0.35 * s * (1 + 0.3 * Math.cos(t * 18));
+    upper.rotation.z += Math.sin(t * 38) * s * 0.1;
+    root.position.z = 0.1 * s;
+    headG.rotation.x = 0.45 * s;
+    armR.rotation.x += 0.5 * s;
+    armL.rotation.x += 0.5 * s;
+    for (const e of eyes) e.scale.set(1 + 0.5 * s, 1 + 0.5 * s, 1);
+  }
+
+  // Topples backwards; the lantern goes out as it hits the floor.
+  function dead(k) {
+    const fall = easeIn(clamp(k / 0.7, 0, 1));
+    const bounce = k > 0.7 ? Math.sin(clamp((k - 0.7) / 0.3, 0, 1) * PI) * 0.06 : 0;
+    const theta = fall * HALF;
+    root.rotation.x = theta;
+    root.rotation.z = 0.15 * fall;
+    root.position.y = 0.53 * Math.sin(theta) + bounce;
+    root.position.z = 0.25 * fall;
+    const pop = smooth(clamp((k - 0.5) / 0.4, 0, 1));
+    headG.position.x = 0.5 * pop;
+    headG.position.y = 1.36 - HIP - 0.15 * pop;
+    headG.position.z = -0.2 * pop;
+    headG.rotation.z = -0.8 * pop;
+    headG.rotation.y = 0.6 * pop;
+    upper.rotation.z = 0.2 * fall;
+    armR.rotation.set(0.3 * fall, 0, 0.12 + 1.0 * fall);
+    armL.rotation.set(0.4 * fall, 0, -0.12 - 1.1 * fall);
+    lanternG.rotation.x = -0.4 * fall;
+    legL.rotation.x = 0.5 * fall;
+    legR.rotation.x = -0.3 * fall;
+    glow(Math.max(0, 0.4 * (1 - k * 2)));
+    lampMat.color.multiplyScalar(k < 0.5 ? 1 : 0.15);
+    const on = k < 0.12 || (k < 0.5 && Math.sin(k * 90) > 0);
+    for (const e of eyes) e.visible = on;
+  }
+
+  function setPose(state, t, k) {
+    t = Math.max(0, num(t, 0));
+    k = clamp(num(k, 0), 0, 1);
+    reset();
+    switch (state) {
+      case 'walk': walk(t); break;
+      case 'revive': case 'windup': case 'aim': revive(t, k); break;
+      case 'swing': case 'shoot': revive(t, 1); break;
+      case 'hurt': hurt(t); break;
+      case 'dead': dead(k); break;
+      default: idle(t);
+    }
+  }
+
+  // The beam runs from the syringe tip to (lx, ly, lz) in robot space. Call it after setPose.
+  function setBeam(lx, ly, lz, k = 0) {
+    if (lx === null || lx === undefined || !Number.isFinite(lx) || !Number.isFinite(ly) || !Number.isFinite(lz)) {
+      beamG.visible = false;
+      fxG.visible = false;
+      return;
+    }
+    k = clamp(num(k, 0), 0, 1);
+    group.updateMatrixWorld(true);
+    tip.getWorldPosition(_t);
+    group.worldToLocal(_t); // the tip in robot space, whatever the group's own transform is
+    _d.set(lx, ly, lz).sub(_t);
+    const len = _d.length();
+    if (len < 0.05) {
+      beamG.visible = false;
+    } else {
+      beamG.visible = true;
+      beamG.position.copy(_t);
+      beamG.quaternion.setFromUnitVectors(_fwd, _d.divideScalar(len));
+      const w = [0.025 + 0.02 * k, 0.07 + 0.05 * k, 0.18 + 0.12 * k];
+      bparts.forEach((b, i) => b.scale.set(w[i], w[i], len));
+      const wob = 1 + 0.12 * Math.sin(wallNow() * 0.05);
+      bparts[2].scale.x = bparts[2].scale.y = w[2] * wob;
+    }
+    fxG.visible = true;
+    fxG.position.set(lx, Math.max(0, ly), lz);
+    const rise = 0.4 + 0.9 * k;
+    pillar.scale.set(0.6 + 0.6 * k, rise, 0.6 + 0.6 * k);
+    pillarMat.opacity = 0.3 + 0.5 * k;
+    pool.scale.setScalar(0.8 + 0.5 * k);
+    const rr = 1.2 - 0.9 * ((wallNow() * 0.0012) % 1); // a ring that keeps closing in on the corpse
+    fxRing.scale.setScalar(Math.max(0.2, rr));
+    fxRingMat.opacity = 0.9 * (1 - (1.2 - rr) / 1.0 * 0.5);
+  }
+
+  function flash(on) {
+    for (const m of meshes) m.material = on ? white : m.userData.base;
+  }
+
+  setPose('idle', 0, 0);
+  return {
+    group, height: 2.05, radius: 0.53, headY: 1.38, eyes, setPose, flash, update: (dt) => rig.update(dt), muzzle: null, setBeam, tip,
+    get beamOn() { return beamG.visible; },
+  };
+}
+
+// ---- Vending Mimic ----
+
+const MIM = { lift: 0.45 };
+
+function mimicGeo(v) {
+  const o = { seed: v + 41, tint: [0, 0.04, -0.04][v] };
+  const TEAL = 0x1f7a76;
+  const CREAM = 0xe2d6b6;
+  const DARK = 0x15181b;
+  const can = once('mm:can', () => rcyl(0.04, 0.04, 0.14, 0.012, 8));
+  const bottle = once('mm:bottle', () => lathe([[0, 0], [0.04, 0], [0.045, 0.02], [0.045, 0.09], [0.03, 0.15], [0.02, 0.2], [0.02, 0.22], [0, 0.22]], 9));
+  const COLS = [0xc0392b, 0x2e86c1, 0xf1c40f, 0x27ae60, 0xe67e22, 0x8e44ad];
+  const items = [];
+  [0.64, 0.86, 1.08, 1.3].forEach((y, row) => {
+    for (let i = 0; i < 6; i++) {
+      if ((i * 3 + row * 5) % 11 === 4) continue; // a few sold out
+      const x = -0.1 + (i - 2.5) * 0.1;
+      const col = COLS[(i + row * 2) % 6];
+      if ((i + row) % 2) items.push(P(bottle, col, 'gloss', [x, y + 0.012, -0.435]));
+      else items.push(P(can, col, 'gloss', [x, y + 0.082, -0.435]));
+    }
+  });
+  const tooth = once('mm:tooth', () => cone(0.028, 0.09, 5));
+  const btn = once('mm:btn', () => rcyl(0.022, 0.022, 0.016, 0.006, 8).rotateX(HALF));
+  const keys = [];
+  for (let r = 0; r < 4; r++) for (let c = 0; c < 3; c++) keys.push(P(btn, [0xe8e2cf, 0xc9a23a, 0xa02a22][(r + c) % 3], 'plastic', [0.27 + c * 0.07, 1.16 - r * 0.07, -0.425]));
+  const fz = once('mm:slat', () => rbox(0.5, 0.014, 0.02, 0.005));
+  return {
+    cabinet: bake([
+      P(rbox(1.0, 1.5, 0.78, 0.045, true), TEAL, 'gloss', [0, 0.87, 0], [0, 0, 0], [1, 1, 1], { rust: 0.08, wear: 0.6 }),
+      P(rbox(0.96, 0.12, 0.74, 0.03), DARK, 'paint', [0, 0.06, 0]),
+      P(rbox(0.9, 0.025, 0.7, 0.01), C.chrome, 'chrome', [0, 0.125, 0]),
+      // the window: a chrome frame round a lit panel (the panel is a separate glowing mesh), shelves and drinks
+      P(rbox(0.7, 0.05, 0.07, 0.015), C.chrome, 'chrome', [-0.1, 1.5, -0.42]),
+      P(rbox(0.7, 0.05, 0.07, 0.015), C.chrome, 'chrome', [-0.1, 0.5, -0.42]),
+      P(rbox(0.05, 1.05, 0.07, 0.015), C.chrome, 'chrome', [-0.425, 1.0, -0.42]),
+      P(rbox(0.05, 1.05, 0.07, 0.015), C.chrome, 'chrome', [0.225, 1.0, -0.42]),
+      ...[0.62, 0.84, 1.06, 1.28].map((y) => P(rbox(0.62, 0.02, 0.1, 0.006), C.steel, 'metal', [-0.1, y, -0.43])),
+      ...items,
+      // the control panel: keypad, a display, coin slot and a card reader
+      P(rbox(0.28, 1.04, 0.04, 0.015), 0x9a9d9f, 'metal', [0.35, 1.0, -0.405], [0, 0, 0], [1, 1, 1], { rust: 0.1 }),
+      P(rbox(0.17, 0.07, 0.025, 0.008), 0x050606, 'plastic', [0.35, 1.34, -0.43]),
+      ...keys,
+      P(rbox(0.07, 0.016, 0.02, 0.005), 0x000000, 'plastic', [0.35, 0.92, -0.428]),
+      P(rbox(0.014, 0.06, 0.02, 0.005), C.brass, 'brass', [0.35, 0.88, -0.43]),
+      P(rbox(0.13, 0.06, 0.04, 0.012), 0x1a1c1e, 'plastic', [0.35, 0.74, -0.43]),
+      P(ball(0.012, 6, 4), 0x30d060, 'plastic', [0.395, 0.74, -0.452]),
+      P(rbox(0.12, 0.1, 0.04, 0.015), C.steelD, 'metal', [0.35, 0.54, -0.425]),
+      P(rbox(0.08, 0.05, 0.03, 0.01), 0x050606, 'plastic', [0.35, 0.54, -0.448]),
+      // the mouth that will be: a dark recess with teeth along its top edge (the flap covers it)
+      P(rbox(0.58, 0.26, 0.03, 0.01), 0x050404, 'plastic', [-0.1, 0.38, -0.395]),
+      P(rbox(0.6, 0.03, 0.06, 0.01), C.chrome, 'chrome', [-0.1, 0.515, -0.42]),
+      ...Array.from({ length: 8 }, (_, i) => P(tooth, 0xe4dcc4, 'plastic', [-0.1 - 0.245 + i * 0.07, 0.465, -0.42], [Math.PI, 0, 0])),
+      // trim: cream stripes down the front and a rail at the top
+      P(rbox(0.018, 1.46, 0.012, 0.004), CREAM, 'paint', [-0.49, 0.87, -0.38]),
+      P(rbox(0.018, 1.46, 0.012, 0.004), CREAM, 'paint', [0.49, 0.87, -0.38]),
+      // the back: vents, a compressor and a power cord
+      ...[0.5, 0.6, 0.7, 0.8].map((y) => P(fz, 0x0c0d0e, 'metal', [0, y, 0.395])),
+      P(rbox(0.5, 0.4, 0.1, 0.03), C.steelD, 'metal', [0, 1.2, 0.44], [0, 0, 0], [1, 1, 1], { rust: 0.3 }),
+      P(rcyl(0.05, 0.05, 0.06, 0.012, 10), C.brass, 'brass', [0.15, 1.2, 0.5], [HALF, 0, 0]),
+      P(tube([[0.3, 0.45, 0.4], [0.42, 0.3, 0.6], [0.2, 0.15, 0.85], [-0.1, 0.05, 1.0]], 0.02, 24, 5), C.rubber, 'rubber'),
+    ], { ...o }),
+    head: bake([
+      P(rbox(1.04, 0.3, 0.82, 0.06, true), TEAL, 'gloss', [0, 1.77, 0], [0, 0, 0], [1, 1, 1], { rust: 0.08, wear: 0.6 }),
+      P(rbox(0.98, 0.034, 0.5, 0.012), C.chrome, 'chrome', [0, 1.935, 0.1]),
+      // sign frame and the two icons on the lit panel
+      P(rbox(0.94, 0.025, 0.04, 0.008), C.chrome, 'chrome', [0, 1.9, -0.425]),
+      P(rbox(0.94, 0.025, 0.04, 0.008), C.chrome, 'chrome', [0, 1.64, -0.425]),
+      P(rbox(0.025, 0.28, 0.04, 0.008), C.chrome, 'chrome', [-0.47, 1.77, -0.425]),
+      P(rbox(0.025, 0.28, 0.04, 0.008), C.chrome, 'chrome', [0.47, 1.77, -0.425]),
+      P(rbox(0.07, 0.11, 0.012, 0.004), 0x14181a, 'plastic', [-0.36, 1.76, -0.43]),
+      P(rbox(0.03, 0.05, 0.012, 0.004), 0x14181a, 'plastic', [-0.36, 1.84, -0.43]),
+      P(rbox(0.08, 0.12, 0.012, 0.004), 0x14181a, 'plastic', [0.36, 1.76, -0.43]),
+    ], { base: [0, 1.62, 0], ...o }),
+    eye: rbox(0.2, 0.07, 0.03, 0.012),
+    panel: new THREE.PlaneGeometry(0.62, 1.0).rotateY(Math.PI).translate(-0.1, 1.0, -0.412),
+    sign: new THREE.PlaneGeometry(0.9, 0.22).rotateY(Math.PI).translate(0, 0.15, -0.421),
+    display: new THREE.PlaneGeometry(0.14, 0.045).rotateY(Math.PI).translate(0.35, 1.34, -0.444),
+    maw: new THREE.PlaneGeometry(0.56, 0.22).rotateY(Math.PI).translate(-0.1, 0.38, -0.412),
+    flap: bake([
+      P(rbox(0.58, 0.25, 0.045, 0.015), 0x23282c, 'metal', [0, -0.125, 0], [0, 0, 0], [1, 1, 1], { rust: 0.15 }),
+      P(rbox(0.5, 0.025, 0.03, 0.008), C.chrome, 'chrome', [0, -0.03, -0.03]),
+    ], { originY: 0.52, ...o }),
+    flapTeeth: bake(Array.from({ length: 7 }, (_, i) => P(tooth, 0xe4dcc4, 'plastic', [-0.24 + i * 0.08, -0.235, -0.05], [-HALF, 0, 0])).concat([
+      P(rbox(0.5, 0.03, 0.03, 0.008), C.chrome, 'chrome', [0, -0.235, -0.035]),
+    ]), { originY: 0.52, ...o }),
+    arm: bake([
+      P(rcyl(0.04, 0.04, 0.3, 0.015, 10), C.chrome, 'chrome', [0, 0.0, 0], [HALF, 0, 0]),
+      P(rbox(0.07, 1.1, 0.5, 0.025, true), TEAL, 'gloss', [0, -0.58, 0], [0, 0, 0], [1, 1, 1], { rust: 0.08, wear: 0.6 }),
+      P(rbox(0.078, 0.06, 0.52, 0.01), C.chrome, 'chrome', [0, -0.15, 0]),
+      P(rbox(0.078, 0.04, 0.52, 0.01), CREAM, 'paint', [0, -0.45, 0]),
+      P(rbox(0.078, 0.04, 0.52, 0.01), CREAM, 'paint', [0, -0.75, 0]),
+      ...[0.1, 0.2, 0.3].map((z) => P(rbox(0.08, 0.5, 0.012, 0.004), 0x0c0d0e, 'metal', [0, -0.5, z - 0.05])),
+    ], { originY: 1.58, ...o }),
+    claw: bake([
+      P(rbox(0.22, 0.16, 0.34, 0.05, true), C.steel, 'metal', [0, -0.08, 0], [0, 0, 0], [1, 1, 1], { rust: 0.2 }),
+      P(rcyl(0.07, 0.07, 0.26, 0.02, 12), C.chrome, 'chrome', [0, 0.0, 0], [0, 0, HALF]),
+      ...[-0.12, 0, 0.12].map((z) => P(rbox(0.07, 0.3, 0.06, 0.022), C.chrome, 'chrome', [0, -0.3, z], [0.0, 0, 0])),
+      ...[-0.12, 0, 0.12].map((z) => P(rbox(0.07, 0.07, 0.14, 0.02), C.chrome, 'chrome', [0, -0.45, z - 0.05])),
+      P(rbox(0.07, 0.24, 0.07, 0.022), C.chrome, 'chrome', [0.1, -0.2, 0.0], [0, 0, 0.5]),
+    ], { originY: 0.5, ...o }),
+    leg: bake([
+      P(rcyl(0.12, 0.1, 0.38, 0.03, 14), C.steelD, 'metal', [0, -0.22, 0], [0, 0, 0], [1, 1, 1], { rust: 0.2 }),
+      ...[-0.1, -0.2, -0.3].map((y) => P(torus(0.115, 0.02, 14, 5), C.brass, 'brass', [0, y, 0], [HALF, 0, 0])),
+      P(rcyl(0.15, 0.15, 0.04, 0.012, 14), C.chrome, 'chrome', [0, -0.03, 0]),
+      P(rbox(0.3, 0.1, 0.44, 0.05), C.rubber, 'rubber', [0, -0.4, -0.04]),
+    ], { originY: 0.45, ...o }),
+  };
+}
+
+// The Vending Mimic: Dr Fizzbang camp, melee only, starts dormant. A clean teal drinks machine with a lit window, a
+// keypad and a lit sign, standing on the floor. It unfolds on two hydraulic legs, the side panels swing out as arms with
+// claws, the sign tips forward and shows two magenta eyes, and the delivery flap drops open as a toothed mouth.
+// Poses: dormant (an ordinary machine: the eyes are hidden), unfold (k 0..1 through the unfolding, ending in the idle
+// stance), idle, walk, windup, swing (both arms up and over, then down), hurt, dead (the legs give, it falls on its back
+// and goes dark). aim plays windup, shoot plays swing.
+// `height` and `headY` are for the awake robot; a dormant machine is `dormantHeight` (1.92) tall with its sign at `dormantHeadY`.
+function makeMimic() {
+  const kind = 'mimic';
+  const variant = (variantCount[kind] = (variantCount[kind] ?? -1) + 1) % VARIANTS;
+  const geo = once(`robot:${kind}:${variant}`, () => mimicGeo(variant));
+  const mat = pbrMat();
+  const phase = (robotCount++) * 1.7;
+  const LIFT = MIM.lift;
+  const meshes = [];
+  const mk = (g, m, parent, x = 0, y = 0, z = 0) => {
+    const mesh = new THREE.Mesh(g, m);
+    mesh.position.set(x, y, z);
+    mesh.userData.base = m;
+    parent.add(mesh);
+    meshes.push(mesh);
+    return mesh;
+  };
+  const group = new THREE.Group();
+  group.name = `robot-${kind}`;
+  const root = new THREE.Group();
+  group.add(root);
+  const bodyG = new THREE.Group();
+  root.add(bodyG);
+  mk(geo.cabinet, mat, bodyG);
+  const legs = [-1, 1].map((s) => mk(geo.leg, mat, bodyG, s * 0.28, 0, 0.0));
+  const headG = new THREE.Group();
+  headG.position.set(0, 1.62, 0);
+  bodyG.add(headG);
+  mk(geo.head, mat, headG);
+  const eyeMat = new THREE.MeshBasicMaterial({ color: hdr(0xff2e93, 3.2), fog: false });
+  const eyes = [-1, 1].map((s) => {
+    const e = mk(geo.eye, eyeMat, headG, s * 0.2, 0.15, -0.44);
+    e.rotation.z = -s * 0.3;
+    return e;
+  });
+  const flap = new THREE.Group();
+  flap.position.set(-0.1, 0.52, -0.44);
+  bodyG.add(flap);
+  mk(geo.flap, mat, flap);
+  const jaw = mk(geo.flapTeeth, mat, flap);
+  const arms = [-1, 1].map((s) => {
+    const a = new THREE.Group();
+    a.position.set(s * 0.535, 1.58, 0);
+    bodyG.add(a);
+    mk(geo.arm, mat, a);
+    const claw = mk(geo.claw, mat, a, 0, -1.1, 0);
+    return { a, claw, s };
+  });
+  // lit parts: the window panel, the sign, the keypad display and the inside of the mouth
+  const winMat = new THREE.MeshBasicMaterial({ color: hdr(0xffd890, 0.5), side: THREE.DoubleSide });
+  const signMat = new THREE.MeshBasicMaterial({ color: hdr(0xffe0a0, 0.7), side: THREE.DoubleSide });
+  const dispMat = new THREE.MeshBasicMaterial({ color: hdr(0x40ff80, 1.6), side: THREE.DoubleSide });
+  const mawMat = new THREE.MeshBasicMaterial({ color: hdr(0xff6a1a, 2.4), fog: false, side: THREE.DoubleSide });
+  const winMesh = new THREE.Mesh(geo.panel, winMat);
+  bodyG.add(winMesh);
+  const signMesh = new THREE.Mesh(geo.sign, signMat);
+  headG.add(signMesh); // the sign geometry is built relative to the head pivot
+  const dispMesh = new THREE.Mesh(geo.display, dispMat);
+  bodyG.add(dispMesh);
+  const mawMesh = new THREE.Mesh(geo.maw, mawMat);
+  bodyG.add(mawMesh);
+
+  const rig = flickerRig(phase, eyeMat, null);
+  const white = whiteMat();
+  const WIN_C = new THREE.Color(hdr(0xffd890, 0.5));
+  const WIN_A = new THREE.Color(hdr(0xff3a1a, 1.7));
+  const SIGN_C = new THREE.Color(hdr(0xffe0a0, 0.7));
+  const SIGN_A = new THREE.Color(hdr(0x8a1408, 0.9));
+
+  // what a pose sets before apply(): lift (m), arm swing out (rad) and forward (rad), claw size 0..1, head tilt (rad),
+  // eye size 0..1, flap angle (rad), angry 0..1 (window and sign colour), shake (m)
+  const Z = { lift: 0, armOut: 0, armFwd: 0, claw: 0, tilt: 0, eye: 0, flap: 0, angry: 0, shake: 0, lean: 0, dark: 0 };
+  function zero() {
+    Z.lift = 0; Z.armOut = 0; Z.armFwd = 0; Z.claw = 0; Z.tilt = 0; Z.eye = 0; Z.flap = 0; Z.angry = 0; Z.shake = 0; Z.lean = 0; Z.dark = 0;
+    root.position.set(0, 0, 0);
+    root.rotation.set(0, 0, 0);
+    bodyG.position.set(0, 0, 0);
+    bodyG.rotation.set(0, 0, 0);
+    bodyG.scale.set(1, 1, 1);
+    for (const l of legs) l.rotation.set(0, 0, 0);
+  }
+  const awake = () => {
+    Z.lift = LIFT; Z.armOut = 0.33; Z.armFwd = 0.1; Z.claw = 1; Z.tilt = 0.26; Z.eye = 1; Z.flap = 0.5; Z.angry = 1;
+  };
+  function apply() {
+    const f = clamp(Z.lift / LIFT, 0, 1.4);
+    bodyG.position.y += Z.lift;
+    bodyG.position.x += Z.shake;
+    bodyG.rotation.x += Z.lean;
+    for (const l of legs) {
+      l.visible = Z.lift > 0.02;
+      l.scale.set(1, Math.max(0.001, f), 1);
+    }
+    for (const a of arms) {
+      a.a.rotation.set(Z.armFwd, 0, a.s * Z.armOut);
+      a.claw.scale.setScalar(Math.max(0.001, Z.claw));
+      a.claw.visible = Z.claw > 0.03;
+    }
+    headG.rotation.x = -Z.tilt;
+    headG.position.y = 1.62 + Z.tilt * 0.04;
+    for (const e of eyes) {
+      e.visible = Z.eye > 0.04;
+      e.scale.set(Math.max(0.001, Z.eye), Math.max(0.001, Z.eye), 1);
+    }
+    flap.rotation.x = Z.flap;
+    jaw.visible = Z.flap > 0.12;
+    mawMesh.visible = Z.flap > 0.08;
+    mawMat.color.copy(hdr(0xff6a1a, 2.6 * clamp(Z.flap / 0.8, 0, 1)));
+    const d = 1 - clamp(Z.dark, 0, 1);
+    winMat.color.copy(WIN_C).lerp(WIN_A, Z.angry).multiplyScalar(d);
+    signMat.color.copy(SIGN_C).lerp(SIGN_A, Z.angry).multiplyScalar(d);
+    dispMat.color.copy(hdr(Z.angry > 0.5 ? 0xff2a1a : 0x40ff80, 1.6)).multiplyScalar(d);
+  }
+
+  function dormant(t) {
+    // a drinks machine hums and its light flickers now and then
+    const s = t + phase;
+    Z.shake = 0.0012 * Math.sin(s * 53);
+    Z.dark = Math.sin(s * 0.7) > 0.985 ? 0.45 : 0;
+  }
+
+  function unfold(t, k) {
+    const sh = clamp(k / 0.3, 0, 1);
+    Z.shake = Math.sin(k * 150) * 0.03 * (1 - sh) * (k > 0.02 ? 1 : 0);
+    const L = clamp((k - 0.18) / 0.4, 0, 1);
+    Z.lift = LIFT * easeOut(L) + 0.12 * Math.sin(L * PI);
+    const A = smooth(clamp((k - 0.35) / 0.35, 0, 1));
+    Z.armOut = 0.33 * A + 0.5 * Math.sin(A * PI);
+    Z.armFwd = 0.1 * A;
+    Z.claw = A;
+    const H = smooth(clamp((k - 0.5) / 0.3, 0, 1));
+    Z.tilt = 0.26 * H;
+    Z.eye = clamp(H * 1.4, 0, 1) * (1 + 0.5 * Math.sin(H * PI));
+    Z.flap = 0.5 * smooth(clamp((k - 0.55) / 0.3, 0, 1)) + 0.7 * Math.sin(clamp((k - 0.55) / 0.35, 0, 1) * PI);
+    Z.angry = smooth(clamp((k - 0.45) / 0.3, 0, 1));
+    if (k > 0.82) bodyG.scale.y = 1 + 0.025 * Math.sin((k - 0.82) * 70) * (1 - k) * 5;
+    legs.forEach((l, i) => { l.rotation.x = Math.sin(L * PI) * (i ? 0.3 : -0.3); });
+    Z.dark = 0;
+  }
+
+  function idle(t) {
+    awake();
+    const s = t + phase;
+    bodyG.scale.y = 1 + 0.01 * Math.sin(s * 2.2);
+    bodyG.rotation.z = 0.015 * Math.sin(s * 1.1);
+    Z.armOut += 0.04 * Math.sin(s * 1.7);
+    Z.armFwd += 0.05 * Math.sin(s * 1.5);
+    Z.flap = 0.4 + 0.18 * Math.sin(s * 2.6) * Math.sin(s * 0.7);
+    Z.tilt += 0.03 * Math.sin(s * 1.3);
+    Z.eye = 1 + 0.08 * Math.sin(s * 5);
+    Z.shake = 0.003 * Math.sin(s * 31);
+  }
+
+  function walk(t) {
+    awake();
+    const c = t * 5.6 + phase;
+    const sL = Math.sin(c);
+    legs[0].rotation.x = sL * 0.55;
+    legs[1].rotation.x = -sL * 0.55;
+    root.position.y = Math.abs(sL) * 0.045;
+    bodyG.rotation.z = sL * 0.035;
+    Z.lean = -0.07 + 0.02 * Math.cos(c * 2);
+    Z.armFwd = -sL * 0.4 + 0.1;
+    Z.armOut = 0.36 + 0.06 * Math.abs(sL);
+    Z.flap = 0.35 + 0.35 * Math.abs(Math.sin(c));
+    Z.tilt = 0.3 + 0.03 * Math.cos(c * 2);
+    Z.eye = 1 + 0.05 * Math.sin(c * 2);
+  }
+
+  function windup(k) {
+    awake();
+    const a = easeOut(k);
+    Z.armFwd = a * 2.75;
+    Z.armOut = 0.4 + 0.12 * a;
+    Z.lean = 0.26 * a;
+    bodyG.rotation.z = Math.sin(k * 60) * 0.012 * a;
+    root.position.y = -0.04 * a;
+    legs[0].rotation.x = 0.25 * a;
+    legs[1].rotation.x = -0.2 * a;
+    Z.flap = 0.5 + 0.9 * a;
+    Z.tilt = 0.26 + 0.15 * a;
+    Z.eye = 1 + 0.4 * a;
+  }
+
+  function swing(k) {
+    awake();
+    const p = clamp(k / 0.45, 0, 1);
+    const slam = easeIn(p);
+    const q = Math.max(0, k - 0.45);
+    const settle = smooth(clamp(q / 0.55, 0, 1));
+    const osc = Math.sin(q * 16) * Math.exp(-q * 6);
+    Z.armFwd = lerp(2.75, 0.35, slam) + settle * 0.3 + osc * 0.14;
+    Z.armOut = lerp(0.52, 0.4, slam);
+    Z.lean = lerp(0.26, -0.45, slam) + settle * 0.3 + osc * 0.05;
+    root.position.z = -0.32 * slam * (1 - settle * 0.7);
+    root.position.y = k > 0.45 ? -0.045 * Math.exp(-q * 10) : -0.04 * (1 - slam);
+    legs[0].rotation.x = lerp(0.25, -0.15, slam);
+    legs[1].rotation.x = lerp(-0.2, 0.25, slam);
+    Z.flap = lerp(1.4, 0.7, slam);
+    Z.tilt = lerp(0.41, 0.15, slam);
+    Z.eye = 1.3;
+  }
+
+  function hurt(t) {
+    idle(t);
+    const s = Math.max(0, 1 - t / 0.4);
+    Z.lean += 0.32 * s * (1 + 0.3 * Math.cos(t * 18));
+    bodyG.rotation.z += Math.sin(t * 38) * s * 0.08;
+    root.position.z = 0.1 * s;
+    Z.armFwd += 0.5 * s;
+    Z.flap += 0.5 * s * Math.abs(Math.sin(t * 25));
+    Z.eye = 1 + 0.5 * s;
+  }
+
+  // The legs give, the machine drops, tips over backwards and goes dark. The mouth hangs open.
+  function dead(k) {
+    awake();
+    const sag = smooth(clamp(k / 0.3, 0, 1));
+    const fall = easeIn(clamp((k - 0.2) / 0.55, 0, 1));
+    const bounce = k > 0.75 ? Math.sin(clamp((k - 0.75) / 0.25, 0, 1) * PI) * 0.05 : 0;
+    Z.lift = LIFT * (1 - sag);
+    const theta = fall * HALF;
+    root.rotation.x = theta;
+    root.rotation.z = 0.12 * fall;
+    root.position.y = 0.39 * Math.sin(theta) + bounce;
+    root.position.z = 0.3 * fall;
+    Z.armOut = 0.4 + 0.9 * fall;
+    Z.armFwd = 0.4 * fall;
+    Z.claw = 1 - 0.3 * fall;
+    Z.flap = 0.5 + 0.9 * sag;
+    Z.tilt = 0.26 - 0.5 * fall;
+    legs.forEach((l, i) => { l.rotation.x = (i ? -0.3 : 0.4) * fall; });
+    const on = k < 0.12 || (k < 0.5 && Math.sin(k * 90) > 0);
+    Z.eye = on ? 1 : 0;
+    Z.angry = 1;
+    Z.dark = clamp((k - 0.15) / 0.3, 0, 1) * (k > 0.3 && Math.sin(k * 70) > 0.5 ? 0.6 : 1);
+    Z.shake = Math.sin(k * 110) * 0.015 * (1 - sag);
+  }
+
+  function setPose(state, t, k) {
+    t = Math.max(0, num(t, 0));
+    k = clamp(num(k, 0), 0, 1);
+    zero();
+    switch (state) {
+      case 'dormant': dormant(t); break;
+      case 'unfold': unfold(t, k); break;
+      case 'walk': walk(t); break;
+      case 'windup': case 'aim': windup(k); break;
+      case 'swing': case 'shoot': swing(k); break;
+      case 'hurt': hurt(t); break;
+      case 'dead': dead(k); break;
+      default: idle(t);
+    }
+    apply();
+  }
+
+  function flash(on) {
+    for (const m of meshes) m.material = on ? white : m.userData.base;
+  }
+
+  setPose('dormant', 0, 0);
+  return {
+    group, height: 2.45, radius: 0.62, headY: 2.0, eyes, setPose, flash, update: (dt) => rig.update(dt), muzzle: null,
+    dormantHeight: 1.92, dormantHeadY: 1.62,
+  };
+}
+
+const PREPARED = { shaken: makeShaken, longshot: makeLongshot, nurse: makeNurse, mimic: makeMimic };
+// <<< PREPARED ENEMIES END
+
 // ---------------------------------------------------------------------------------------------
 // Weapons
 // ---------------------------------------------------------------------------------------------
@@ -2418,20 +3982,63 @@ const WEAPON_PARTS = {
   },
 };
 
-export function makeWeaponModel(id) {
-  const build = WEAPON_PARTS[id];
-  if (!build) throw new Error(`makeWeaponModel: unknown weapon "${id}"`);
-  const parts = once(`weapon:${id}`, () => {
-    const p = build();
-    const seed = WEAPON_IDS.indexOf(id) + 1;
-    return {
-      muzzle: p.muzzle,
-      lamp: p.lamp,
-      body: bake(p.body, { ...GW, seed }),
-      pump: p.pump ? bake(p.pump, { ...GW, seed }) : null,
-      cradle: p.cradle ? { at: p.cradleAt, tilt: p.cradleTilt, geo: bake(p.cradle, { ...GW, seed }) } : null,
-    };
-  });
+// The weapons are modelled in Blender (scripts/blender/weapons.py) and stored as packed arrays in weapon-meshes.js:
+// the body, the shotgun's pump, the vinyl's platter ('cradle') and Naebun's hands and forearms ('hands', plus
+// 'handsPump' for the left hand that rides on the pump). A weapon missing from the data falls back to the procedural
+// WEAPON_PARTS above, without hands.
+function weaponFromData(w) {
+  const geo = (name) => (w.parts[name] ? meshGeo(w.parts[name]) : null);
+  return {
+    muzzle: w.muzzle,
+    lamp: w.lamp,
+    body: geo('body'),
+    pump: geo('pump'),
+    hands: geo('hands'),
+    handsPump: geo('handsPump'),
+    cradle: w.parts.cradle ? { at: w.parts.cradle.pos, tilt: w.cradleTilt, geo: geo('cradle') } : null,
+    // the mounted torch, its lens, where the beam starts and which way it points; the pistol also has the left hand
+    // that fits its torch (see makeTorchAttach)
+    torch: geo('torch'),
+    lens: geo('lens'),
+    lensAt: w.lens || w.muzzle,
+    lensDir: w.lensDir || [0, 0, -1],
+    attachHand: geo('attachHand'),
+  };
+}
+
+function weaponFromCode(id) {
+  const p = WEAPON_PARTS[id]();
+  const seed = WEAPON_IDS.indexOf(id) + 1;
+  return {
+    muzzle: p.muzzle,
+    lamp: p.lamp,
+    body: bake(p.body, { ...GW, seed }),
+    pump: p.pump ? bake(p.pump, { ...GW, seed }) : null,
+    hands: null,
+    handsPump: null,
+    cradle: p.cradle ? { at: p.cradleAt, tilt: p.cradleTilt, geo: bake(p.cradle, { ...GW, seed }) } : null,
+    torch: null, // no procedural torch: the beam just leaves the muzzle
+    lens: null,
+    lensAt: p.muzzle,
+    lensDir: [0, 0, -1],
+    attachHand: null,
+  };
+}
+
+// Torch lens colours: dark glass when unlit, warm white pushed well past 1 when lit so the bloom picks it up.
+const TORCH_LENS_OFF = 0x353a42;
+const TORCH_LENS_ON = 0xfff0d0;
+const TORCH_LENS_K = 7;
+
+// `hands: false` leaves Naebun's hands and forearms off (a floor pickup is just the gun).
+// The torch: meshes `torch` (body and bracket) and `lens` (the glowing front lens) are children, and userData.lens
+// = { pos, dir } says where the beam starts and which way it points, in this group's frame. `torch` is whether it starts
+// mounted: by default yes for every gun but the pistol (Naebun fits that one by hand, see makeTorchAttach).
+// userData.setTorch({ mounted, on, k }) changes that: an omitted mounted or on keeps its value, an omitted k is 1.
+export function makeWeaponModel(id, { hands = true, torch } = {}) {
+  if (ARSENAL_WEAPON_IDS.includes(id)) return arsenal().makeWeaponModel(id, { hands, torch }); // the prepared arsenal
+  if (!WEAPON_MESHES[id] && !WEAPON_PARTS[id]) throw new Error(`makeWeaponModel: unknown weapon "${id}"`);
+  const parts = once(`weapon:${id}`, () => (WEAPON_MESHES[id] ? weaponFromData(WEAPON_MESHES[id]) : weaponFromCode(id)));
   const g = new THREE.Group();
   g.name = `weapon-${id}`;
   const body = new THREE.Mesh(parts.body, pbrMat());
@@ -2442,8 +4049,18 @@ export function makeWeaponModel(id) {
   g.add(body, glow);
   if (parts.pump) {
     const pump = new THREE.Mesh(parts.pump, pbrMat());
-    pump.name = 'pump'; // slides along z for the pump action
+    pump.name = 'pump'; // slides along z for the pump action; the left hand is its child so it slides too
+    if (hands && parts.handsPump) {
+      const lh = new THREE.Mesh(parts.handsPump, pbrMat());
+      lh.name = 'hands';
+      pump.add(lh);
+    }
     g.add(pump);
+  }
+  if (hands && parts.hands) {
+    const h = new THREE.Mesh(parts.hands, pbrMat());
+    h.name = 'hands';
+    g.add(h);
   }
   if (parts.cradle) {
     // The record sits on the tilted platter. It spins when the integrator calls g.userData.update(t) with a clock in
@@ -2467,7 +4084,103 @@ export function makeWeaponModel(id) {
   muzzle.name = 'muzzle';
   muzzle.position.set(...parts.muzzle);
   g.add(muzzle);
+  g.userData.lens = { pos: [...parts.lensAt], dir: [...parts.lensDir] };
+  if (parts.torch && parts.lens) {
+    const lensMat = new THREE.MeshBasicMaterial({ color: TORCH_LENS_OFF, fog: false }); // its own: the colour is driven per gun
+    const torchMesh = new THREE.Mesh(parts.torch, pbrMat());
+    torchMesh.name = 'torch';
+    const lensMesh = new THREE.Mesh(parts.lens, lensMat);
+    lensMesh.name = 'lens';
+    g.add(torchMesh, lensMesh);
+    const off = new THREE.Color(TORCH_LENS_OFF);
+    const lit = hdr(TORCH_LENS_ON, TORCH_LENS_K);
+    const st = { mounted: torch ?? id !== 'pistol', on: false };
+    g.userData.setTorch = (opts) => {
+      const { mounted, on, k } = opts || {};
+      if (mounted !== undefined) st.mounted = !!mounted;
+      if (on !== undefined) st.on = !!on;
+      torchMesh.visible = lensMesh.visible = st.mounted;
+      lensMat.color.copy(off);
+      if (st.on) lensMat.color.lerp(lit, clamp(num(k, 1), 0, 1));
+    };
+    g.userData.setTorch();
+  } else {
+    g.userData.setTorch = () => {}; // the procedural fallback has no torch
+  }
   return g;
+}
+
+// The attach rig for the pistol's torch: Naebun's left hand brings the loose torch module to the rail, clicks it on and
+// withdraws. The group is in the pistol viewmodel's frame (add it to the same root as makeWeaponModel('pistol')).
+// setPose(k), k 0..1: at 0 everything is out of frame at the lower left; the hand carries the torch in, seats it
+// (a push and a click) by k = seatK, where the loose torch is exactly the pistol's mounted one, then lets go and
+// withdraws, out of frame again and the group invisible at 1. From seatK on the rig hides its own loose torch: the game
+// shows the mounted one (setTorch({ mounted: true })) at that moment. Any k is safe: NaN counts as 0, the rest clamp.
+const ATTACH_SEAT_K = 0.6;
+const ATTACH_HOLD_K = 0.68;
+// Keyframes of the hand and torch as an offset from the seated pose (the pistol frame, game axes: x right, y up, z
+// towards the player) and a rotation about the module's middle: [k, x, y, z, rx, ry, rz]. Each leg eases in its own way.
+const ATTACH_KEYS = [
+  [0, -0.5, -0.55, 0.14, 0.3, 0.3, -0.55],  // out of frame, lower left
+  [0.36, -0.07, -0.085, 0.0, 0.1, 0.12, -0.2], // under the rail, a hand's width to the left
+  [0.54, 0, 0.005, 0, 0, 0, 0],              // pushed up past the seat: the click comes from here
+  [ATTACH_SEAT_K, 0, 0, 0, 0, 0, 0],
+];
+const ATTACH_OUT = ATTACH_KEYS[0];
+
+export function makeTorchAttach() {
+  const group = new THREE.Group();
+  group.name = 'torch-attach';
+  const parts = once('weapon:pistol', () => (WEAPON_MESHES.pistol ? weaponFromData(WEAPON_MESHES.pistol) : weaponFromCode('pistol')));
+  if (!parts.torch || !parts.lens || !parts.attachHand) return { group, setPose() {}, seatK: ATTACH_SEAT_K };
+  const hand = new THREE.Mesh(parts.attachHand, pbrMat());
+  hand.name = 'attachHand';
+  const loose = new THREE.Group(); // the torch module in Naebun's hand, the same meshes as the mounted one
+  loose.name = 'looseTorch';
+  const lens = new THREE.Mesh(parts.lens, new THREE.MeshBasicMaterial({ color: TORCH_LENS_OFF, fog: false }));
+  lens.name = 'lens';
+  const body = new THREE.Mesh(parts.torch, pbrMat());
+  body.name = 'torch';
+  loose.add(body, lens);
+  group.add(hand, loose);
+  parts.torch.computeBoundingBox();
+  const pivot = parts.torch.boundingBox.getCenter(new THREE.Vector3()); // turns about the module's middle
+  const eul = new THREE.Euler();
+  const quat = new THREE.Quaternion();
+  const offs = new THREE.Vector3();
+  const ease = {
+    out: (t) => 1 - (1 - t) ** 3,
+    inOut: smooth,
+    in: (t) => t * t * t,
+  };
+  const leg = (a, b, t) => {
+    group.position.set(lerp(a[1], b[1], t), lerp(a[2], b[2], t), lerp(a[3], b[3], t));
+    eul.set(lerp(a[4], b[4], t), lerp(a[5], b[5], t), lerp(a[6], b[6], t));
+  };
+  const setPose = (kk) => {
+    const k = clamp(num(kk, 0), 0, 1);
+    group.visible = k < 1;
+    loose.visible = k < ATTACH_SEAT_K;
+    if (k >= ATTACH_SEAT_K && k <= ATTACH_HOLD_K) {
+      group.position.set(0, 0, 0); // seated: exactly the mounted torch's pose
+      eul.set(0, 0, 0);
+    } else if (k > ATTACH_HOLD_K) {
+      leg(ATTACH_KEYS[3], ATTACH_OUT, ease.in((k - ATTACH_HOLD_K) / (1 - ATTACH_HOLD_K)));
+    } else if (k < ATTACH_KEYS[1][0]) {
+      leg(ATTACH_KEYS[0], ATTACH_KEYS[1], ease.inOut(k / ATTACH_KEYS[1][0]));
+    } else if (k < ATTACH_KEYS[2][0]) {
+      leg(ATTACH_KEYS[1], ATTACH_KEYS[2], ease.inOut((k - ATTACH_KEYS[1][0]) / (ATTACH_KEYS[2][0] - ATTACH_KEYS[1][0])));
+    } else {
+      leg(ATTACH_KEYS[2], ATTACH_KEYS[3], ease.out((k - ATTACH_KEYS[2][0]) / (ATTACH_SEAT_K - ATTACH_KEYS[2][0])));
+    }
+    // rotate about the pivot: p' = offset + pivot - R pivot (all zero when seated)
+    quat.setFromEuler(eul);
+    offs.copy(pivot).applyQuaternion(quat);
+    group.position.add(pivot).sub(offs);
+    group.quaternion.copy(quat);
+  };
+  setPose(0);
+  return { group, setPose, seatK: ATTACH_SEAT_K };
 }
 
 // A plain glowing ring on the floor so pickups can be found in a dark room.
@@ -2490,14 +4203,22 @@ function plinth(colour, k = 2.2, extra = null) {
 const PICKUP_SCALE = { pistol: 2.4, shotgun: 1.9, smg: 2.0, launcher: 1.8, vinyl: 2.1 };
 
 export function makeWeaponPickup(id) {
+  if (ARSENAL_WEAPON_IDS.includes(id)) return arsenal().makeWeaponPickup(id); // the prepared arsenal
   const g = new THREE.Group();
   g.name = `pickup-${id}`;
   g.add(plinth(WEAPON_COLOUR[id] ?? COLOURS.cyan));
   const item = new THREE.Group();
   item.name = 'item';
-  const model = makeWeaponModel(id);
-  // Centre the model on its own bounding box so it spins about its middle.
-  const bb = new THREE.Box3().setFromObject(model);
+  const model = makeWeaponModel(id, { hands: false });
+  // the four guns lie there with their torch fitted and unlit; the pistol's has not been fitted yet
+  model.userData.setTorch({ mounted: id !== 'pistol', on: false });
+  // Centre the model on its own bounding box so it spins about its middle (what shows: Box3.setFromObject also counts
+  // the pistol's hidden torch).
+  const bb = new THREE.Box3();
+  model.updateMatrixWorld(true);
+  model.traverseVisible((o) => {
+    if (o.isMesh) bb.expandByObject(o);
+  });
   const c = bb.getCenter(new THREE.Vector3());
   model.position.set(-c.x, -c.y, -c.z);
   item.add(model);
@@ -2537,6 +4258,7 @@ export function makeHealthPickup() {
 // ---------------------------------------------------------------------------------------------
 
 export function makeProjectile(kind) {
+  if (kind === 'grenade') return arsenal().makeProjectile(kind); // the prepared arsenal
   const g = new THREE.Group();
   g.name = `projectile-${kind}`;
   if (kind === 'rocket') {
@@ -2861,7 +4583,7 @@ export function makeDrinkPickup(id) {
   return g;
 }
 
-// Freddie's hand: fingers (tubes) wrap round the drink at radius R, height gy; palm and back of the hand sit on +x.
+// Naebun's hand: fingers (tubes) wrap round the drink at radius R, height gy; palm and back of the hand sit on +x.
 function handGeo(R, gy, seed) {
   const rr = R + 0.012;
   const ring = (y, a0, a1, rad, lift = 0) => {
@@ -2915,7 +4637,7 @@ function aimForearm(mesh, w, e) {
   mesh.scale.set(1, len, 1);
 }
 
-const MOUTH = [-0.22, 0.09, 0.32]; // "Freddie's mouth" in viewmodel space (camera-local about 0, -0.18, -0.4)
+const MOUTH = [-0.22, 0.09, 0.32]; // "Naebun's mouth" in viewmodel space (camera-local about 0, -0.18, -0.4)
 const REST = [0.0, 0.03, 0.0];
 const ELBOW_R = [0.62, -0.62, 0.85];
 const ELBOW_L = [-0.7, -0.62, 0.85];
@@ -3146,7 +4868,7 @@ export function makeDrinkViewmodel(id) {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Freddie himself (third-person model for the Last Orders spin)
+// Naebun himself (third-person model for the Last Orders spin)
 // ---------------------------------------------------------------------------------------------
 
 const F = {
@@ -3159,7 +4881,7 @@ const F_L1 = 0.3;
 const F_L2 = 0.36;
 const F_SHOULDER = [0.265, 1.38 - F_HIP, 0];
 
-function freddieGeo() {
+function naebunGeo() {
   const o = { seed: 21 };
   const arm = (hex) => bake([
     P(ball(0.085, 12, 8), hex, 'leather'),
@@ -3262,8 +4984,8 @@ function freddieGeo() {
   };
 }
 
-export function makeFreddie() {
-  const geo = once('freddie', freddieGeo);
+export function makeNaebun() {
+  const geo = once('naebun', naebunGeo);
   const mat = pbrMat();
   const meshes = [];
   const mk = (g, m, parent, x = 0, y = 0, z = 0) => {
@@ -3274,7 +4996,7 @@ export function makeFreddie() {
     return mesh;
   };
   const group = new THREE.Group();
-  group.name = 'freddie';
+  group.name = 'naebun';
   const root = new THREE.Group();
   group.add(root);
   const legL = mk(geo.leg, mat, root, -0.105, F_HIP, 0);
@@ -3386,3 +5108,15 @@ export function makeFreddie() {
   return { group, height: 1.8, setPose, muzzle };
 }
 
+// ---------------------------------------------------------------------------------------------
+// The prepared arsenal (src/arsenal.js, modelled in scripts/blender/arsenal.py): three more weapons, the upgrade pickups,
+// the collectible record and their effects. makeWeaponModel, makeWeaponPickup and makeProjectile above hand the new ids over.
+// ---------------------------------------------------------------------------------------------
+
+const arsenal = () => once('arsenal', () => createArsenal({ once, pbrMat, glowBasic, hdr, meshGeo, plinth }));
+export { ARSENAL_WEAPON_IDS, ARSENAL_UPGRADE_IDS };
+export const makeUpgradePickup = (id) => arsenal().makeUpgradePickup(id); // 'clip' | 'reload' | 'altfire'
+export const makeRecordPickup = (index) => arsenal().makeRecordPickup(index); // index in the RECORDS list: the label colour repeats every four
+export const makeBeam = () => arsenal().makeBeam(); // { group, update(len, ramp, t) }: the Feedback Beam, from the origin along -z
+export const makeShockwave = (kind) => arsenal().makeShockwave(kind); // { group, update(k, radius, arc) }, kind 'ring' | 'cone'
+export const makeStunMark = () => arsenal().makeStunMark(); // { group, update(t) }: stars circling a stunned robot's head

@@ -8,6 +8,7 @@ import { TILE, WALL_H, COLOURS } from './consts.js';
 import { LEVEL_DEF as COWGATE } from './levels/cowgate.js';
 import { LEVEL_DEF as VAULTS } from './levels/vaults.js';
 import { makeVaultsDecor } from './levels/vaults-decor.js';
+import { PROP_MESHES } from './prop-meshes.js';
 
 const T = TILE;
 const makeDecor = (lv, env) => (lv.id === 'vaults' ? makeVaultsDecor(lv, env) : null);
@@ -392,7 +393,9 @@ export function buildWorld(opts = {}) {
     fog: lv.fog,
     ambient: lv.ambient,
     look: lv.look,
-    torch: lv.torch,
+    fill: lv.fill, // a small light on the camera: level 1's warm fill
+    torch: lv.torch, // the gun torch: spot light and beam settings
+    dark: !!lv.dark, // a dark level: the torch must be fitted and switched on to see
     quality,
     start,
     exit,
@@ -410,6 +413,7 @@ export function buildWorld(opts = {}) {
     update,
     // extras for tests and tools (not part of the contract)
     textures: visuals.textures,
+    propsPlaced: visuals.propsPlaced, // Blender props placed, by name
     size: { cols: COLS, rows: ROWS },
     tileSolid: (c, r) => blocksMove(c, r),
     tileBlocksShots: (c, r) => blocksShot(c, r),
@@ -905,6 +909,45 @@ function hazeTex() {
   return t;
 }
 
+// ---- Blender props: scripts/blender/props.py writes prop-meshes.js; each prop is decoded on first use ----
+// A prop is a few parts, each tagged with the level mesher it merges into, so materials stay shared and the draw calls
+// do not change. Vertex colour already has the model's occlusion and edge wear in it; Mesher.bake adds the level's light.
+const propBytes = (s, Type) => {
+  const bin = atob(s);
+  const u = new Uint8Array(bin.length);
+  for (let i = 0; i < u.length; i++) u[i] = bin.charCodeAt(i);
+  return new Type(u.buffer);
+};
+const SRGB_LIN = Float32Array.from({ length: 256 }, (_, i) => { const c = i / 255; return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; });
+const propCache = {};
+function propData(name) {
+  if (name in propCache) return propCache[name];
+  const src = PROP_MESHES[name];
+  if (!src) return (propCache[name] = null);
+  const parts = src.parts.map((m) => {
+    const p = propBytes(m.p, Int16Array);
+    const pos = new Float32Array(p.length);
+    for (let i = 0; i < p.length; i++) pos[i] = p[i] * m.sc;
+    const nb = propBytes(m.nrm, Int8Array);
+    const nor = new Float32Array(nb.length);
+    for (let i = 0; i < nb.length; i++) nor[i] = nb[i] / 127;
+    let col;
+    if (m.col) {
+      const cb = propBytes(m.col, Uint8Array);
+      col = new Float32Array(cb.length);
+      const g = m.g || 1; // timber is dark: the model asks for a gain on its tint
+      for (let i = 0; i < cb.length; i++) col[i] = SRGB_LIN[cb[i]] * g;
+    } else { // unlit glow: one HDR colour for the whole part
+      const g = mul(rgb(m.glow[0]), m.glow[1]);
+      col = new Float32Array(m.n * 3);
+      for (let i = 0; i < m.n; i++) col.set(g, i * 3);
+    }
+    const uv = m.uv ? propBytes(m.uv, Int16Array) : null; // millimetres on round surfaces, -32768 where the mesher picks the coordinates
+    return { m: m.m, q: m.q || 0, sw: !!m.sw, tn: !!m.tn, n: m.n, pos, nor, col, uv, idx: propBytes(m.idx, Uint16Array) };
+  });
+  return (propCache[name] = { h: src.h, parts });
+}
+
 // ---- geometry builder: merged BufferGeometry with vertex colours, world-unit UVs and baked light ----
 const ONE = [1, 1, 1];
 const sub3 = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
@@ -1107,6 +1150,54 @@ class Mesher {
       const hint = [u[0] * Math.cos(t) + w[0] * Math.sin(t), u[1] * Math.cos(t) + w[1] * Math.sin(t), u[2] * Math.cos(t) + w[2] * Math.sin(t)];
       this.quad(ring(a, i), ring(a, (i + 1) % sides), ring(b, (i + 1) % sides), ring(b, i), col, hint);
     }
+  }
+
+  // Append one decoded prop part. Placed at (x, y, z), turned by yaw about y, scaled by sc = [sx, sy, sz]; `tint` multiplies
+  // the colour of parts marked tintable. Normals follow the scale, the level's baked light multiplies the colour.
+  part(pt, x, y, z, yaw, sc, tint) {
+    const cs = Math.cos(yaw);
+    const sn = Math.sin(yaw);
+    const swap = this.swap;
+    if (pt.sw) this.swap = true;
+    const base = this.pos.length / 3;
+    const tc = pt.tn && tint ? tint : ONE;
+    const { pos, nor, col, n } = pt;
+    const uniform = sc[0] === sc[1] && sc[1] === sc[2];
+    const P = [0, 0, 0];
+    const N = [0, 0, 0];
+    const C = [0, 0, 0];
+    for (let i = 0; i < n; i++) {
+      const j = i * 3;
+      const px = pos[j] * sc[0];
+      const pz = pos[j + 2] * sc[2];
+      P[0] = x + px * cs + pz * sn;
+      P[1] = y + pos[j + 1] * sc[1];
+      P[2] = z - px * sn + pz * cs;
+      let nx = nor[j];
+      let ny = nor[j + 1];
+      let nz = nor[j + 2];
+      if (!uniform) {
+        nx /= sc[0]; ny /= sc[1]; nz /= sc[2];
+        const l = Math.hypot(nx, ny, nz) || 1;
+        nx /= l; ny /= l; nz /= l;
+      }
+      N[0] = nx * cs + nz * sn;
+      N[1] = ny;
+      N[2] = -nx * sn + nz * cs;
+      C[0] = col[j] * tc[0];
+      C[1] = col[j + 1] * tc[1];
+      C[2] = col[j + 2] * tc[2];
+      this.vert(P, N, C);
+      if (pt.uv && pt.uv[i * 2] !== -32768) { // round surface: arc length and height, not the flat projection
+        const k = this.uv.length - 2;
+        const u = pt.uv[i * 2] / 1000;
+        const v = pt.uv[i * 2 + 1] / 1000;
+        this.uv[k] = (this.swap ? v : u) / this.s;
+        this.uv[k + 1] = (this.swap ? u : v) / this.s;
+      }
+    }
+    for (let i = 0; i < pt.idx.length; i++) this.idx.push(base + pt.idx[i]);
+    this.swap = swap;
   }
 
   mesh(material) {
@@ -1441,7 +1532,23 @@ function buildVisuals(ctx) {
     neon: new Mesher(1, null), shaftS: new Mesher(1, null), shaftL: new Mesher(1, null),
   };
   const bb = (m, x0, y0, z0, x1, y1, z1, col, b = 0.04, floor = false) => (Q.bevel ? m.bbox(x0, y0, z0, x1, y1, z1, col, b, { floor }) : m.box(x0, y0, z0, x1, y1, z1, col));
-  if (D) D.init({ THREE, M, bb, obox, disc, annulus, ribbon, patch, frame, Mesher, C, glowc, mul, rgb, jit, clamp, WALL_H, T, faces, sub, raycast });
+  // Blender props: parts above this quality tier are left out. Returns false when the prop is not in the data, so the
+  // caller can fall back to its procedural version. o: { y, yaw, s (number or [sx, sy, sz]), tint }.
+  const propTier = Q.fine ? 2 : Q.detail ? 1 : 0;
+  const propsPlaced = {};
+  const placeProp = (name, x, z, o = {}) => {
+    const d = Q.detail ? propData(name) : null; // the low tier keeps the cheaper procedural props
+    if (!d) return false;
+    const sc = Array.isArray(o.s) ? o.s : [o.s || 1, o.s || 1, o.s || 1];
+    propsPlaced[name] = (propsPlaced[name] || 0) + 1;
+    for (const pt of d.parts) {
+      const m = M[pt.m];
+      if (pt.q <= propTier && m) m.part(pt, x, o.y || 0, z, o.yaw || 0, sc, o.tint);
+    }
+    return true;
+  };
+  const hasProp = (name) => Q.detail && propData(name) !== null;
+  if (D) D.init({ THREE, M, bb, obox, disc, annulus, ribbon, patch, frame, Mesher, C, glowc, mul, rgb, jit, clamp, WALL_H, T, faces, sub, raycast, placeProp, hasProp });
 
   // ---- walls: every visible tile face, subdivided where the baked occlusion and light change fastest ----
   const hw = T / 2;
@@ -1518,8 +1625,10 @@ function buildVisuals(ctx) {
       }
       const colf = (i, j, p) => { const k = jit(hash(Math.round(p[0] * 4), Math.round(p[2] * 4), 5), 0.07); return [ft[0] * k, ft[1] * k, ft[2] * k]; };
       // dark level: the baked pools are the lighting, so the floor samples them finer (the ceiling keeps the coarse grid)
-      const fus = Q.fine && D ? [...us, 0.25, 0.75].sort((a, b) => a - b) : us;
-      const fvs = Q.fine && D ? [...vs, 0.25, 0.75].sort((a, b) => a - b) : vs;
+      // (only where a light pool reaches this tile: between the torches the coarse grid carries everything there is to see)
+      const pooled = D && E.some((e) => Math.hypot((c + 0.5) * T - e.x, (r + 0.5) * T - e.z) < e.r + 1.5);
+      const fus = Q.fine && pooled ? [...us, 0.25, 0.75].sort((a, b) => a - b) : us;
+      const fvs = Q.fine && pooled ? [...vs, 0.25, 0.75].sort((a, b) => a - b) : vs;
       fm.grid([x0, 0, z0], [x0 + T, 0, z0], [x0, 0, z0 + T], fus, fvs, colf, [0, 1, 0]);
       const cj = (i, j, p) => { const k = jit(hash(Math.round(p[0] * 4), Math.round(p[2] * 4), 9), 0.08); return [0.9 * k, 0.82 * k, 0.74 * k]; };
       if (!(D && D.ceilingTile(c, r, an, cj))) M.plaster.grid([x0, WALL_H, z0], [x0 + T, WALL_H, z0], [x0, WALL_H, z0 + T], Q.detail ? us : [0, 1], Q.detail ? vs : [0, 1], cj, [0, -1, 0]);
@@ -1615,6 +1724,45 @@ function buildVisuals(ctx) {
     M.glass.frustum(x, z, 0.045, 0.018, y + h * 0.55, y + h * 0.75, bs, col, false);
     M.glass.frustum(x, z, 0.018, 0.018, y + h * 0.75, y + h, 5, col);
   };
+  // Level 1's props from the Blender kit (scripts/blender/props.py). Each case returns false when its model is missing from
+  // the data, and the procedural version below runs instead. Models stand inside their tile, so collision is unchanged.
+  const quarter = (h, n = 4) => ((h >>> 5) % n) * (Math.PI * 2 / n);
+  const cowProp = (ch, c, r, cx, cz, id, h) => {
+    if (ch === 'P') return placeProp('pillar', cx, cz);
+    if (ch === 'S') { // speaker stacks face the middle of the dancefloor
+      const fx = 17.5 * T - cx;
+      const fz = 30.5 * T - cz;
+      const [nx, nz] = Math.abs(fx) > Math.abs(fz) ? [Math.sign(fx), 0] : [0, Math.sign(fz)];
+      return placeProp('speaker', cx, cz, { yaw: Math.atan2(nx, nz) });
+    }
+    if (ch === 'o') return placeProp('table', cx, cz, { yaw: ((h >>> 4) % 628) / 100 });
+    if (ch === 'r') return placeProp(id === 'backstage' ? 'rail_b' : 'rail_a', cx, cz);
+    if (ch === 'b') {
+      if (!placeProp('bar', cx, cz)) return false;
+      const n = h % 4; // bottles, glasses and the odd beer tap on the polished top (customer side is +z)
+      for (let b = 0; b < n; b++) {
+        const bx = cx - 0.7 + ihash(c, r, 20 + b) * 1.4;
+        const bz = cz + 0.25 + ihash(c, r, 30 + b) * 0.6;
+        if (b % 2 === 0) bottle(bx, 1.12, bz, 0.4, BOTTLE[(h + b) % BOTTLE.length]);
+        else { M.glass.frustum(bx, bz, 0.04, 0.05, 1.12, 1.28, 8, [0.65, 0.65, 0.6]); M.glass.frustum(bx, bz, 0.04, 0.04, 1.12, 1.19, 8, [0.5, 0.3, 0.06], false); }
+      }
+      if (h % 6 === 0) { M.metal.box(cx - 0.12, 1.12, cz + 0.55, cx + 0.12, 1.42, cz + 0.7, C.chrome); M.metal.box(cx - 0.03, 1.12, cz + 0.35, cx + 0.03, 1.57, cz + 0.55, C.chrome); }
+      return true;
+    }
+    if (ch === 'v') {
+      for (const [nx, nz] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) {
+        if (at(c + nx, r + nz) === WALL) return placeProp('booth', cx, cz, { yaw: Math.atan2(-nx, -nz) });
+      }
+      return false;
+    }
+    if (ch === 'x') {
+      const yaw = quarter(h);
+      if (id === 'stairwell' || id === 'cloakroom') return placeProp(h % 2 ? 'crate_a' : 'crate_b', cx, cz, { yaw });
+      if (id === 'bar') return placeProp('barrel_c', cx, cz, { yaw: ((h >>> 4) % 628) / 100 });
+      return placeProp(['flight_a', 'flight_b', 'flight_c', 'flight_b'][h % 4], cx, cz, { yaw: yaw % Math.PI });
+    }
+    return false;
+  };
   for (let r = 0; r < ROWS; r++) {
     for (let c = 0; c < COLS; c++) {
       const ch = sub[r * COLS + c];
@@ -1626,6 +1774,7 @@ function buildVisuals(ctx) {
       const an = areaOfTile(c, r);
       const id = aid(an);
       const h = hash(c, r, 17);
+      if (cowProp(ch, c, r, cx, cz, id, h)) continue;
       if (ch === 'P') {
         M.brick.box(cx - 0.85, 0.3, cz - 0.85, cx + 0.85, WALL_H - 0.25, cz + 0.85, [0.9, 0.78, 0.74]);
         bb(M.stone, cx - 1, 0, cz - 1, cx + 1, 0.34, cz + 1, [0.9, 0.86, 0.8], 0.06, true);
@@ -1837,9 +1986,11 @@ function buildVisuals(ctx) {
     const x = c * T;
     const z = r * T;
     const y = 2.45;
-    chain(x, z, y + 0.3, WALL_H);
-    M.hang.frustum(x, z, 0.36, 0.08, y, y + 0.3, 12, shade, false);
-    M.metal.frustum(x, z, 0.37, 0.37, y - 0.01, y + 0.02, 12, C.brass, false);
+    if (!placeProp('pendant', x, z, { y, tint: mul(shade, 1 / 0.9) })) { // chain, shade and brass rim: the model, else boxes and cones
+      chain(x, z, y + 0.3, WALL_H);
+      M.hang.frustum(x, z, 0.36, 0.08, y, y + 0.3, 12, shade, false);
+      M.metal.frustum(x, z, 0.37, 0.37, y - 0.01, y + 0.02, 12, C.brass, false);
+    }
     gm.frustum(x, z, 0.05, 0.05, y + 0.02, y + 0.12, 8, glowc(hex, 6), true);
     gm.tri([x - 0.3, y + 0.03, z], [x, y + 0.03, z + 0.3], [x + 0.3, y + 0.03, z], glowc(hex, 2.4), [0, -1, 0]);
     gm.tri([x - 0.3, y + 0.03, z], [x + 0.3, y + 0.03, z], [x, y + 0.03, z - 0.3], glowc(hex, 2.4), [0, -1, 0]);
@@ -2302,5 +2453,5 @@ function buildVisuals(ctx) {
 
   const textures = {};
   for (const [name, t] of Object.entries(tex)) textures[name] = t.map;
-  return { group, clock: 0, doorVisual, animate, textures };
+  return { group, clock: 0, doorVisual, animate, textures, propsPlaced };
 }

@@ -42,6 +42,7 @@ function runOnce(seed, skillName) {
 
   game.init(VIEW);
   game.testHook('level', LEVEL);
+  game.testHook('torch', { attached: true }); // the bot never watches the torch being fitted
   const S = game.getState();
   const W = game.getWorld();
   if (S.debugMode) throw new Error('simulator must run in normal mode');

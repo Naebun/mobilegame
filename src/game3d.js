@@ -1,4 +1,4 @@
-// Freddie's Last Set, first-person edition. Level 1: the Cowgate.
+// Naebun's Last Set, first-person edition. Level 1: the Cowgate.
 // Owns the state machine, player, weapons, robots, projectiles, areas and doors, and the three.js renderer.
 // Content lives in data.js, the level in world.js, meshes in models.js, 2D drawing in hud.js and screens.js.
 // Contract for all of those: docs/fps-design.md.
@@ -16,27 +16,55 @@ import {
 import * as hud from './hud.js';
 import * as screens from './screens.js';
 import * as M from './models.js';
+import * as store from './save.js';
+import { createArsenalPlay } from './arsenal-play.js';
 import { WEAPONS, WEAPON_ORDER, ENEMY_DEFS, PLAYER, LEVELS, DEATH_LINES, DRINKS, DRINK_ORDER } from './data.js';
 
 const TAU = Math.PI * 2;
 const HURT_DUR = 0.38; // matches the hurt animation length in models.js
-const BEST_KEY = 'mobilegame.fps.best'; // level 1; later levels append their number
+const BEST_KEY = 'mobilegame.fps.best'; // the older, localStorage-only best scores: level 1; later levels append their number
 const bestKey = (n) => (n > 1 ? `${BEST_KEY}.${n}` : BEST_KEY);
 const DEBUG_KEY = 'mobilegame.debugMode';
 const QUALITY_KEY = 'mobilegame.quality';
+const SETTINGS_KEY = 'mobilegame.settings';
+// Mouse sensitivity steps, as a multiple of PLAYER.mouse (radians per mouse count).
+const MOUSE_SENS = [{ label: 'LOW', k: 0.6 }, { label: 'MEDIUM', k: 1 }, { label: 'HIGH', k: 1.7 }];
 const FX_QUALITY = { high: 1, medium: 0.7, low: 0.4 };
+const DEFAULT_TORCH = { colour: 0xfff0d8, intensity: 32, distance: 24, angle: 0.4, penumbra: 0.55, decay: 1.5, beam: 16 };
 const DEFAULT_LOOK = { exposure: 1, bloom: 0.5, vignette: 0.35, grade: { lift: [0, 0, 0], gamma: [1, 1, 1], gain: [1, 1, 1] } };
 const query = typeof location !== 'undefined' ? new URLSearchParams(location.search) : new URLSearchParams('');
+// Input mode: 'pc' (mouse look and keys, the grey touch boxes hidden) or 'mobile' (the touch boxes). The default is PC; a
+// mobile browser switches to mobile at start-up. A choice made on the Settings page is saved and wins. ?pc and ?mobile
+// force a mode, for tests.
+function detectMobile() {
+  if (query.has('mobile')) return true;
+  if (query.has('pc')) return false;
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  const coarse = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse) and (hover: none)').matches;
+  const ipadOs = /Macintosh/.test(ua) && (navigator.maxTouchPoints || 0) > 1; // iPadOS asks for the desktop site
+  return coarse || ipadOs || /Android|iPhone|iPad|iPod|Mobile/i.test(ua);
+}
+let mobileBrowser = detectMobile();
+const inputMode = () => S.settings.input || (mobileBrowser ? 'mobile' : 'pc');
 // Quality: ?q=low|medium|high forces a tier (used by tests); otherwise start from the saved tier (default high)
 // and step down automatically if the device is clearly struggling. ?perf shows a frame-rate overlay.
 const Q = { tier: 'high', fixed: false, ema: 1 / 60, frames: 0, last: 0, perf: query.has('perf'), fps: 60 };
-// Debug mode is a testing aid for Freddie only. It must never feed back into balance: enemies, weapons' base stats,
+// Debug mode is a testing aid for Naebun only. It must never feed back into balance: enemies, weapons' base stats,
 // areas and everything in data.js are tuned for normal mode alone.
 const DEBUG_MULT = { fire: 2, damage: 2, health: 2 };
 const NORMAL_MULT = { fire: 1, damage: 1, health: 1 };
 
 const S = {
-  mode: 'title', // title | controls | voicemail | intro | play | dead | complete
+  mode: 'title', // title | controls | settings | voicemail | intro | play | dead | complete
+  torch: { attached: false, on: false, k: 0 }, // the gun torch: fitted to the pistol, switched on, brightness 0..1
+  attach: null, // the fitting sequence at the start of the first dark level: { t, k, seated, onT }
+  keyF: false,
+  settings: { input: null, sens: 1 }, // saved; input is 'pc', 'mobile' or null (detect); sens indexes MOUSE_SENS
+  save: store.fresh(), // progress: unlocked level, levels done, best scores (src/save.js: a cookie, mirrored in localStorage)
+  resetArmed: 0, // seconds left in which a second tap on RESET PROGRESS erases the save
+  mouseLocked: false,
+  mouseTest: null, // tests inject mouse input here: { dx, dy, down, wheel }
   level: 1, // the level being played (or about to be)
   mailT: 0,
   pendingLoad: false,
@@ -118,14 +146,30 @@ const makeDrinkMesh = (id) => {
 };
 const buffOn = (name) => S.buffs[name] > 0;
 
+// The prepared arsenal (src/arsenal-play.js, docs/arsenal.md): the Feedback Beam, Bass-Drop Grenade and Airhorn, stun, the SMG's
+// alt-fire, upgrades and collectible records. No level places any of it yet; the hooks below are all it needs from here.
+const ARS = createArsenalPlay({
+  S, M, audio, store, getWorld: () => world, getR: () => R, castRay, damageEnemy, alertNear, forward3, spark, fxHit, toast, mult, bounceOff,
+  inputMode: () => inputMode(),
+  fireRate: () => mult().fire * (buffOn('rapid') ? DRINKS.energy.mult : 1),
+});
+
 const inRect = (x, y, r) => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
 
 // ---- lifecycle ----
 
 export function init(view) {
   S.view = view;
+  const savedSettings = read(SETTINGS_KEY);
+  if (savedSettings && typeof savedSettings === 'object') S.settings = { input: savedSettings.input === 'pc' || savedSettings.input === 'mobile' ? savedSettings.input : null, sens: clamp(Math.round(Number(savedSettings.sens)) || 1, 0, MOUSE_SENS.length - 1) };
+  S.save = store.load();
+  S.torch.attached = S.save.torch === true;
+  for (let n = 1; n <= store.MAX_LEVELS; n++) { // scores from before the cookie save existed
+    const old = Number(read(bestKey(n))) || 0;
+    if (old > (S.save.best[n] || 0)) S.save.best[n] = old;
+  }
   S.level = startLevel();
-  S.best = Number(read(bestKey(S.level))) || 0;
+  S.best = bestFor(S.level);
   S.debugMode = read(DEBUG_KEY) === true;
   const forced = query.get('q');
   const saved = read(QUALITY_KEY);
@@ -145,6 +189,8 @@ function startLevel() {
   return n >= 1 && n <= LEVELS.length ? Math.floor(n) : 1;
 }
 
+const bestFor = (n) => S.save.best[n] || 0;
+
 function rememberDoors() {
   for (const k of Object.keys(initialOpen)) delete initialOpen[k];
   for (const d of world.doors) initialOpen[d.id] = d.open;
@@ -155,7 +201,7 @@ const levelInfo = () => LEVELS[S.level - 1];
 // Swap the world for another level. The scene keeps its lights; only the level group, fog, ambient and looks change.
 function loadLevel(n) {
   S.level = n;
-  S.best = Number(read(bestKey(n))) || 0;
+  S.best = bestFor(n);
   if (world && world.level === n) return;
   const old = world;
   world = buildWorld({ quality: Q.tier, level: n });
@@ -173,19 +219,28 @@ function loadLevel(n) {
   }
 }
 
-// Fog, ambient, grade and the camera torch all come from the level.
+// Fog, ambient, grade, the camera fill light and the gun torch's settings all come from the level.
 function applyAtmosphere() {
-  const { scene, hemi, torch } = R;
+  const { scene, hemi, fill } = R;
   scene.background = new THREE.Color(world.fog.colour);
   scene.fog = new THREE.Fog(world.fog.colour, world.fog.near, world.fog.far);
   hemi.color.set(world.ambient.sky);
   hemi.groundColor.set(world.ambient.ground);
   hemi.intensity = world.ambient.intensity;
-  const t = world.torch || {};
-  torch.color.set(t.colour ?? 0xfff0dd);
-  torch.intensity = t.intensity ?? 1.2;
-  torch.distance = t.range ?? 15;
-  torch.decay = t.decay ?? 1.6;
+  const f = world.fill || {};
+  fill.color.set(f.colour ?? 0xfff0dd);
+  R.fillBase = f.intensity ?? 0;
+  fill.intensity = R.fillBase;
+  fill.distance = f.range ?? 15;
+  fill.decay = f.decay ?? 1.6;
+  const t = { ...DEFAULT_TORCH, ...(world.torch || {}) };
+  R.torchCfg = t;
+  R.spot.color.set(t.colour);
+  R.spot.distance = t.distance;
+  R.spot.angle = t.angle;
+  R.spot.penumbra = t.penumbra;
+  R.spot.decay = t.decay;
+  R.tbeam.setCone(t.beam, t.angle, t.colour);
   const wl = world.look || {};
   R.look = { ...DEFAULT_LOOK, ...wl, grade: { ...DEFAULT_LOOK.grade, ...(wl.grade || {}) } };
 }
@@ -201,7 +256,7 @@ export function baseFov(aspect) {
 // so it stays at the edge of a much wider picture.
 function weaponX(aspect) {
   const halfW = Math.tan((35 * Math.PI) / 180) * aspect * 0.62; // half the visible width at the weapon's distance
-  return clamp(halfW * 0.4, 0.15, 0.4);
+  return clamp(halfW * 0.4, 0.08, 0.4);
 }
 
 export function resize(view) {
@@ -216,6 +271,20 @@ export function resize(view) {
   R.wcam.aspect = view.w / view.h;
   R.wcam.updateProjectionMatrix();
   R.fx.setScale((view.h * R.pipeline.pixelRatio) / (2 * Math.tan((R.camera.fov * Math.PI) / 360)));
+}
+
+// Mouse look is wanted only while playing in PC mode. The engine asks every frame, so it also
+// lets go of the pointer when we stop wanting it (death, the level-complete screen).
+export function wantsMouseLock() {
+  return inputMode() === 'pc' && S.mode === 'play';
+}
+
+export function pointerLock(locked) {
+  S.mouseLocked = locked;
+}
+
+function saveSettings() {
+  write(SETTINGS_KEY, S.settings);
 }
 
 export function gesture() {
@@ -235,8 +304,12 @@ function initRender(view) {
   scene.add(world.group);
   const camera = new THREE.PerspectiveCamera(85, view.w / view.h, 0.05, 80);
   camera.rotation.order = 'YXZ';
-  const torch = new THREE.PointLight(0xfff0dd, 1.2, 15, 1.6); // colour, strength and reach come from the level
-  camera.add(torch);
+  const fill = new THREE.PointLight(0xfff0dd, 1.2, 15, 1.6); // a small light on the camera; strength and reach come from the level
+  camera.add(fill);
+  const spot = new THREE.SpotLight(0xfff0d8, 0, 24, 0.4, 0.55, 1.5); // the gun torch: placed on the lens every frame
+  scene.add(spot, spot.target);
+  const tbeam = makeTorchBeam();
+  scene.add(tbeam.mesh);
   scene.add(camera);
 
   // The weapon is drawn in its own pass with a cleared depth buffer so it never clips into walls.
@@ -264,6 +337,13 @@ function initRender(view) {
     flashes[id] = flash;
   }
 
+  let attachRig = null; // the left hand fitting the pistol's torch (a Blender model; absent if the models do not have it)
+  if (M.makeTorchAttach) {
+    attachRig = M.makeTorchAttach();
+    attachRig.group.visible = false;
+    wroot.add(attachRig.group);
+  }
+
   const drinkVms = {};
   if (M.makeDrinkViewmodel) {
     for (const id of DRINK_ORDER) {
@@ -275,10 +355,10 @@ function initRender(view) {
     }
   }
 
-  // Freddie himself, seen only when Last Orders pulls the camera out to third person
-  const freddie = M.makeFreddie ? M.makeFreddie() : fallbackFreddie();
-  freddie.group.visible = false;
-  scene.add(freddie.group);
+  // Naebun himself, seen only when Last Orders pulls the camera out to third person
+  const naebun = M.makeNaebun ? M.makeNaebun() : fallbackNaebun();
+  naebun.group.visible = false;
+  scene.add(naebun.group);
 
   // the laser: a white-hot core inside a wide magenta glow, both HDR so they bloom; unit length along -z
   const beam = new THREE.Group();
@@ -310,13 +390,77 @@ function initRender(view) {
   const pipeline = createPipeline(renderer, view, Q.tier);
   const fx = createFx(scene);
   fx.setQuality(FX_QUALITY[Q.tier]);
-  R = { renderer, scene, camera, hemi, torch, wscene, wcam, wroot, models, flashes, impacts, explosions: [], flashT: 0, muzzleT: 0, pipeline, fx, look: null, drinkVms, beam, beamParts: [beamCore, beamMid, beamGlow], fov: 85, baseFov: 85, freddie };
+  R = { renderer, scene, camera, hemi, fill, fillBase: 0, spot, tbeam, torchCfg: DEFAULT_TORCH, attachRig, wscene, wcam, wroot, models, flashes, impacts, explosions: [], flashT: 0, muzzleT: 0, pipeline, fx, look: null, drinkVms, beam, beamParts: [beamCore, beamMid, beamGlow], fov: 85, baseFov: 85, naebun };
   applyAtmosphere();
   resize(view);
 }
 
-// Stand-in until models.js provides makeFreddie: a simple figure with a cannon, enough to see the spin.
-function fallbackFreddie() {
+// The torch beam: an open cone from the lens, drawn additively and brightest at its edges-on silhouette fade, so it reads as
+// light in dusty air. Radius and length are set by uniforms; the mesh is placed and aimed each frame.
+function makeTorchBeam() {
+  const SEG = 28;
+  const dir = [];
+  const along = [];
+  const idx = [];
+  for (let ring = 0; ring < 2; ring++) {
+    for (let i = 0; i <= SEG; i++) {
+      const a = (i / SEG) * TAU;
+      dir.push(Math.cos(a), Math.sin(a));
+      along.push(ring);
+    }
+  }
+  for (let i = 0; i < SEG; i++) idx.push(i, i + 1, SEG + 1 + i + 1, i, SEG + 1 + i + 1, SEG + 1 + i);
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(dir.length / 2 * 3), 3)); // unused, but three wants one
+  g.setAttribute('aDir', new THREE.Float32BufferAttribute(dir, 2));
+  g.setAttribute('aT', new THREE.Float32BufferAttribute(along, 1));
+  g.setIndex(idx);
+  g.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0, 0), 1000);
+  const u = { uL: { value: 10 }, uR0: { value: 0.03 }, uR1: { value: 3 }, uI: { value: 0 }, uColor: { value: new THREE.Color(0xfff0d8) } };
+  const mat = new THREE.ShaderMaterial({
+    uniforms: u,
+    vertexShader: `
+      attribute vec2 aDir; attribute float aT;
+      uniform float uL; uniform float uR0; uniform float uR1;
+      varying float vT; varying vec3 vN; varying vec3 vV;
+      void main() {
+        float r = mix(uR0, uR1, aT);
+        vec3 p = vec3(aDir * r, -aT * uL);
+        vec4 mv = modelViewMatrix * vec4(p, 1.0);
+        vT = aT;
+        vN = normalize(normalMatrix * vec3(aDir, 0.0));
+        vV = -mv.xyz;
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader: `
+      uniform float uI; uniform vec3 uColor;
+      varying float vT; varying vec3 vN; varying vec3 vV;
+      void main() {
+        float f = abs(dot(normalize(vN), normalize(vV)));
+        float a = pow(f, 1.7) * pow(1.0 - vT, 1.5) * smoothstep(0.0, 0.05, vT) * uI;
+        gl_FragColor = vec4(uColor * a, 1.0);
+      }`,
+    transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false,
+  });
+  const mesh = new THREE.Mesh(g, mat);
+  mesh.frustumCulled = false;
+  mesh.renderOrder = 3;
+  mesh.visible = false;
+  return {
+    mesh,
+    u,
+    setCone(length, angle, colour) {
+      u.uColor.value.set(colour);
+      this.length = length;
+      this.tanA = Math.tan(angle * 0.85);
+    },
+    length: 16,
+    tanA: 0.35,
+  };
+}
+
+// Stand-in until models.js provides makeNaebun: a simple figure with a cannon, enough to see the spin.
+function fallbackNaebun() {
   const g = new THREE.Group();
   const mat = (c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.7 });
   const box = (w, h, d, x, y, z, c) => {
@@ -360,7 +504,7 @@ function resetLevel() {
 
   for (const raw of world.pickups) {
     const def = raw.kind === 'health' ? { ...raw, kind: 'drink', item: 'dram' } : raw; // older levels had medkits
-    const mesh = def.kind === 'weapon' ? makeWeaponPickup(def.item) : makeDrinkMesh(def.item);
+    const mesh = ARS.meshFor(def) || (def.kind === 'weapon' ? makeWeaponPickup(def.item) : makeDrinkMesh(def.item));
     mesh.position.set(def.x, 0, def.z);
     if (R) R.scene.add(mesh);
     S.pickups.push({ def, mesh, taken: false, phase: rand(0, TAU) });
@@ -373,6 +517,7 @@ function resetLevel() {
     weapon: 'pistol', owned: { pistol: true }, ammo: { pistol: WEAPONS.pistol.clip },
     reloadT: 0, fireT: 0, heat: 0, switchT: 0.25, bobT: 0, moveMag: 0, kick: 0, hurt: 0, shake: 0,
   };
+  ARS.reset(); // the arsenal's run state: upgrades, the alt-fire, the beam
   S.runT = 0;
   S.score = 0;
   S.kills = 0;
@@ -389,6 +534,10 @@ function resetLevel() {
   S.laser = null;
   S.camK = 0;
   S.buffs.speed = S.buffs.guard = S.buffs.rapid = 0;
+  // the torch: a dark level starts with the fitting sequence (once; the pistol keeps it after), a lit one with the torch off
+  S.attach = world.dark && !S.torch.attached ? { t: 0, k: 0, seated: false, onT: -1 } : null;
+  S.torch.on = world.dark && S.torch.attached;
+  S.torch.k = S.torch.on ? 1 : 0;
   flowT = 0;
   flow.update(S.player.x, S.player.z);
 }
@@ -410,11 +559,29 @@ function toTitle() {
 
 function beginRun() {
   audio.unlock();
+  if (S.level === 1) S.torch.attached = false; // a new game: the pistol has no torch until the first dark level
   loadLevel(S.level);
   resetLevel();
   S.mode = 'intro';
   S.introT = 0;
   audio.setLevel(S.level - 1);
+}
+
+// Title, CONTINUE: back to the furthest level unlocked, behind its voicemail (a returning player has heard the first level's story).
+function resumeGame() {
+  const n = Math.min(S.save.unlocked, LEVELS.length);
+  audio.unlock();
+  S.torch.attached = S.save.torch === true;
+  if (world.level !== n || S.pendingLoad) requestLevel(n);
+  else { S.level = n; resetLevel(); }
+  audio.setLevel(n - 1);
+  if (n > 1 && LEVELS[n - 1].voicemail) {
+    S.mode = 'voicemail';
+    S.mailT = 0;
+  } else {
+    S.mode = 'intro';
+    S.introT = 0;
+  }
 }
 
 // Level complete, NEXT LEVEL: load the next level behind a voicemail card (or straight to its intro if it has none).
@@ -444,10 +611,11 @@ function spawnEnemy(area, sp) {
     wakeDelay: -1, checkT: rand(0, 0.2), kx: 0, kz: 0, hurtT: 0, flashT: 0, deadT: 0, dead: false,
     strafe: Math.random() < 0.5 ? 1 : -1, acted: false, boss: !!def.boss, shieldT: 0, slamCool: 0, speedMult: 1, enraged: false,
   });
+  initSpecial(S.enemies[S.enemies.length - 1]);
 }
 
 function wake(e, delay = 0) {
-  if (e.state !== 'idle' || e.wakeDelay >= 0) return;
+  if (e.state !== 'idle' || e.wakeDelay >= 0 || e.def.dormant) return; // a dormant Mimic is woken only by unfoldMimic()
   e.wakeDelay = delay;
 }
 
@@ -455,7 +623,7 @@ function wakeArea(areaId, exceptE) {
   for (const o of S.enemies) if (o !== exceptE && o.areaId === areaId && o.state === 'idle') wake(o, rand(0.15, 0.7));
 }
 
-// A gunshot or a shout: idle robots close enough, with a way to reach Freddie, come looking.
+// A gunshot or a shout: idle robots close enough, with a way to reach Naebun, come looking.
 function alertNear(x, z, range) {
   for (const e of S.enemies) {
     if (e.state !== 'idle' || e.wakeDelay >= 0) continue;
@@ -497,6 +665,10 @@ function damageEnemy(e, amount, head, fromX, fromZ, knock, opts = {}) {
   }
   e.hp -= amount;
   if (e.def.enrage && !e.enraged && e.hp > 0 && e.hp <= e.maxHp * e.def.enrage.at) enrage(e);
+  if (e.def.dormant && e.state === 'idle' && e.hp > 0) { // shot while disguised: it takes the hit like any robot, then unfolds, and stays put
+    unfoldMimic(e);
+    knock = 0;
+  }
   if (e.state === 'idle') {
     wake(e, 0);
     wakeArea(e.areaId, e);
@@ -536,6 +708,7 @@ function killEnemy(e) {
     audio.boom();
     S.player.shake = Math.max(S.player.shake, 0.5);
   }
+  if (e.def.ai) onSpecialKill(e);
 }
 
 function updateEnemy(e, dt) {
@@ -558,6 +731,7 @@ function updateEnemy(e, dt) {
     e.robot.setPose('dead', e.deadT, clamp(e.deadT / 0.9, 0, 1));
     return;
   }
+  if (e.stunT > 0 && ARS.stunStep(e, dt)) return; // stunned (the arsenal): it does nothing until it wears off
 
   // knockback
   if (Math.abs(e.kx) + Math.abs(e.kz) > 0.05) {
@@ -568,6 +742,8 @@ function updateEnemy(e, dt) {
     e.kx *= decay;
     e.kz *= decay;
   }
+
+  if ((def.ai || e.state === 'rise') && updateSpecial(e, dt)) return; // the prepared enemies, and any robot getting back up
 
   const dx = p.x - e.x;
   const dz = p.z - e.z;
@@ -744,8 +920,8 @@ function separateEnemies() {
       if (d2 <= 1e-6 || d2 >= min * min) continue;
       const d = Math.sqrt(d2);
       const push = (min - d) * 0.5;
-      const wa = A.boss ? 0.2 : 1;
-      const wb = B.boss ? 0.2 : 1;
+      const wa = A.fixed ? 0 : A.boss ? 0.2 : 1; // a dormant Mimic is a machine: nothing shoves it
+      const wb = B.fixed ? 0 : B.boss ? 0.2 : 1;
       let mv = world.moveCircle(A.x, A.z, (-dx / d) * push * wa, (-dz / d) * push * wa, A.r);
       A.x = mv.x;
       A.z = mv.z;
@@ -761,7 +937,7 @@ function fireBottle(e, off = 0) {
   let dx = p.x - e.x;
   let dz = p.z - e.z;
   const d = Math.hypot(dx, dz) || 1;
-  if (off) { // fan the volley out sideways around the line to Freddie
+  if (off) { // fan the volley out sideways around the line to Naebun
     const c = Math.cos(off);
     const sn = Math.sin(off);
     [dx, dz] = [dx * c - dz * sn, dx * sn + dz * c];
@@ -791,12 +967,527 @@ function fireBottle(e, off = 0) {
   audio.spit();
 }
 
+// >>> PREPARED ENEMIES BEGIN (game logic for the four approved enemies that are not placed in any level)
+// ---- Prepared enemies (docs/enemies-next.md): built and tested, not placed in any level ----
+// Four kinds have an `ai` in their ENEMY_DEFS entry. updateEnemy() hands them to updateSpecial(), which returns true when it
+// has done the whole update (movement, turning and pose) and false to leave the usual code to it (a sleeping robot, a
+// Mimic that has finished unfolding). Models: src/models.js, between the PREPARED ENEMIES markers.
+
+const pendingBursts = []; // Shakens killed by a blast, waiting for their own burst so a chain ripples instead of going off at once
+let blastDelay = 0; // set while a blast is hurting robots: how long a Shaken killed by it waits before it bursts
+
+function initSpecial(e) {
+  const def = e.def;
+  e.revives = 0;
+  e.burstDone = false;
+  e.fixed = false;
+  if (!def.ai) return;
+  Object.assign(e, {
+    rattle: 0, rattleHz: 0, rattleT: 0, primeT: 0, fuse: 0, fuseMax: 0, lunge: 0, chained: false,
+    locked: false, aimPitch: 0, loseT: 0, tracerT: 0, tracerLen: 0, reviveTarget: null, reviveT: 0, riseDur: 0.9,
+  });
+  if (def.ai === 'shaken' && e.robot.setBlast) e.robot.setBlast(def.burst.radius);
+  if (def.ai === 'mimic') {
+    e.h = def.dormant.h; // a drinks machine is shorter than the robot it turns into
+    e.headY = def.dormant.headY;
+    e.fixed = true;
+    e.robot.setPose('dormant', 0, 0);
+  }
+}
+
+function updateSpecial(e, dt) {
+  if (e.state === 'rise') return updateRise(e, dt);
+  switch (e.def.ai) {
+    case 'shaken': return updateShaken(e, dt);
+    case 'longshot': return updateLongshot(e, dt);
+    case 'nurse': return updateNurse(e, dt);
+    case 'mimic': return updateMimic(e, dt);
+    default: return false;
+  }
+}
+
+// Called when a robot with an `ai` dies, from killEnemy().
+function onSpecialKill(e) {
+  const def = e.def;
+  if (def.ai === 'shaken' && !e.burstDone) {
+    if (blastDelay > 0) {
+      e.deadT = -blastDelay; // its pop starts when its burst does
+      pendingBursts.push(e);
+    } else burstShaken(e);
+  }
+  if (def.ai === 'longshot') e.robot.setLaser(0, 0);
+  if (def.ai === 'nurse') e.robot.setBeam(null);
+}
+
+function updatePendingBursts() {
+  for (let i = pendingBursts.length - 1; i >= 0; i--) {
+    const e = pendingBursts[i];
+    if (e.burstDone || !S.enemies.includes(e)) { pendingBursts.splice(i, 1); continue; }
+    if (e.deadT >= 0) {
+      pendingBursts.splice(i, 1);
+      burstShaken(e);
+    }
+  }
+}
+
+// A body stays on the floor (visible) while a Nurse of its area is alive and could still revive it.
+function corpseHeld(e) {
+  return !e.boss && !e.def.noRevive && !e.burstDone && e.revives < 1 && e.deadT < 14
+    && S.enemies.some((n) => !n.dead && n.def.ai === 'nurse' && n.areaId === e.areaId);
+}
+
+// ---- Fizzbang Shaken ----
+
+const rattleLevel = (def, d) => clamp(1 - (d - def.rattle.near) / (def.rattle.far - def.rattle.near), 0, 1);
+
+function tickRattle(e, lv, dt) {
+  const r = e.def.rattle;
+  e.rattle = lv;
+  e.rattleHz = r.min + (r.max - r.min) * lv;
+  e.rattleT += dt * e.rattleHz;
+  if (e.rattleT >= 1) {
+    e.rattleT -= Math.floor(e.rattleT);
+    if (Math.hypot(e.x - S.player.x, e.z - S.player.z) < 22) audio.rattle(lv);
+  }
+}
+
+function primeShaken(e, yaw, fuse) {
+  e.state = 'prime';
+  e.stateT = 0;
+  e.primeT = 0;
+  e.fuse = e.fuseMax = fuse;
+  e.lunge = yaw;
+  audio.hiss();
+}
+
+function updateShaken(e, dt) {
+  if (e.state !== 'chase' && e.state !== 'prime') return false; // asleep: the usual idle code
+  const p = S.player;
+  const def = e.def;
+  e.stateT += dt;
+  const dx = p.x - e.x;
+  const dz = p.z - e.z;
+  const d = Math.hypot(dx, dz) || 1;
+  const toPlayer = Math.atan2(-dx, -dz);
+  const touch = e.r + PLAYER_R + 0.1;
+  if (e.state === 'chase') {
+    const los = world.los(e.x, e.z, p.x, p.z);
+    let dirx = dx / d;
+    let dirz = dz / d;
+    if (!los || d > 10) {
+      const f = flow.dirAt(e.x, e.z);
+      if (f) { dirx = f.x; dirz = f.z; }
+    }
+    const sp = def.speed * e.speedMult * dt;
+    const mv = world.moveCircle(e.x, e.z, dirx * sp, dirz * sp, e.r);
+    e.x = mv.x;
+    e.z = mv.z;
+    e.yaw += clamp(wrap(Math.atan2(-dirx, -dirz) - e.yaw), -7 * dt, 7 * dt);
+    tickRattle(e, rattleLevel(def, d), dt);
+    if (e.hurtT > 0) e.robot.setPose('hurt', HURT_DUR - e.hurtT, e.rattle);
+    else e.robot.setPose('walk', e.animT, e.rattle);
+    if ((los && d <= def.prime.range) || d <= touch) primeShaken(e, toPlayer, def.prime.fuse);
+  } else {
+    e.primeT += dt;
+    e.fuse -= dt;
+    if (!e.chained) { // a lunge that steers slowly, so a sidestep can still beat it
+      e.lunge += clamp(wrap(toPlayer - e.lunge), -def.prime.steer * dt, def.prime.steer * dt);
+      const sp = def.prime.speed * dt;
+      const mv = world.moveCircle(e.x, e.z, -Math.sin(e.lunge) * sp, -Math.cos(e.lunge) * sp, e.r);
+      e.x = mv.x;
+      e.z = mv.z;
+      e.yaw = e.lunge;
+    }
+    tickRattle(e, 1, dt);
+    e.robot.setPose('prime', e.animT, clamp(1 - e.fuse / e.fuseMax, 0, 1));
+    if (e.fuse <= 0 || (!e.chained && e.primeT >= 0.3 && d <= touch)) burstShaken(e);
+  }
+  return true;
+}
+
+// A Shaken that has been caught in someone else's blast goes off after a short fuse, wherever it is standing.
+function chainPrime(o, delay) {
+  if (o.dead || o.burstDone) return;
+  if (o.state === 'prime') {
+    o.fuse = Math.min(o.fuse, delay);
+    return;
+  }
+  o.state = 'prime';
+  o.stateT = 0;
+  o.primeT = 0;
+  o.fuse = o.fuseMax = delay;
+  o.chained = true;
+  o.lunge = o.yaw;
+}
+
+function burstShaken(e) {
+  if (e.burstDone) return;
+  e.burstDone = true;
+  const b = e.def.burst;
+  const p = S.player;
+  audio.fizz();
+  p.shake = Math.max(p.shake, 0.35);
+  if (R) {
+    R.fx.foam(e.x, 0.9, e.z, b.radius);
+    const mesh = new THREE.Mesh(
+      new THREE.SphereGeometry(1, 10, 8),
+      new THREE.MeshBasicMaterial({ color: 0xffd6ec, transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending, depthWrite: false }),
+    );
+    mesh.position.set(e.x, 0.9, e.z);
+    R.scene.add(mesh);
+    R.explosions.push({ mesh, t: 0, radius: b.radius });
+  }
+  const dp = Math.hypot(p.x - e.x, p.z - e.z);
+  if (dp < b.radius) hurtPlayer(Math.round(b.player * (1 - (1 - b.floor) * clamp(dp / b.radius, 0, 1))), e.x, e.z, false);
+  for (const o of S.enemies) {
+    if (o === e || o.dead) continue;
+    const d = Math.hypot(o.x - e.x, o.z - e.z);
+    if (d > b.radius) continue;
+    const fall = 1 - (1 - b.floor) * clamp(d / b.radius, 0, 1);
+    const shaken = o.def.ai === 'shaken';
+    const delay = b.chain * (0.5 + d / b.radius);
+    blastDelay = shaken ? delay : 0;
+    damageEnemy(o, b.robots * fall, false, e.x, e.z, b.knock, { pierce: true });
+    blastDelay = 0;
+    if (shaken) chainPrime(o, delay);
+  }
+  if (!e.dead) {
+    e.hp = 0;
+    killEnemy(e);
+  }
+  alertNear(e.x, e.z, 22);
+}
+
+// ---- Bampot Longshot ----
+
+function updateLongshot(e, dt) {
+  if (e.state !== 'chase' && e.state !== 'charge' && e.state !== 'recover') return false;
+  const p = S.player;
+  const def = e.def;
+  const C = def.charge;
+  e.stateT += dt;
+  const dx = p.x - e.x;
+  const dz = p.z - e.z;
+  const d = Math.hypot(dx, dz) || 1;
+  const toPlayer = Math.atan2(-dx, -dz);
+  const los = world.los(e.x, e.z, p.x, p.z);
+  const pv = e.robot.pivot || { up: 1.5, fwd: 0.3 };
+
+  if (e.state === 'chase') {
+    let face = los ? toPlayer : e.yaw;
+    let dirx = 0;
+    let dirz = 0;
+    if (!los || d > def.keepMax) {
+      const f = (!los || d > 14) ? flow.dirAt(e.x, e.z) : null;
+      if (f) { dirx = f.x; dirz = f.z; } else { dirx = dx / d; dirz = dz / d; }
+      face = Math.atan2(-dirx, -dirz);
+    } else if (d < def.keepMin) {
+      dirx = -dx / d;
+      dirz = -dz / d;
+    } else {
+      dirx = (-dz / d) * e.strafe;
+      dirz = (dx / d) * e.strafe;
+      if (Math.sin(S.t * 0.5 + e.animT) > 0.97) e.strafe = -e.strafe;
+    }
+    let moving = false;
+    if (dirx || dirz) {
+      const sp = def.speed * e.speedMult * dt * (los ? 0.7 : 1);
+      const mv = world.moveCircle(e.x, e.z, dirx * sp, dirz * sp, e.r);
+      e.x = mv.x;
+      e.z = mv.z;
+      moving = true;
+    }
+    e.yaw += clamp(wrap(face - e.yaw), -7 * dt, 7 * dt);
+    e.robot.setLaser(0, 0);
+    if (e.hurtT > 0) e.robot.setPose('hurt', HURT_DUR - e.hurtT, 0);
+    else e.robot.setPose(moving ? 'walk' : 'idle', e.animT, 0);
+    if (los && d < def.range && d > 4 && e.cool <= 0 && e.stateT > 0.5) {
+      e.state = 'charge';
+      e.stateT = 0;
+      e.locked = false;
+      e.loseT = 0;
+      audio.snipeCharge(C.track + C.lock);
+    }
+    return true;
+  }
+
+  if (e.state === 'charge') {
+    const total = C.track + C.lock;
+    if (e.stateT < C.track) {
+      // tracking: the line follows Naebun, but only as fast as it can swing
+      if (los) e.loseT = 0;
+      else if ((e.loseT += dt) > C.lose) {
+        e.state = 'chase';
+        e.stateT = 0;
+        e.cool = 1;
+        e.robot.setLaser(0, 0);
+        return true;
+      }
+      e.yaw += clamp(wrap(toPlayer - e.yaw), -C.turn * dt, C.turn * dt);
+      e.aimPitch = Math.atan2(def.shot.aimY - pv.up, Math.max(1, d - pv.fwd));
+    } else if (!e.locked) {
+      e.locked = true;
+      audio.lock();
+      if (def.shot.warn) S.damageDirs.push({ bearing: wrap(p.yaw - toPlayer + Math.PI), t: 1 });
+    }
+    const hx = -Math.sin(e.yaw);
+    const hz = -Math.cos(e.yaw);
+    const ox = e.x + hx * pv.fwd;
+    const oz = e.z + hz * pv.fwd;
+    const wall = world.raycast(ox, oz, hx, hz, def.range);
+    const cp = Math.max(0.3, Math.cos(e.aimPitch));
+    // the line runs to the first wall; if it is on Naebun it stops short of him (it has hit something), which also keeps
+    // a glaring beam from running through the camera
+    const along = (p.x - ox) * hx + (p.z - oz) * hz;
+    const lateral = Math.abs((p.x - ox) * hz - (p.z - oz) * hx);
+    let reach = Math.min(def.range, wall) / cp;
+    if (along > 0 && along < wall && lateral < def.shot.halfWidth + 0.2) reach = Math.min(reach, (along - 1.2) / cp);
+    const len = Math.max(0.5, reach - 0.96); // the beam starts at the muzzle, 0.96 m along the barrel
+    const k = clamp(e.stateT / total, 0, 1);
+    e.robot.setLaser(len, e.aimPitch, e.locked, k);
+    e.robot.setPose('aim', e.stateT, k);
+    if (e.stateT >= total) {
+      fireSnipe(e, pv, wall, cp);
+      e.state = 'recover';
+      e.stateT = 0;
+      e.tracerT = 0.14;
+      e.tracerLen = len;
+    }
+    return true;
+  }
+
+  // recover: the shot has gone; the tracer lingers a moment
+  e.tracerT -= dt;
+  if (e.tracerT > 0) e.robot.setLaser(e.tracerLen, e.aimPitch, true, 1);
+  else e.robot.setLaser(0, e.aimPitch);
+  e.robot.setPose('shoot', e.stateT, clamp(e.stateT / def.shot.recover, 0, 1));
+  if (e.stateT >= def.shot.recover) {
+    e.state = 'chase';
+    e.stateT = 0;
+    e.cool = rand(def.cooldown[0], def.cooldown[1]);
+    e.robot.setLaser(0, 0);
+  }
+  return true;
+}
+
+// The shot: a straight line from the rifle's pivot along the locked yaw and pitch. It hurts Naebun if Naebun is within the
+// line's half-width and the line is not stopped by a wall or pillar first. Low cover does not stop it.
+function fireSnipe(e, pv, wall, cp) {
+  const p = S.player;
+  const def = e.def;
+  const hx = -Math.sin(e.yaw);
+  const hz = -Math.cos(e.yaw);
+  const ox = e.x + hx * pv.fwd;
+  const oz = e.z + hz * pv.fwd;
+  const rx = p.x - ox;
+  const rz = p.z - oz;
+  const along = rx * hx + rz * hz;
+  const lateral = Math.abs(rx * hz - rz * hx);
+  const y = pv.up + Math.tan(e.aimPitch) * along;
+  audio.snipe();
+  if (along > 0 && along < wall - 0.05 && lateral < def.shot.halfWidth && y > 0.05 && y < EYE + 0.25) {
+    hurtPlayer(def.damage, e.x, e.z, false);
+  }
+  if (R) {
+    const t = Math.min(wall, def.range);
+    const iy = clamp(pv.up + Math.tan(e.aimPitch) * t, 0.05, WALL_H - 0.05);
+    R.fx.sparks(ox + hx * t, iy, oz + hz * t, -hx, 0.2, -hz, 10);
+    R.fx.muzzle(ox + hx * 0.9, pv.up, oz + hz * 0.9, hx, 0, hz);
+  }
+}
+
+// ---- Bampot Nurse ----
+
+// Can this Nurse revive that robot now? `slack` widens the range a little, so a channel does not snap over a step.
+function reviveCandidate(n, c, slack = 1) {
+  const R_ = n.def.revive;
+  if (!c.dead || c.boss || c.def.noRevive || c.burstDone || c.revives >= 1 || c.areaId !== n.areaId) return false;
+  if (c.deadT < 0 || c.deadT > R_.window) return false;
+  const a = S.areas.find((x) => x.def.id === c.areaId);
+  if (a && a.cleared) return false; // never into an area that has already been cleared: its door is open for good
+  return Math.hypot(c.x - n.x, c.z - n.z) <= R_.range * slack && world.los(n.x, n.z, c.x, c.z);
+}
+
+function endChannel(n, cool = 0.6) {
+  n.state = 'chase';
+  n.stateT = 0;
+  n.reviveTarget = null;
+  n.cool = cool;
+  n.robot.setBeam(null);
+}
+
+function updateNurse(e, dt) {
+  if (e.state !== 'chase' && e.state !== 'revive') return false;
+  const p = S.player;
+  const def = e.def;
+  const R_ = def.revive;
+  e.stateT += dt;
+
+  if (e.state === 'revive') {
+    const c = e.reviveTarget;
+    if (!c || !reviveCandidate(e, c, 1.3)) {
+      endChannel(e);
+      return true;
+    }
+    const tx = c.x - e.x;
+    const tz = c.z - e.z;
+    e.yaw += clamp(wrap(Math.atan2(-tx, -tz) - e.yaw), -7 * dt, 7 * dt);
+    const k = clamp(e.stateT / R_.time, 0, 1);
+    if (e.hurtT > 0) e.robot.setPose('hurt', HURT_DUR - e.hurtT, 0);
+    else e.robot.setPose('revive', e.stateT, k);
+    // the beam's end in the Nurse's own space (the group is kept in step with the logic so the two agree)
+    e.robot.group.position.set(e.x, 0, e.z);
+    e.robot.group.rotation.y = e.yaw;
+    const cs = Math.cos(e.yaw);
+    const sn = Math.sin(e.yaw);
+    e.robot.setBeam(tx * cs - tz * sn, 0.3, tx * sn + tz * cs, k);
+    if (e.stateT >= R_.time) {
+      reviveEnemy(c, e);
+      endChannel(e, 1.2);
+    }
+    return true;
+  }
+
+  // chase: look for a body to revive, else keep out of Naebun's way
+  e.checkT -= dt;
+  if (e.checkT <= 0) {
+    e.checkT = 0.2;
+    let best = null;
+    let bd = Infinity;
+    for (const c of S.enemies) {
+      if (!reviveCandidate(e, c)) continue;
+      const d = Math.hypot(c.x - e.x, c.z - e.z);
+      if (d < bd) { bd = d; best = c; }
+    }
+    if (best && e.cool <= 0) {
+      e.state = 'revive';
+      e.stateT = 0;
+      e.reviveTarget = best;
+      audio.reviveStart(R_.time);
+      return true;
+    }
+  }
+  const dx = e.x - p.x;
+  const dz = e.z - p.z;
+  const d = Math.hypot(dx, dz) || 1;
+  let moving = false;
+  let face = e.yaw;
+  if (d < def.flee.from) {
+    // away from Naebun, round whatever is in the way: try the straight-away heading, then either side
+    const sp = def.speed * e.speedMult * dt;
+    let bestMv = null;
+    let bestScore = -1;
+    for (const a of [0, 0.7 * e.strafe, -0.7 * e.strafe, 1.4 * e.strafe, -1.4 * e.strafe]) {
+      const cs = Math.cos(a);
+      const sn = Math.sin(a);
+      const dirx = (dx / d) * cs - (dz / d) * sn;
+      const dirz = (dx / d) * sn + (dz / d) * cs;
+      const mv = world.moveCircle(e.x, e.z, dirx * sp, dirz * sp, e.r);
+      const gain = (mv.x - e.x) * dirx + (mv.z - e.z) * dirz;
+      if (gain > bestScore) { bestScore = gain; bestMv = { mv, dirx, dirz }; }
+      if (gain > sp * 0.85) break;
+    }
+    if (bestMv && bestScore > 1e-5) {
+      e.x = bestMv.mv.x;
+      e.z = bestMv.mv.z;
+      face = Math.atan2(-bestMv.dirx, -bestMv.dirz);
+      moving = true;
+    } else e.strafe = -e.strafe; // cornered: try the other way next time
+  } else face = Math.atan2(-(p.x - e.x), -(p.z - e.z)); // far enough: just watch
+  e.yaw += clamp(wrap(face - e.yaw), -7 * dt, 7 * dt);
+  e.robot.setBeam(null);
+  if (e.hurtT > 0) e.robot.setPose('hurt', HURT_DUR - e.hurtT, 0);
+  else e.robot.setPose(moving ? 'walk' : 'idle', e.animT, 0);
+  return true;
+}
+
+// The body gets up. The kill is taken back (kills and score stay true), the robot rises over `rise` seconds and then
+// carries on as if freshly woken. Its area counts it again from this moment; a cleared area never reaches here.
+function reviveEnemy(c, nurse) {
+  const R_ = nurse.def.revive;
+  c.dead = false;
+  c.state = 'rise';
+  c.stateT = 0;
+  c.deadT = 0;
+  c.hp = c.maxHp * R_.hp;
+  c.revives++;
+  c.kx = c.kz = 0;
+  c.hurtT = 0;
+  c.flashT = 0;
+  c.cool = 1;
+  c.riseDur = R_.rise;
+  c.wakeDelay = -1;
+  if (c.def.ai === 'mimic') {
+    c.h = c.robot.height;
+    c.headY = c.robot.headY;
+    c.fixed = false;
+  }
+  c.robot.flash(false);
+  c.robot.group.visible = true;
+  S.kills = Math.max(0, S.kills - 1);
+  S.score = Math.max(0, S.score - c.def.score);
+  audio.reviveDone();
+  if (R) R.fx.sparks(c.x, 0.4, c.z, 0, 1, 0, 14);
+}
+
+function updateRise(e, dt) {
+  e.stateT += dt;
+  const k = clamp(e.stateT / e.riseDur, 0, 1);
+  e.robot.setPose('dead', (1 - k) * 0.9, 1 - k); // the fall, played backwards
+  if (k >= 1) {
+    e.state = 'chase';
+    e.stateT = 0;
+    e.cool = Math.max(e.cool, 0.8);
+  }
+  return true;
+}
+
+// ---- Vending Mimic ----
+
+function unfoldMimic(e) {
+  if (e.state !== 'idle') return;
+  e.state = 'unfold';
+  e.stateT = 0;
+  e.fixed = false;
+  e.h = e.robot.height;
+  e.headY = e.robot.headY;
+  audio.unfold();
+}
+
+function updateMimic(e, dt) {
+  const p = S.player;
+  const D = e.def.dormant;
+  if (e.state === 'idle') {
+    // a drinks machine: noise and other robots waking do not touch it (wake() ignores it); only Naebun's nearness or a shot
+    e.robot.setPose('dormant', e.animT, 0);
+    e.checkT -= dt;
+    if (e.checkT <= 0) {
+      e.checkT = 0.1;
+      if (Math.hypot(p.x - e.x, p.z - e.z) < D.wake && world.los(e.x, e.z, p.x, p.z)) unfoldMimic(e);
+    }
+    return true;
+  }
+  if (e.state === 'unfold') {
+    e.stateT += dt;
+    e.yaw += clamp(wrap(Math.atan2(-(p.x - e.x), -(p.z - e.z)) - e.yaw), -3 * dt, 3 * dt);
+    e.robot.setPose('unfold', e.stateT, clamp(e.stateT / D.unfold, 0, 1));
+    if (e.stateT >= D.unfold) {
+      e.state = 'chase';
+      e.stateT = 0;
+      e.cool = 0.5;
+    }
+    return true;
+  }
+  return false; // awake: an ordinary melee robot
+}
+// <<< PREPARED ENEMIES END
+
 // ---- player ----
 
 function hurtPlayer(amount, srcX, srcZ, melee) {
   const p = S.player;
   if (S.mode !== 'play' || p.health <= 0) return;
-  if (S.laser) return; // the spin makes Freddie untouchable
+  if (S.laser) return; // the spin makes Naebun untouchable
   if (buffOn('guard')) amount = Math.max(1, Math.round(amount * DRINKS.heavy.mult));
   p.health -= amount;
   p.hurt = 1;
@@ -820,7 +1511,8 @@ function die() {
   if (!S.debugMode && S.score > S.best) {
     S.best = S.score;
     S.newBest = true;
-    write(bestKey(S.level), S.best);
+    S.save.best[S.level] = S.best;
+    store.save(S.save);
   }
   audio.gameOver();
 }
@@ -830,10 +1522,16 @@ function completeLevel() {
   S.completeT = 0;
   S.newBest = false;
   S.score += Math.max(0, Math.round((300 - S.runT) * 10));
+  if (!S.debugMode) { // a debug run neither records a score nor counts as progress
+    if (!S.save.done.includes(S.level)) S.save.done.push(S.level);
+    S.save.unlocked = Math.max(S.save.unlocked, Math.min(store.MAX_LEVELS, S.level + 1));
+    store.save(S.save);
+  }
   if (!S.debugMode && S.score > S.best) {
     S.best = S.score;
     S.newBest = true;
-    write(bestKey(S.level), S.best);
+    S.save.best[S.level] = S.best;
+    store.save(S.save);
   }
   audio.dawn();
 }
@@ -855,7 +1553,8 @@ function stickFrom(t, box, dead) {
 // returns { mx, mz (move, -1..1), yawD, pitchD, firing, reload, swap }. Buttons are read from tap events.
 function readControls(input, view, dt) {
   const L = layoutFor(view);
-  const out = { mx: 0, mz: 0, yawD: 0, pitchD: 0, firing: false, reload: false, swap: false };
+  const out = { mx: 0, mz: 0, yawD: 0, pitchD: 0, firing: false, reload: false, swap: false, torch: false, alt: false };
+  const altOn = inputMode() === 'mobile' && ARS.altAvailable(); // the ALT button exists only once the SMG has its pedal
   let moveTaken = false;
   let lookTaken = false;
   for (const t of input.touches.values()) {
@@ -866,10 +1565,11 @@ function readControls(input, view, dt) {
   for (const press of input.pressed) {
     if (inRect(press.x, press.y, L.reloadHit)) out.reload = true;
     else if (inRect(press.x, press.y, L.swapHit)) out.swap = true;
+    else if (altOn && inRect(press.x, press.y, L.altHit)) out.alt = true;
   }
   for (const t of input.touches.values()) {
     if (t.role) continue;
-    if (inRect(t.sx, t.sy, L.reloadHit) || inRect(t.sx, t.sy, L.swapHit)) t.role = 'btn';
+    if (inRect(t.sx, t.sy, L.reloadHit) || inRect(t.sx, t.sy, L.swapHit) || (altOn && inRect(t.sx, t.sy, L.altHit))) t.role = 'btn';
     else if (!moveTaken && inRect(t.sx, t.sy, L.moveHit)) { t.role = 'move'; moveTaken = true; }
     else if (!lookTaken && inRect(t.sx, t.sy, L.lookHit)) { t.role = 'look'; lookTaken = true; }
     else if (inRect(t.sx, t.sy, L.moveHit) || inRect(t.sx, t.sy, L.lookHit)) t.role = 'none'; // a box already in use
@@ -919,6 +1619,17 @@ function readControls(input, view, dt) {
     const len = Math.hypot(kx, kz);
     if (len) { out.mx = kx / len; out.mz = kz / len; }
   }
+  // mouse look: moving the mouse aims, the left button fires, the wheel swaps weapons
+  const mouse = S.mouseTest || input.mouse;
+  if (wantsMouseLock() && mouse && (mouse === S.mouseTest || mouse.locked)) {
+    const sens = PLAYER.mouse * MOUSE_SENS[S.settings.sens].k;
+    out.yawD -= mouse.dx * sens;
+    out.pitchD -= mouse.dy * sens;
+    if (mouse.down) out.firing = true;
+    if (mouse.wheel) out.swap = true;
+    if (mouse.alt) out.alt = true; // the right button: the SMG's alt-fire
+  }
+  if (S.mouseTest) S.mouseTest = { ...S.mouseTest, dx: 0, dy: 0, wheel: 0, alt: false };
   const ky = (k.has('arrowleft') ? 1 : 0) - (k.has('arrowright') ? 1 : 0);
   const kp = (k.has('arrowup') ? 1 : 0) - (k.has('arrowdown') ? 1 : 0);
   out.yawD += ky * 2.2 * dt;
@@ -926,6 +1637,10 @@ function readControls(input, view, dt) {
   if (k.has(' ')) out.firing = true;
   if (k.has('r') && !S.keyR) out.reload = true;
   if (k.has('q') && !S.keyQ) out.swap = true;
+  if (k.has('e') && !S.keyE) out.alt = true;
+  S.keyE = k.has('e');
+  if (k.has('f') && !S.keyF) out.torch = true;
+  S.keyF = k.has('f');
   S.keyR = k.has('r');
   S.keyQ = k.has('q');
   ui.firing = out.firing;
@@ -937,8 +1652,8 @@ function readControls(input, view, dt) {
 function startReload() {
   const p = S.player;
   const w = WEAPONS[p.weapon];
-  if (p.reloadT > 0 || p.ammo[p.weapon] >= w.clip) return;
-  p.reloadTotal = w.reload * (buffOn('rapid') ? DRINKS.energy.reload : 1);
+  if (p.reloadT > 0 || p.ammo[p.weapon] >= ARS.clipOf(w)) return;
+  p.reloadTotal = w.reload * (buffOn('rapid') ? DRINKS.energy.reload : 1) * ARS.reloadMult();
   p.reloadT = p.reloadTotal;
   audio.reload(false);
 }
@@ -1003,6 +1718,7 @@ function castRay(ox, oy, oz, d, maxDist, skipEnemies) {
 function fire() {
   const p = S.player;
   const w = WEAPONS[p.weapon];
+  if (ARS.handles(w)) { ARS.fire(w); return; } // the grenade and the airhorn
   const m = mult();
   p.ammo[p.weapon]--;
   p.fireT = w.interval / m.fire / (buffOn('rapid') ? DRINKS.energy.mult : 1);
@@ -1159,8 +1875,8 @@ function updateWeapon(dt, ctl) {
   p.switchT = Math.max(0, p.switchT - dt);
   p.heat = Math.max(0, p.heat - dt * 6);
   p.kick = Math.max(0, p.kick - dt * 6);
-  if (S.drink || S.laser) {
-    // hands are full: no firing, reloading or swapping until the drink is done
+  if (S.drink || S.laser || S.attach) {
+    // hands are full: no firing, reloading or swapping until the drink is done (or the torch is fitted)
     p.fireT = Math.max(p.fireT, 0.1);
     return;
   }
@@ -1170,12 +1886,14 @@ function updateWeapon(dt, ctl) {
     p.reloadT -= dt;
     if (p.reloadT <= 0) {
       p.reloadT = 0;
-      p.ammo[p.weapon] = w.clip;
+      p.ammo[p.weapon] = ARS.clipOf(w);
       audio.reload(true);
     }
   } else if (p.ammo[p.weapon] <= 0) {
     startReload();
   }
+  ARS.updateAlt(dt, ctl); // the SMG's alt-fire: a press, a burst in progress, the cooldown
+  if (WEAPONS[p.weapon].kind === 'beam') { ARS.beamFrame(dt, ctl.firing); return; } // the Feedback Beam: a held trigger and a meter, no shots
   if (ctl.firing && p.reloadT <= 0 && p.fireT <= 0 && p.switchT <= 0 && p.ammo[p.weapon] > 0) fire();
 }
 
@@ -1184,6 +1902,7 @@ function updateWeapon(dt, ctl) {
 function updateProjectiles(dt) {
   const p = S.player;
   for (const pr of S.projectiles) {
+    if (pr.grenade) { ARS.stepGrenade(pr, dt); continue; } // the Bass-Drop Grenade has its own flight
     pr.life -= dt;
     const step = Math.hypot(pr.vx, pr.vy, pr.vz) * dt;
     const d = { x: pr.vx * dt / step, y: pr.vy * dt / step, z: pr.vz * dt / step };
@@ -1263,11 +1982,15 @@ function updatePickups(dt) {
         continue;
       }
       startDrink(pk.def.item);
+    } else if (pk.def.kind === 'upgrade') {
+      if (!ARS.takeUpgrade(pk.def.item)) continue; // already at the top tier: leave it
+    } else if (pk.def.kind === 'record') {
+      if (!ARS.takeRecord(pk.def.item)) continue;
     } else {
       const w = WEAPONS[pk.def.item];
       if (p.owned[w.id]) continue;
       p.owned[w.id] = true;
-      p.ammo[w.id] = w.clip;
+      p.ammo[w.id] = ARS.clipOf(w);
       selectWeapon(w.id);
       toast(`${w.name} PICKED UP`);
     }
@@ -1359,7 +2082,7 @@ function vaporise(e, p) {
   if (R) R.fx.explosion(e.x, e.h * 0.5, e.z, 1.6);
 }
 
-// Kills every non-boss robot with a clear line to Freddie inside the beam's arc (and, at the very end, any that
+// Kills every non-boss robot with a clear line to Naebun inside the beam's arc (and, at the very end, any that
 // slipped through), as the view spins. Bosses are never touched.
 function updateLaser(dt) {
   const L = S.laser;
@@ -1436,10 +2159,18 @@ function updateAreas() {
 
 // ---- update ----
 
+// One line for the Settings page: how far the saved game is and the best scores.
+function progressText() {
+  const best = Object.keys(S.save.best).map((n) => `L${n} ${S.save.best[n]}`).join('  ');
+  return `Furthest level: ${S.save.unlocked}${S.save.done.length ? `   Done: ${S.save.done.join(', ')}` : ''}${best ? `   Best: ${best}` : ''}`;
+}
+
 function stateFor(mode) {
   switch (mode) {
-    case 'title': return { t: S.t, debugMode: S.debugMode, best: S.best, levelNumber: LEVELS[startLevel() - 1].number, levelName: LEVELS[startLevel() - 1].name };
-    case 'controls': return { t: S.t };
+    case 'settings': return { t: S.t, input: inputMode(), sensLabel: MOUSE_SENS[S.settings.sens].label, resetArmed: S.resetArmed > 0, saved: progressText() };
+    case 'setlist': return { t: S.t, found: S.save.records.slice() };
+    case 'title': return { t: S.t, records: S.save.records.length, input: inputMode(), resumeLevel: S.save.unlocked > 1 ? Math.min(S.save.unlocked, LEVELS.length) : 0, debugMode: S.debugMode, best: S.best, levelNumber: LEVELS[startLevel() - 1].number, levelName: LEVELS[startLevel() - 1].name };
+    case 'controls': return { t: S.t, input: inputMode() };
     case 'dead': return { t: S.deadT, line: S.deadLine, score: S.score, best: S.best, newBest: S.newBest, debugMode: S.debugMode, levelName: levelInfo().name };
     case 'complete':
       return {
@@ -1462,6 +2193,18 @@ function handlePresses(input, view) {
     switch (b.id) {
       case 'new': S.mode = 'controls'; break;
       case 'back': S.mode = 'title'; break;
+      case 'settings': S.mode = 'settings'; S.resetArmed = 0; break;
+      case 'setlist': S.mode = 'setlist'; break;
+      case 'resume': resumeGame(); break;
+      case 'reset': // two taps: the first arms it, the second erases the saved progress and scores
+        if (S.resetArmed > 0) {
+          S.save = store.reset();
+          S.best = 0;
+          S.resetArmed = 0;
+        } else S.resetArmed = 4;
+        break;
+      case 'input': S.settings.input = inputMode() === 'pc' ? 'mobile' : 'pc'; saveSettings(); break;
+      case 'sens': S.settings.sens = (S.settings.sens + 1) % MOUSE_SENS.length; saveSettings(); break;
       case 'start': S.level = startLevel(); beginRun(); break;
       case 'next': nextLevel(); break;
       case 'continue': S.mode = 'intro'; S.introT = 0; break;
@@ -1494,12 +2237,15 @@ export function update(dt, input, view) {
   if (S.banner && (S.banner.t -= dt) <= 0) S.banner = null;
   if (S.toast && (S.toast.t -= dt) <= 0) S.toast = null;
   S.hitMarker = Math.max(0, S.hitMarker - dt * 5);
+  if (S.resetArmed > 0) S.resetArmed = Math.max(0, S.resetArmed - dt);
   S.camK += ((S.laser && S.laser.t < S.laser.dur - 0.15 ? 1 : 0) - S.camK) * Math.min(1, dt * 7);
   if (S.camK < 0.002) S.camK = 0;
 
   switch (S.mode) {
     case 'title':
     case 'controls':
+    case 'settings':
+    case 'setlist':
     case 'dead':
     case 'complete':
       if (S.mode === 'dead') S.deadT += dt;
@@ -1508,7 +2254,7 @@ export function update(dt, input, view) {
         for (const e of S.enemies) if (e.state === 'dead') updateEnemy(e, dt);
       }
       handlePresses(input, view);
-      audio.setMood(S.mode === 'title' || S.mode === 'controls' ? 0.1 : 0.4, S.mode === 'dead');
+      audio.setMood(S.mode === 'title' || S.mode === 'controls' || S.mode === 'settings' || S.mode === 'setlist' ? 0.1 : 0.4, S.mode === 'dead');
       break;
     case 'voicemail':
       S.mailT += dt;
@@ -1524,10 +2270,63 @@ export function update(dt, input, view) {
   }
 }
 
+// ---- the gun torch ----
+
+const SEAT_K = 0.6; // how far through the fitting animation the torch clicks home (the Blender rig reports its own, see updateTorch)
+const FIT_TIME = 2.8; // seconds of hand movement, after a short pause
+
+// A quick stutter as the torch comes on: 0 dark, 1 full.
+const flickerOn = (t) => (t < 0.12 ? 0 : t < 0.22 ? 1 : t < 0.32 ? 0.15 : t < 0.4 ? 1 : t < 0.48 ? 0.35 : 1);
+
+function torchOnPistolMounted() {
+  return S.torch.attached || (!!S.attach && S.attach.k >= (R && R.attachRig ? R.attachRig.seatK || SEAT_K : SEAT_K));
+}
+
+// Fitting sequence, switch and brightness. Runs only while playing; the light and beam themselves are placed in render.
+function updateTorchLogic(dt, ctl) {
+  const T = S.torch;
+  const A = S.attach;
+  if (A) {
+    A.t += dt;
+    A.k = clamp((A.t - 0.5) / FIT_TIME, 0, 1);
+    const seat = R && R.attachRig ? R.attachRig.seatK || SEAT_K : SEAT_K;
+    if (!A.seated && A.k >= seat) {
+      A.seated = true;
+      audio.torchClick();
+    }
+    if (A.k >= 1) {
+      if (A.onT < 0) { A.onT = 0; audio.torchOn(); }
+      A.onT += dt;
+      T.k = flickerOn(A.onT);
+      if (A.onT > 0.9) {
+        S.attach = null;
+        T.attached = true;
+        T.on = true;
+        T.k = 1;
+        if (!S.debugMode) {
+          S.save.torch = true;
+          store.save(S.save);
+        }
+        S.toast = { text: 'TORCH ON', t: 2.2 };
+      }
+    } else T.k = 0;
+    return;
+  }
+  const mounted = S.player.weapon !== 'pistol' || T.attached;
+  if (ctl.torch && mounted) {
+    T.on = !T.on;
+    audio.torchClick();
+  }
+  if (!mounted) T.on = false;
+  T.k += ((T.on ? 1 : 0) - T.k) * Math.min(1, dt * 14);
+  if (Math.abs(T.k - (T.on ? 1 : 0)) < 0.01) T.k = T.on ? 1 : 0;
+}
+
 function updatePlay(dt, input, view) {
   const p = S.player;
   S.runT += dt;
   const ctl = readControls(input, view, dt);
+  updateTorchLogic(dt, ctl);
   if (S.laser) {
     // the spin owns the view: no walking, turning, firing, reloading or swapping
     ctl.mx = ctl.mz = ctl.yawD = ctl.pitchD = 0;
@@ -1576,6 +2375,7 @@ function updatePlay(dt, input, view) {
     flow.update(p.x, p.z);
   }
   for (const e of S.enemies) updateEnemy(e, dt);
+  updatePendingBursts();
   separateEnemies();
   updateProjectiles(dt);
   updatePickups(dt);
@@ -1607,8 +2407,9 @@ function buildHudState() {
   h.maxHealth = p.maxHealth;
   h.hurt = p.hurt;
   h.damageDirs = S.damageDirs;
-  h.weapon = { id: w.id, name: w.name, clip: p.ammo[w.id], clipSize: w.clip, reload: p.reloadT > 0 ? 1 - p.reloadT / (p.reloadTotal || w.reload) : null };
-  h.weapons = WEAPON_ORDER.map((id) => ({ id, name: WEAPONS[id].name, owned: !!p.owned[id], active: id === p.weapon }));
+  h.weapon = { id: w.id, name: w.name, clip: p.ammo[w.id], clipSize: ARS.clipOf(w), reload: p.reloadT > 0 ? 1 - p.reloadT / (p.reloadTotal || w.reload) : null };
+  h.weapons = WEAPON_ORDER.filter((id) => !WEAPONS[id].prepared || p.owned[id]).map((id) => ({ id, name: WEAPONS[id].name, owned: !!p.owned[id], active: id === p.weapon })); // a prepared weapon shows once owned
+  ARS.hud(h); // upgrades, the alt-fire button, the beam's meter
   h.hitMarker = S.hitMarker;
   h.headshot = S.headshot;
   h.toast = S.toast;
@@ -1626,13 +2427,15 @@ function buildHudState() {
   h.move = S.ui.move;
   h.look = S.ui.look;
   h.firing = S.ui.firing;
+  h.compact = inputMode() === 'pc'; // PC mode: the grey touch boxes and buttons are hidden
+  h.hint = wantsMouseLock() && !S.mouseLocked && !S.mouseTest ? 'CLICK TO AIM WITH THE MOUSE   ESC TO LET GO' : null;
   return h;
 }
 
 function placeCamera() {
   const { camera } = R;
   const p = S.player;
-  if (S.mode === 'title' || S.mode === 'controls') {
+  if (S.mode === 'title' || S.mode === 'controls' || S.mode === 'settings' || S.mode === 'setlist') {
     // slow drift through the dance floor as a backdrop for the menus
     const a = world.areas.find((x) => x.id === levelInfo().titleArea) || world.areas[0];
     const cx = ((a.rect.c0 + a.rect.c1 + 1) / 2) * 2;
@@ -1658,7 +2461,7 @@ function placeCamera() {
   roll += (Math.random() - 0.5) * sh * 0.2;
   let fov = R.baseFov;
 
-  // Last Orders: ease out to a third-person camera behind and above Freddie, looking at him
+  // Last Orders: ease out to a third-person camera behind and above Naebun, looking at him
   const k = S.camK;
   if (k > 0) {
     const e = k * k * (3 - 2 * k);
@@ -1689,8 +2492,8 @@ function placeCamera() {
   camera.position.set(cx, y, cz);
   camera.rotation.set(pitch, yaw, roll);
 
-  // Freddie appears once the camera is out, spinning with the cannon; the beam leaves the cannon
-  const F = R.freddie;
+  // Naebun appears once the camera is out, spinning with the cannon; the beam leaves the cannon
+  const F = R.naebun;
   F.group.visible = S.mode === 'play' && k > 0.2;
   if (F.group.visible) {
     F.group.position.set(p.x, 0, p.z);
@@ -1726,7 +2529,7 @@ function animateWorld() {
   for (const e of S.enemies) {
     e.robot.group.position.set(e.x, 0, e.z);
     e.robot.group.rotation.y = e.yaw;
-    if (e.state === 'dead' && e.deadT > 3.5) e.robot.group.visible = false;
+    if (e.state === 'dead' && e.deadT > 3.5 && !corpseHeld(e)) e.robot.group.visible = false;
   }
 }
 
@@ -1751,8 +2554,23 @@ function animateViewmodel(dt) {
     wroot.rotation.set(0, 0, 0);
     R.drinkVms[S.drink.id].setPose(S.drink.t / S.drink.dur);
   } else {
-    wroot.position.set(baseX + bobX, -0.24 + bobY - dip * 0.22 - sw * 0.4, -0.62 + p.kick * 0.08);
+    wroot.position.set(baseX + bobX, (R.wcam.aspect < 1 ? -0.205 : -0.24) + bobY - dip * 0.22 - sw * 0.4, -0.62 + p.kick * 0.08);
     wroot.rotation.set(0.03 + p.kick * 0.22 + dip * 0.7, 0.07 + dip * -0.25, dip * 0.2);
+    if (S.attach) {
+      // while the torch is fitted the pistol comes up and rolls a little, so the rail faces the player
+      const lift = Math.sin(clamp(S.attach.k, 0, 1) * Math.PI);
+      wroot.position.z += 0.05 * lift;
+      wroot.position.y += 0.035 * lift;
+      wroot.position.x -= 0.03 * lift;
+      wroot.rotation.x += 0.12 * lift;
+      wroot.rotation.z += -0.3 * lift;
+    }
+  }
+  // the shotgun's pump (and the left hand on it) slides back and forward in the gap between shots
+  const pump = models.shotgun.getObjectByName('pump');
+  if (pump) {
+    const k = p.weapon === 'shotgun' && p.fireT > 0 ? 1 - p.fireT / (WEAPONS.shotgun.interval / mult().fire) : 1;
+    pump.position.z = k > 0.15 && k < 0.85 ? Math.sin((Math.PI * (k - 0.15)) / 0.7) * 0.09 : 0;
   }
   R.muzzleT = Math.max(0, R.muzzleT - dt);
   for (const id of WEAPON_ORDER) {
@@ -1760,7 +2578,82 @@ function animateViewmodel(dt) {
     if (flashes[id].visible) flashes[id].rotation.z = Math.random() * TAU;
   }
   R.flashT = Math.max(0, R.flashT - dt);
-  R.torch.intensity = 1.2 + (R.flashT > 0 ? 2.5 : 0);
+  R.fill.intensity = R.fillBase + (R.flashT > 0 ? 2.5 : 0); // the muzzle flash lights the room a little
+}
+
+// ---- the gun torch: spot light and beam on the lens, pointing where the gun points ----
+
+const _tp = new THREE.Vector3();
+const _td = new THREE.Vector3();
+const _tz = new THREE.Vector3(0, 0, -1);
+
+// Where a model's torch lens is, and which way it shines, in the weapon's own frame. Models carry userData.lens; until they
+// do (or if the procedural fallback is in use) the lens sits just under and behind the muzzle, pointing the way it does.
+function lensOf(model) {
+  if (model.userData.lens) return model.userData.lens;
+  const m = model.getObjectByName('muzzle');
+  const at = m ? m.position : { x: 0, y: 0, z: -0.4 };
+  return { pos: [at.x, at.y - 0.04, at.z + 0.05], dir: [0, 0, -1] };
+}
+
+function updateTorch() {
+  const { camera, wcam, wroot, models, spot, tbeam, attachRig } = R;
+  const p = S.player;
+  const T = S.torch;
+  const drinking = !!S.drink;
+  // each gun shows or hides its mounted torch (the pistol's only once it has been fitted) and lights the lens
+  const pistolMounted = torchOnPistolMounted();
+  const lit = T.k > 0.01 && S.mode === 'play' && !drinking && !S.laser && S.camK < 0.05;
+  for (const id of WEAPON_ORDER) {
+    const u = models[id].userData;
+    if (u.setTorch) u.setTorch({ mounted: id === 'pistol' ? pistolMounted : true, on: lit && id === p.weapon, k: T.k });
+  }
+  if (attachRig) {
+    attachRig.group.visible = !!S.attach && p.weapon === 'pistol' && S.mode === 'play';
+    if (attachRig.group.visible) attachRig.setPose(S.attach.k);
+  }
+  const mounted = p.weapon !== 'pistol' || pistolMounted;
+  if (!lit || !mounted) {
+    spot.intensity = 0;
+    tbeam.mesh.visible = false;
+    return;
+  }
+  const model = models[p.weapon];
+  const lens = lensOf(model);
+  wroot.updateMatrixWorld(true);
+  camera.updateMatrixWorld(true);
+  _tp.set(lens.pos[0], lens.pos[1], lens.pos[2]).applyMatrix4(model.matrixWorld);
+  _td.set(lens.dir[0], lens.dir[1], lens.dir[2]).transformDirection(model.matrixWorld);
+  // the weapon is drawn with its own, narrower lens: scale sideways so the beam starts where the lens is on screen
+  const r = Math.tan((camera.fov * Math.PI) / 360) / Math.tan((wcam.fov * Math.PI) / 360);
+  _tp.x *= r;
+  _tp.y *= r;
+  _td.x *= r;
+  _td.y *= r;
+  _td.normalize();
+  _tp.applyMatrix4(camera.matrixWorld);
+  _td.transformDirection(camera.matrixWorld);
+  const cfg = R.torchCfg;
+  const flick = 0.97 + 0.03 * Math.sin(S.t * 31) * Math.sin(S.t * 7.3);
+  spot.position.copy(_tp);
+  spot.target.position.copy(_tp).addScaledVector(_td, 6);
+  spot.target.updateMatrixWorld();
+  spot.intensity = cfg.intensity * T.k * flick;
+  // the beam stops at the first wall, floor or ceiling
+  let len = cfg.beam;
+  const hl = Math.hypot(_td.x, _td.z);
+  if (hl > 1e-6) len = Math.min(len, world.raycast(_tp.x, _tp.z, _td.x / hl, _td.z / hl, cfg.beam * hl) / hl);
+  if (_td.y < -1e-6) len = Math.min(len, -_tp.y / _td.y);
+  else if (_td.y > 1e-6) len = Math.min(len, (WALL_H - _tp.y) / _td.y);
+  len = Math.max(0.3, len);
+  const u = tbeam.u;
+  u.uL.value = len;
+  u.uR0.value = 0.025;
+  u.uR1.value = tbeam.tanA * len;
+  u.uI.value = 0.22 * T.k * flick;
+  tbeam.mesh.position.copy(_tp);
+  tbeam.mesh.quaternion.setFromUnitVectors(_tz, _td);
+  tbeam.mesh.visible = true;
 }
 
 // Steps the quality down when the device is clearly struggling (under about 25 fps for a few seconds).
@@ -1818,6 +2711,8 @@ export function render(ctx, view, alpha) {
   placeCamera();
   animateWorld();
   animateViewmodel(dtv);
+  ARS.animate(dtv); // the beam, shockwaves, stun stars and the grenade's throw
+  updateTorch();
   const now = performance.now();
   const dt = Math.min(0.05, Q.last ? (now - Q.last) / 1000 : 1 / 60);
   Q.last = now;
@@ -1836,6 +2731,12 @@ export function render(ctx, view, alpha) {
       break;
     case 'controls':
       screens.drawControls(ctx, view, stateFor('controls'));
+      break;
+    case 'settings':
+      screens.drawSettings(ctx, view, stateFor('settings'));
+      break;
+    case 'setlist':
+      screens.drawSetlist(ctx, view, stateFor('setlist'));
       break;
     case 'voicemail':
       screens.drawVoicemail(ctx, view, stateFor('voicemail'));
@@ -1876,20 +2777,39 @@ export function testHook(cmd, arg) {
     case 'killArea':
       for (const e of S.enemies) if (e.areaId === arg && !e.dead) damageEnemy(e, 1e6, false, e.x, e.z, 0);
       return undefined;
-    case 'giveWeapons':
-      for (const id of WEAPON_ORDER) { S.player.owned[id] = true; S.player.ammo[id] = WEAPONS[id].clip; }
+    case 'giveWeapons': // the five weapons the levels have; give 'all' for the prepared ones too
+      for (const id of WEAPON_ORDER) if (!WEAPONS[id].prepared) { S.player.owned[id] = true; S.player.ammo[id] = WEAPONS[id].clip; }
       return undefined;
+    case 'give': ARS.give(arg); return undefined; // 'beam', ['clip', 'gala'] or { weapons, upgrades, records }: weapons, upgrades and records by id
+    case 'arsenal': return ARS; // the arsenal's own functions, for the headless checks
+    case 'hud': return buildHudState(); // what the HUD is told, for the headless checks
     case 'layout': return layoutFor(v);
     case 'hurt': hurtPlayer(arg, S.player.x, S.player.z + 5, false); return undefined;
     case 'screen': // jump to a menu screen, for screenshots: title | controls | intro | voicemail | dead | complete
       if (arg === 'title') toTitle();
       else if (arg === 'controls') S.mode = 'controls';
+      else if (arg === 'settings') S.mode = 'settings';
+      else if (arg === 'setlist') S.mode = 'setlist';
       else if (arg === 'intro') beginRun();
       else if (arg === 'voicemail') { S.level = 2; S.mode = 'voicemail'; S.mailT = 0; }
       else if (arg === 'dead') { resetLevel(); S.mode = 'play'; die(); }
       else if (arg === 'complete') { resetLevel(); S.mode = 'play'; completeLevel(); }
       return undefined;
     case 'drink': startDrink(arg); return undefined;
+    case 'torch': // { attached, on } to set; returns the torch state either way (headless tests and screenshots)
+      if (arg && arg.attached !== undefined) { S.torch.attached = !!arg.attached; if (S.torch.attached) S.attach = null; }
+      if (arg && arg.on !== undefined) { S.torch.on = !!arg.on; S.torch.k = S.torch.on ? 1 : 0; }
+      return { ...S.torch, attach: S.attach ? { ...S.attach } : null, dark: world.dark };
+    case 'save': S.save = store.clean({ ...S.save, ...arg }); store.save(S.save); return undefined; // set progress for tests
+    case 'mobile': mobileBrowser = !!arg; return undefined; // pretend the browser is (or is not) a mobile one
+    case 'setting': Object.assign(S.settings, arg); return undefined; // { input: 'pc' | 'mobile' | null, sens }
+    case 'mouse': S.mouseTest = arg ? { dx: 0, dy: 0, wheel: 0, down: false, ...arg } : null; return undefined; // inject mouse input
+    case 'spawn': { // add a robot of any kind to the running game (not used by any level); returns its index in S.enemies
+      const area = arg.area ? { id: arg.area } : world.areaAt(arg.x, arg.z) || { id: '_test' };
+      spawnEnemy(area, { kind: arg.kind, x: arg.x, z: arg.z, yaw: arg.yaw || 0 });
+      S.totalEnemies++;
+      return S.enemies.length - 1;
+    }
     case 'hitEnemy': { // headless combat checks: damage enemy arg.i as if shot from (arg.fx, arg.fz); returns the hp it lost
       const e = S.enemies[arg.i];
       const hp0 = e.hp;
@@ -1900,7 +2820,7 @@ export function testHook(cmd, arg) {
       const w = WEAPONS[S.player.weapon];
       return {
         fireInterval: w.interval / mult().fire, damageMult: mult().damage, maxHealth: S.player.maxHealth, weapon: w.id, clip: S.player.ammo[w.id],
-        reloading: S.player.reloadT > 0, fov: R ? R.camera.fov : null, aspect: R ? R.camera.aspect : null, buffs: { ...S.buffs }, drinking: S.drink ? S.drink.id : null, laser: !!S.laser, yaw: S.player.yaw, third: S.camK > 0.5, camK: S.camK, health: S.player.health,
+        input: inputMode(), sens: S.settings.sens, reloading: S.player.reloadT > 0, fov: R ? R.camera.fov : null, aspect: R ? R.camera.aspect : null, buffs: { ...S.buffs }, drinking: S.drink ? S.drink.id : null, laser: !!S.laser, yaw: S.player.yaw, third: S.camK > 0.5, camK: S.camK, health: S.player.health,
       };
     }
     default: return undefined;

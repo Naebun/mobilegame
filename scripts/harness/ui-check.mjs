@@ -2,7 +2,7 @@
 // Run: node scripts/harness/ui-check.mjs
 import assert from 'node:assert/strict';
 import { layout, drawPlayHud } from '../../src/hud.js';
-import { buttons, drawTitle, drawControls, drawIntro, drawDead, drawComplete, drawVoicemail } from '../../src/screens.js';
+import { buttons, drawTitle, drawControls, drawIntro, drawDead, drawComplete, drawVoicemail, drawSettings, drawSetlist } from '../../src/screens.js';
 
 let calls = 0;
 function fakeCtx() {
@@ -57,6 +57,18 @@ const hudStates = [
     move: { active: true, nx: huge, ny: -huge }, look: { active: true, nx: NaN, ny: 9 }, firing: true,
   },
   { toast: { text: '', t: 1 }, banner: { title: '', sub: '', t: 1, max: 1 }, objective: null, areaName: undefined, enemiesLeft: 0 },
+  // the prepared arsenal: eight weapons on the strip, a charge meter, upgrade chips and the ALT button, mobile and PC, odd values too
+  {
+    health: 80, maxHealth: 100, weapon: { id: 'beam', name: 'FEEDBACK BEAM', clip: 63.4, clipSize: 140, reload: null, meter: true },
+    weapons: ['pistol', 'shotgun', 'smg', 'launcher', 'vinyl', 'beam', 'grenade', 'airhorn'].map((id, i) => ({ id, name: id, owned: true, active: i === 5 })),
+    upgrades: { clip: 2, reload: 1, altfire: 1 }, alt: { cd: 0.4, secs: 1.3, name: 'TWEETER BURST' },
+  },
+  {
+    weapon: { id: 'smg', name: 'TWEETER SMG', clip: 0, clipSize: 42, reload: 0.3 }, weapons: [{ id: 'smg', owned: true, active: true }, { id: 'beam', owned: true }],
+    upgrades: { clip: 1, reload: 0, altfire: 1 }, alt: { cd: 0, secs: 0 }, compact: true, debugMode: true,
+  },
+  { weapon: { id: 'beam', meter: true, clip: NaN, clipSize: 0 }, upgrades: { clip: NaN, reload: huge, altfire: -3 }, alt: { cd: NaN, secs: NaN }, weapons: Array.from({ length: 20 }, (_, i) => ({ id: i % 3 ? 'grenade' : 'airhorn', owned: !!(i % 2) })) },
+  { upgrades: null, alt: null, weapon: { id: 'beam', meter: true, clip: huge, clipSize: huge, reload: 0.5 } },
 ];
 
 const inside = (r, v) => r.x >= 0 && r.y >= 0 && r.x + r.w <= v.w && r.y + r.h <= v.h;
@@ -64,7 +76,7 @@ const overlap = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h 
 
 for (const v of views) {
   const L = layout(v);
-  const names = ['moveBox', 'lookBox', 'reloadBtn', 'swapBtn'];
+  const names = ['moveBox', 'lookBox', 'reloadBtn', 'swapBtn', 'altBtn'];
   for (const n of names) assert.ok(inside(L[n], v), `${n} outside ${v.w}x${v.h}`);
   for (let i = 0; i < names.length; i++) {
     for (let j = i + 1; j < names.length; j++) assert.ok(!overlap(L[names[i]], L[names[j]]), `${names[i]} overlaps ${names[j]} at ${v.w}x${v.h}`);
@@ -73,7 +85,7 @@ for (const v of views) {
     assert.equal(L[hit].w, L[base].w + 48);
     assert.equal(L[hit].x, L[base].x - 24);
   }
-  for (const [hit, base] of [['reloadHit', 'reloadBtn'], ['swapHit', 'swapBtn']]) {
+  for (const [hit, base] of [['reloadHit', 'reloadBtn'], ['swapHit', 'swapBtn'], ['altHit', 'altBtn']]) {
     assert.equal(L[hit].w, L[base].w + 20);
     assert.equal(L[hit].y, L[base].y - 10);
   }
@@ -92,8 +104,8 @@ for (const v of views) {
   for (const h of hudStates) drawPlayHud(ctx, v, h);
 
   // every menu button stays on screen, clear of the side insets, and nothing overlaps, in both orientations
-  const bstates = [undefined, null, {}, { t: -1 }, { t: 0.5 }, { t: 5, debugMode: true }, { t: huge }, { t: NaN }, { t: 3, hasNext: true }];
-  for (const mode of ['title', 'controls', 'dead', 'complete', 'voicemail', 'bogus']) {
+  const bstates = [undefined, null, {}, { t: -1 }, { t: 0.5 }, { t: 5, debugMode: true }, { t: huge }, { t: NaN }, { t: 3, hasNext: true }, { t: 3, input: 'pc', sensLabel: 'MEDIUM', debugMode: true, resumeLevel: 2, resetArmed: true }, { t: 3, input: 'mobile' }, { t: 3, records: 4, resumeLevel: 2, debugMode: true }, { t: 3, records: 10 }, { t: 3, records: NaN }, { t: 3, records: huge }];
+  for (const mode of ['title', 'controls', 'settings', 'setlist', 'dead', 'complete', 'voicemail', 'bogus']) {
     for (const s of bstates) {
       const list = buttons(mode, v, s);
       assert.ok(Array.isArray(list));
@@ -106,7 +118,28 @@ for (const v of views) {
       for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) assert.ok(!overlap(list[i], list[j]), `buttons overlap in ${mode}`);
     }
   }
-  assert.deepEqual(buttons('title', v, { t: 0 }).map((b) => b.id), ['new', 'debug']);
+  assert.deepEqual(buttons('title', v, { t: 0 }).map((b) => b.id), ['new', 'settings', 'debug']);
+  assert.deepEqual(buttons('title', v, { t: 0, resumeLevel: 2 }).map((b) => b.id), ['resume', 'new', 'settings', 'debug']);
+  // the SETLIST button appears beside SETTINGS only once a record is found, and shares its row
+  assert.deepEqual(buttons('title', v, { t: 0, records: 0 }).map((b) => b.id), ['new', 'settings', 'debug']);
+  assert.deepEqual(buttons('title', v, { t: 0, records: 1 }).map((b) => b.id), ['new', 'settings', 'setlist', 'debug']);
+  assert.deepEqual(buttons('title', v, { t: 0, records: 3, resumeLevel: 2 }).map((b) => b.id), ['resume', 'new', 'settings', 'setlist', 'debug']);
+  {
+    const a = buttons('title', v, { t: 0, records: 3 });
+    const base = buttons('title', v, { t: 0 });
+    const se = a.find((b) => b.id === 'settings');
+    const sl2 = a.find((b) => b.id === 'setlist');
+    assert.ok(se.y === sl2.y && se.h === sl2.h && sl2.x >= se.x + se.w, 'SETLIST sits beside SETTINGS');
+    assert.ok(Math.abs(sl2.x + sl2.w - (base.find((b) => b.id === 'settings').x + base.find((b) => b.id === 'settings').w)) < 1e-6, 'the two share the old SETTINGS width');
+    assert.equal(sl2.label, 'SETLIST 3/10');
+    assert.deepEqual(buttons('setlist', v, { t: 0 }).map((b) => b.id), ['back']);
+  }
+  assert.equal(buttons('title', v, { t: 0, resumeLevel: 2 })[0].label, 'CONTINUE: LEVEL 2');
+  assert.deepEqual(buttons('settings', v, { t: 0, input: 'pc' }).map((b) => b.id), ['input', 'sens', 'reset', 'back']);
+  assert.deepEqual(buttons('settings', v, { t: 0, input: 'mobile' }).map((b) => b.id), ['input', 'reset', 'back']);
+  assert.equal(buttons('settings', v, { input: 'pc' })[0].label, 'CONTROLS: PC');
+  assert.equal(buttons('settings', v, { input: 'mobile' })[0].label, 'CONTROLS: MOBILE');
+  assert.equal(buttons('settings', v, { resetArmed: true }).find((b) => b.id === 'reset').label, 'TAP AGAIN TO ERASE');
   assert.deepEqual(buttons('controls', v, { t: 0 }).map((b) => b.id), ['start', 'back']);
   assert.deepEqual(buttons('dead', v, { t: 0.9 }).map((b) => b.id), []);
   assert.deepEqual(buttons('dead', v, { t: 0.91 }).map((b) => b.id), ['retry', 'menu']);
@@ -115,8 +148,8 @@ for (const v of views) {
   assert.deepEqual(buttons('complete', v, { t: 1.01, hasNext: true }).map((b) => b.id), ['next', 'again', 'menu']);
   assert.deepEqual(buttons('voicemail', v, { t: 0.8 }).map((b) => b.id), []);
   assert.deepEqual(buttons('voicemail', v, { t: 0.81 }).map((b) => b.id), ['continue']);
-  assert.equal(buttons('title', v, { debugMode: true })[1].label, 'DEBUG MODE: ON');
-  assert.equal(buttons('title', v, { debugMode: false })[1].label, 'DEBUG MODE: OFF');
+  assert.equal(buttons('title', v, { debugMode: true }).find((b) => b.id === 'debug').label, 'DEBUG MODE: ON');
+  assert.equal(buttons('title', v, { debugMode: false }).find((b) => b.id === 'debug').label, 'DEBUG MODE: OFF');
 
   const ts = [undefined, null, {}, { t: 0 }, { t: 3.3, debugMode: true, best: huge }, { t: huge }, { t: NaN, best: NaN }];
   for (const s of ts) {
@@ -126,7 +159,15 @@ for (const v of views) {
     drawDead(ctx, v, s);
     drawComplete(ctx, v, s);
     drawVoicemail(ctx, v, s);
+    drawSettings(ctx, v, s);
+    drawSetlist(ctx, v, s);
   }
+  for (const found of [undefined, null, 'haar', [], ['haar'], ['haar', 'gala', 5, null, {}, 'nope'], ['haar', 'bypass', 'gala', 'pipes', 'wee', 'supper', 'tram', 'hold', 'foot', 'refund'], Array.from({ length: 50 }, (_, i) => `x${i}`)]) {
+    drawSetlist(ctx, v, { t: 1, found });
+  }
+  drawSettings(ctx, v, { t: 1, input: 'pc', sensLabel: long, saved: long, resetArmed: true });
+  drawSettings(ctx, v, { t: 1, input: 'mobile', saved: long });
+  for (const input of ['pc', 'mobile']) { drawControls(ctx, v, { t: 2, input }); drawTitle(ctx, v, { t: 2, input }); }
   drawVoicemail(ctx, v, { t: 4, mail: { from: long, lines: [long, '', null, 'Do not shake anything.', long, long, long] } });
   drawVoicemail(ctx, v, { t: 0.2, mail: { from: 'CHERYL (AGENT)', lines: 'not an array' } });
   drawComplete(ctx, v, { t: 3, hasNext: true, title: long, line: long, sub: long, score: 5, kills: 2, totalEnemies: 2 });

@@ -29,7 +29,7 @@ export const WEAPONS = {
     damage: 36, speed: 26, life: 3, knock: 2.5, kick: 0.03, noise: 14,
   },
 };
-export const WEAPON_ORDER = ['pistol', 'shotgun', 'smg', 'launcher', 'vinyl'];
+export const WEAPON_ORDER = ['pistol', 'shotgun', 'smg', 'launcher', 'vinyl', 'beam', 'grenade', 'airhorn']; // the last three are prepared (see below)
 
 // Dr Fizzbang robots only ever fight in melee. Bampot and Nephew robots can shoot. The Bouncer is a big Dr Fizzbang variant.
 export const ENEMY_DEFS = {
@@ -64,14 +64,58 @@ ENEMY_DEFS.tourguide = {
   enrage: { at: 0.5, volley: 4, volleySpread: 0.17, shotInterval: [1.0, 1.5], speed: 1.25, line: 'Right. That is it. No refunds.' },
 };
 
+// Prepared enemies (docs/enemies-next.md): built and tested, NOT placed in any level. `ai` picks the behaviour in
+// game3d.js (updateSpecial). Normal-mode numbers only, like everything here.
+// Fizzbang Shaken (Dr Fizzbang camp, so melee only): a can that rattles faster as it nears (`rattle`, in Hz, between `far`
+// and `near` metres), primes inside `prime.range` (a lunge at `prime.speed`, steering at `prime.steer` rad/s) and bursts
+// when the fuse ends, when it touches Naebun (not within the first 0.3 s of priming), or when it dies. The blast does
+// `burst.player` to Naebun and `burst.robots` to every robot inside `burst.radius`, falling to `burst.floor` of that at the
+// edge. A Shaken caught in a blast primes at once with a fuse of `burst.chain` x (0.5 + distance / radius) seconds.
+ENEMY_DEFS.shaken = {
+  name: 'FIZZBANG SHAKEN', ai: 'shaken', hp: 30, speed: 3.6, ranged: false, reach: 1.1, score: 120, wakeRange: 16, noRevive: true,
+  rattle: { min: 4, max: 26, near: 2.5, far: 14 },
+  prime: { range: 3.4, fuse: 0.75, speed: 5.0, steer: 1.6 },
+  burst: { radius: 3.2, player: 32, robots: 45, floor: 0.35, knock: 7, chain: 0.3 },
+};
+// Bampot Longshot (Bampot camp): keeps its distance and snipes. `charge.track` seconds with a red laser line that follows
+// Naebun (swinging no faster than `charge.turn` rad/s), then `charge.lock` seconds with the line frozen and white-hot, then one
+// hitscan shot along that line for `damage` if Naebun is within `shot.halfWidth` of it and nothing solid is in the way.
+// `charge.lose`: how long it tolerates losing sight while tracking before it gives up. `shot.recover`: pause after firing.
+// `shot.warn`: an arc on the HUD (the damage arcs) at the moment of lock, for a Longshot Naebun is not looking at.
+ENEMY_DEFS.longshot = {
+  name: 'BAMPOT LONGSHOT', ai: 'longshot', hp: 40, speed: 2.3, ranged: true, damage: 38, score: 250, wakeRange: 30, range: 40,
+  keepMin: 12, keepMax: 26, cooldown: [3.0, 4.2],
+  charge: { track: 1.1, lock: 0.55, turn: 2.4, lose: 0.5 },
+  shot: { halfWidth: 0.5, recover: 0.55, aimY: 1.2, warn: true },
+};
+// Bampot Nurse (Bampot camp, support): never attacks. Revives a dead robot of its own area (not a boss, not a Shaken, not
+// another Nurse, each robot once) that lies within `revive.range` and in sight, `revive.time` seconds after it starts, to
+// `revive.hp` of its health, if the Nurse is still alive. A body is revivable for `revive.window` seconds. A revive takes
+// the kill (and its score) back, so kills and score stay true. It walks away from Naebun at `speed` when nearer than `flee.from`.
+ENEMY_DEFS.nurse = {
+  name: 'BAMPOT NURSE', ai: 'nurse', hp: 40, speed: 1.7, ranged: false, support: true, noRevive: true, score: 200, wakeRange: 16,
+  revive: { range: 6, time: 3.6, hp: 0.6, window: 14, rise: 0.9 },
+  flee: { from: 9 },
+};
+// Vending Mimic (Dr Fizzbang camp, melee only): a drinks machine until Naebun comes within `dormant.wake` metres in sight, or
+// shoots it; then `dormant.unfold` seconds of unfolding (it can be hurt, it cannot attack) and an ordinary melee robot.
+// While dormant it is hit exactly like a robot (same cylinder: radius from the model, `dormant.h` tall, headshots above
+// `dormant.headY`, no armour), counts as a robot for its area, is immovable, and ignores noise and other robots waking.
+ENEMY_DEFS.mimic = {
+  name: 'VENDING MIMIC', ai: 'mimic', hp: 100, speed: 3.1, ranged: false, reach: 2.0, windup: 0.6, swing: 0.4, cooldown: 1.2,
+  damage: 22, score: 300, wakeRange: 3.4, dormant: { wake: 3.4, unfold: 0.9, h: 1.92, headY: 1.62 },
+};
+
 export const PLAYER = {
   health: 100, speed: 4.4,
   // drag sensitivity in radians per pixel, and the continuous turn rate (rad/s) when the thumb rests at the box edge
   lookX: 0.009, lookY: 0.0075, edgeTurn: 2.4,
+  // mouse look, radians per mouse count at MEDIUM sensitivity
+  mouse: 0.0022,
 };
 
-// One entry per level. `hints` is the banner under an area's name when Freddie first steps into it (keyed by area id),
-// `done*` is the level-complete text, `voicemail` plays before the level starts (Cheryl, his agent), `titleArea` is the
+// One entry per level. `hints` is the banner under an area's name when Naebun first steps into it (keyed by area id),
+// `done*` is the level-complete text, `voicemail` plays before the level starts (Cheryl, the agent), `titleArea` is the
 // area the menu backdrop drifts through.
 export const LEVELS = [
   {
@@ -91,18 +135,18 @@ export const LEVELS = [
     },
     doneTitle: 'CLEARED.',
     doneLine: 'The Cowgate is quiet. Mostly.',
-    doneSub: 'Freddie gets paid in exposure.',
+    doneSub: 'Naebun gets paid in exposure.',
     voicemail: null,
   },
   {
     number: 2,
     name: 'THE VAULTS',
     sub: 'Damp stone. No signal. Tours cancelled.',
-    line: 'Your torch works. Your luck, less so.',
+    line: 'Bring a torch. Bring a plan.',
     clock: '03:10',
     titleArea: 'plague',
     hints: {
-      steps: 'Pistol only. The torch is not optional.',
+      steps: 'Pitch black down here. Fit the torch to the pistol.',
       longvault: 'Dark between the torches. Stay out of it.',
       casks: 'Shields stop shots from the front. Go round the back.',
       close: 'Tight corners. Check them before you turn them.',
@@ -115,7 +159,7 @@ export const LEVELS = [
     voicemail: {
       from: 'CHERYL (AGENT)',
       lines: [
-        'Freddie, good news. The venue is paying in cash.',
+        'Naebun, good news. The venue is paying in cash.',
         'Bad news, the cash is also a robot.',
         'Your bag went down into the Vaults under South Bridge. I have booked you on the 3am tour. Group rate.',
         'Do not shake anything.',
@@ -130,7 +174,7 @@ export const AREA_HINTS = LEVELS[0].hints;
 export const DEATH_LINES = [
   'Reviewed: one star. "Robotic, and not in a good way."',
   'Not the first DJ to get booed off in Edinburgh.',
-  'Last orders, Freddie.',
+  'Last orders, Naebun.',
   'You have had worse Fringe gigs.',
   'The robots were not feeling it.',
   'Turns out the warranty does not cover you.',
@@ -152,10 +196,69 @@ export const DRINKS = {
   },
 };
 // The super power-up. Drinking it (the usual animation) is followed by a spin on the spot with a huge laser that
-// wipes out every robot around Freddie. It does not stop time. Rules: never in a boss room, never hurts a boss, and is
-// refused while a boss is awake. Freddie cannot move or fire during the spin and cannot be hurt.
+// wipes out every robot around Naebun. It does not stop time. Rules: never in a boss room, never hurts a boss, and is
+// refused while a boss is awake. Naebun cannot move or fire during the spin and cannot be hurt.
 DRINKS.lastorders = {
   id: 'lastorders', name: 'LAST ORDERS', super: true, duration: 2.2, line: 'Time, gentlemen, please.',
   laser: { seconds: 3.4, charge: 0.45, tail: 0.3, turns: 2, radius: 26, width: 0.9 },
 };
 export const DRINK_ORDER = ['dram', 'orange', 'heavy', 'energy', 'lastorders'];
+
+// ---------------------------------------------------------------------------------------------
+// The prepared arsenal (docs/arsenal.md). Built and tested ahead of the levels that will use them, and not placed in any
+// level yet. `prepared: true` keeps a weapon off the HUD strip until Naebun owns it and out of giveWeapons' default.
+// kind 'beam' is a held-trigger hitscan, 'grenade' a thrown bouncing projectile, 'cone' an instant shockwave in front.
+// Every number here is for normal mode (debug mode only multiplies damage and fire rate, as for the other weapons).
+// ---------------------------------------------------------------------------------------------
+
+// Feedback Beam: no clip, a charge meter. Holding the trigger drains `drain` units a second and burns whatever the
+// crosshair rests on, at `dps` rising to `dpsMax` over `ramp` seconds on the same target (the feedback builds). Let go and
+// the meter trickles back after `rechargeDelay`; run it dry, or tap RELOAD, and it recharges in full over `reload`.
+WEAPONS.beam = {
+  id: 'beam', name: 'FEEDBACK BEAM', kind: 'beam', prepared: true, clip: 100, interval: 0.1, reload: 2.2, range: 18,
+  drain: 20, dps: 24, dpsMax: 96, ramp: 2, tick: 0.1, grace: 0.3, rechargeDelay: 0.7, recharge: 16, noise: 8, kick: 0.004,
+};
+// Bass-Drop Grenade: thrown in an arc, bounces (`bounce` keeps this much speed), and after `fuse` seconds drops the bass:
+// a shockwave out to `radius` that hurts a little and stuns every robot it reaches for `stun` seconds (`bossStun` of that
+// for a boss). Walls stop it, as they stop sound a robot would notice.
+WEAPONS.grenade = {
+  id: 'grenade', name: 'BASS-DROP GRENADE', kind: 'grenade', prepared: true, clip: 3, interval: 0.9, reload: 2.2,
+  speed: 12, lift: 3.2, gravity: 16, bounce: 0.45, fuse: 1.7, radius: 7, damage: 14, stun: 3.5, bossStun: 0.3, knock: 5, noise: 14, kick: 0.05,
+};
+// Airhorn: an instant shockwave in a cone `arc` radians either side of the crosshair out to `range`. Shoves robots back,
+// stuns them briefly and does little damage. It ignores shields (it is a wave, not a bullet).
+WEAPONS.airhorn = {
+  id: 'airhorn', name: 'AIRHORN', kind: 'cone', prepared: true, clip: 4, interval: 0.9, reload: 2, range: 7, arc: 0.62,
+  damage: 8, stun: 1.4, bossStun: 0.3, knock: 14, noise: 22, kick: 0.07,
+};
+export const PREPARED_WEAPONS = Object.keys(WEAPONS).filter((id) => WEAPONS[id].prepared);
+
+// SMG alt-fire, available once the `altfire` upgrade is owned: a short, tight burst of `rounds` rounds at double damage
+// (the SMG does 7), `gap` seconds apart, then `cooldown` before it can be used again. The rounds come out of the clip.
+export const ALT_FIRE = {
+  smg: { name: 'TWEETER BURST', rounds: 4, gap: 0.05, damage: 14, spread: 0.004, cooldown: 3.2, range: 60, knock: 1.2, noise: 18 },
+};
+
+// Upgrades are pickups found in levels, kept for the run (not saved). Each tier of `clip` multiplies every weapon's clip
+// (and the Feedback Beam's meter); each tier of `reload` multiplies every reload time.
+export const UPGRADES = {
+  clip: { id: 'clip', name: 'EXTENDED CLIPS', short: 'CLIP', tiers: [1.4, 1.8], line: 'Every clip holds more.' },
+  reload: { id: 'reload', name: 'SPEED LOADER', short: 'LOAD', tiers: [0.75, 0.55], line: 'Every reload is quicker.' },
+  altfire: { id: 'altfire', name: 'BURST PEDAL', short: 'ALT', tiers: [1], line: 'The Tweeter SMG has a second mode.' },
+};
+export const UPGRADE_ORDER = ['clip', 'reload', 'altfire'];
+
+// Collectible records, each with one joke. Found records are saved (src/save.js) and listed on the SETLIST screen.
+// Label colours on the model repeat every four records. The ids are what the save stores, so never rename one.
+export const RECORDS = [
+  { id: 'haar', title: 'HAAR ON THE WATER', line: 'Eleven minutes of fog and a tambourine. Very Leith.' },
+  { id: 'bypass', title: 'THE BYPASS DUB', line: 'Recorded in traffic. Released in traffic.' },
+  { id: 'gala', title: 'GALA DAY, SLOW VERSION', line: 'Played at the wrong speed. Nobody noticed. It was a gala.' },
+  { id: 'pipes', title: 'PIPES AND PRESSURE', line: 'Bagpipes over a four-four kick. The robots are undecided.' },
+  { id: 'wee', title: 'WEE HOURS EP', line: 'Shorter than your overdraft. Just.' },
+  { id: 'supper', title: 'SUPPER AFTER LAST ORDERS', line: 'Deep-fried pizza in twelve inch. Edinburgh at its finest.' },
+  { id: 'tram', title: 'TRAM WORKS, EXTENDED MIX', line: 'Ten years of roadworks over a click track.' },
+  { id: 'hold', title: "CHERYL'S HOLD MUSIC", line: 'She swears this counts as a release.' },
+  { id: 'foot', title: 'FIRST FOOT FIRST', line: 'A Hogmanay banger. Nobody has found the coal.' },
+  { id: 'refund', title: 'NO REFUNDS, B-SIDE', line: "The Tour Guide's greatest hit. No refunds." },
+];

@@ -216,8 +216,197 @@ ok(rs[0].muzzle && rs[0].muzzle.name === 'muzzle', 'bampot muzzle');
   }
 }
 
+// ---- The four prepared enemies (not placed in any level): Shaken, Longshot, Nurse, Mimic ----
+{
+  const POSES = ['idle', 'walk', 'windup', 'swing', 'aim', 'shoot', 'hurt', 'dead'];
+  const EXTRA = { shaken: ['prime'], longshot: [], nurse: ['revive'], mimic: ['dormant', 'unfold'] };
+  const NUMS = { shaken: [1.85, 0.5, 1.3], longshot: [2.7, 0.42, 2.1], nurse: [2.05, 0.53, 1.38], mimic: [2.45, 0.62, 2.0] };
+  const KS_ALL = [-1, 0, 0.5, 1, 2, NaN];
+  const world = (o) => o.getWorldPosition(new THREE.Vector3());
+  // bounds of what can be seen: meshes that are visible all the way up (effects that are switched off do not count)
+  const visBox = (root) => {
+    root.updateMatrixWorld(true);
+    const b = new THREE.Box3();
+    root.traverse((c) => {
+      if (!c.isMesh) return;
+      for (let p = c; p; p = p.parent) if (!p.visible) return;
+      b.expandByObject(c);
+    });
+    return b;
+  };
+  const at = (r, s, t, k) => { r.setPose(s, t, k); r.group.updateMatrixWorld(true); };
+  const others = ['fizzbang', 'bampot', 'bouncer', 'shielded', 'tourguide'].map((k) => M.makeRobot(k).height);
+  for (const kind of M.PREPARED_KINDS) {
+    for (let variant = 0; variant < 3; variant++) {
+      const r = M.makeRobot(kind);
+      const label = `${kind}#${variant}`;
+      const [h, rad, hy] = NUMS[kind];
+      ok(Math.abs(r.height - h) < 0.01 && Math.abs(r.radius - rad) < 0.01 && Math.abs(r.headY - hy) < 0.01, `${label}: numbers ${r.height} ${r.radius} ${r.headY}`);
+      ok(r.headY > 0.5 * r.height && r.headY < r.height, `${label}: headY inside the body`);
+      ok(Array.isArray(r.eyes) && r.eyes.length === 2 && r.eyes.every((e) => e.isMesh), `${label}: two eye meshes`);
+      ok(typeof r.setPose === 'function' && typeof r.flash === 'function' && typeof r.update === 'function', `${label}: setPose, flash, update`);
+      const st = stats(r.group);
+      ok(st.meshes <= 24, `${label}: ${st.meshes} meshes`);
+      ok(st.tris >= 5000 && st.tris <= 14000, `${label}: ${st.tris} triangles (budget 5k to 14k)`);
+      r.setPose(kind === 'mimic' ? 'idle' : 'idle', 0, 0);
+      const bb = visBox(r.group);
+      ok(Math.abs(bb.max.y - r.height) < 0.15, `${label}: top ${bb.max.y.toFixed(2)} vs height ${r.height}`);
+      ok(bb.min.y > -0.03 && bb.min.y < 0.05, `${label}: feet at ${bb.min.y.toFixed(3)}`);
+      ok(bb.max.x - bb.min.x < r.radius * 4.2, `${label}: width ${(bb.max.x - bb.min.x).toFixed(2)}`);
+      for (const s of [...POSES, ...EXTRA[kind]]) {
+        for (const t of TS) {
+          for (const k of KS_ALL) {
+            try { r.setPose(s, t, k); } catch (e) { ok(false, `${label} ${s} t=${t} k=${k}: ${e.message}`); }
+            finiteTransforms(r.group, `${label} ${s} t=${t} k=${k}`);
+          }
+        }
+      }
+      for (const odd of [NaN, undefined, Infinity, -5]) {
+        try { r.setPose('walk', odd, odd); r.setPose('nonsense', odd, odd); r.update(odd); } catch (e) { ok(false, `${label} odd input: ${e.message}`); }
+        finiteTransforms(r.group, `${label} odd input`);
+      }
+      for (let i = 0; i < 50; i++) r.update(0.016);
+      ok(r.eyes[0].material.color.toArray().every((v) => Number.isFinite(v) && v < 40), `${label}: eye colour drifted`);
+      r.setPose('dead', 1, 1);
+      const dbb = visBox(r.group);
+      ok(dbb.max.y < r.height * 0.7, `${label}: dead k=1 top ${dbb.max.y.toFixed(2)} is not flat`);
+      try { r.flash(true); r.flash(false); r.flash(true); r.flash(false); } catch (e) { ok(false, `${label} flash: ${e.message}`); }
+      if (variant === 0) console.log(`${kind}: height ${r.height} radius ${r.radius} headY ${r.headY} meshes ${st.meshes} tris ${st.tris} deadTop ${dbb.max.y.toFixed(2)}`);
+    }
+  }
+  ok(others.every((x) => x > 1.9), 'sanity: the older robots are all about 2 m or more');
+
+  // silhouettes differ from the five older robots: height and width are not all the same as any of them
+  const dims = (kind) => { const r = M.makeRobot(kind); r.setPose('idle', 0, 0); const b = visBox(r.group); return [b.max.y - b.min.y, b.max.x - b.min.x, b.max.z - b.min.z]; };
+  const old = ['fizzbang', 'bampot', 'bouncer', 'shielded', 'tourguide'].map(dims);
+  for (const kind of M.PREPARED_KINDS) {
+    const d = dims(kind);
+    ok(old.every((o) => o.some((v, i) => Math.abs(v - d[i]) > 0.15)), `${kind}: its size (${d.map((v) => v.toFixed(2))}) is not the same as an existing robot's`);
+  }
+
+  // Shaken: the prime pose swells, glows, shows the ring; the rattle moves it; the ring takes a radius
+  {
+    const sk = M.makeRobot('shaken');
+    ok(typeof sk.setBlast === 'function', 'shaken: setBlast');
+    const ringVisible = () => { let on = false; sk.group.traverse((c) => { if (c.isMesh && !c.userData.base && c.visible && c.geometry.type === 'RingGeometry') on = true; }); return on; };
+    at(sk, 'idle', 1, 0);
+    ok(!ringVisible() && !sk.primed, 'shaken: no ring and not primed when idle');
+    at(sk, 'prime', 0.4, 0.8);
+    ok(ringVisible() && sk.primed, 'shaken: the prime pose shows the blast ring');
+    const w = (s, k) => { at(sk, s, 0.3, k); return new THREE.Box3().setFromObject(sk.group.children[0].children[2] || sk.group); };
+    at(sk, 'prime', 0.4, 0);
+    const b0 = new THREE.Box3(); sk.group.traverse((c) => { if (c.isMesh && c.userData.base && c.geometry.attributes.surf) b0.expandByObject(c); });
+    at(sk, 'prime', 0.4, 1);
+    const b1 = new THREE.Box3(); sk.group.traverse((c) => { if (c.isMesh && c.userData.base && c.geometry.attributes.surf) b1.expandByObject(c); });
+    ok(b1.max.y - b1.min.y > b0.max.y - b0.min.y + 0.1, 'shaken: swells and heaves foam up as the fuse runs down');
+    void w;
+    at(sk, 'walk', 0.37, 0);
+    const p0 = sk.group.children[0].children[2].position.x; // the upper body
+    at(sk, 'walk', 0.37, 1);
+    ok(Number.isFinite(p0), 'shaken: rattle level in walk is finite');
+    sk.setBlast(NaN);
+    sk.setBlast(5);
+    at(sk, 'prime', 0.2, 1);
+    finiteTransforms(sk.group, 'shaken blast radius');
+    at(sk, 'dead', 1, 1);
+    ok(!ringVisible(), 'shaken: no ring once it has burst');
+  }
+  // Longshot: muzzle on the rifle's line, laser API, recoil flash
+  {
+    const ls = M.makeRobot('longshot');
+    ok(ls.muzzle && ls.muzzle.name === 'muzzle' && ls.pivot.up === 1.5 && ls.pivot.fwd === 0.3, 'longshot: muzzle and pivot');
+    ls.setLaser(0, 0);
+    at(ls, 'idle', 1, 0);
+    ok(!ls.laserOn, 'longshot: no laser at rest');
+    const tipOf = (pitch) => { ls.setLaser(10, pitch, false, 0.5); at(ls, 'aim', 1, 0.5); return world(ls.muzzle); };
+    const m0 = tipOf(0);
+    ok(ls.laserOn && ls.laserLen === 10 && !ls.laserLocked, 'longshot: laser on, 10 m, not locked');
+    ok(Math.abs(m0.y - 1.5) < 0.05 && Math.abs(m0.x) < 0.05 && m0.z < -1.15 && m0.z > -1.35, `longshot: level aim, muzzle ${m0.toArray().map((v) => v.toFixed(2))} sits on the pivot line (y 1.5, z about -1.26)`);
+    const m1 = tipOf(0.2);
+    ok(m1.y > m0.y + 0.15 && Math.abs(m1.y - (1.5 + 0.96 * Math.sin(0.2))) < 0.05, `longshot: the rifle pitches with the line (muzzle y ${m1.y.toFixed(2)})`);
+    // the muzzle is on the ray from the pivot: (pivot) + 0.96 along the aim direction
+    const ray = new THREE.Vector3(0, 1.5, -0.3).addScaledVector(new THREE.Vector3(0, Math.sin(0.2), -Math.cos(0.2)), 0.96);
+    ok(ray.distanceTo(m1) < 0.05, 'longshot: the muzzle lies on the shot line');
+    ls.setLaser(30, 0.1, true, 1);
+    ok(ls.laserLocked && ls.laserLen === 30, 'longshot: locked laser');
+    for (const bad of [NaN, undefined, -3, Infinity, 1e9]) { ls.setLaser(bad, bad, true, bad); at(ls, 'aim', 1, 0.7); finiteTransforms(ls.group, `longshot laser ${bad}`); }
+    ls.setLaser(0, 0);
+    at(ls, 'shoot', 0.05, 0.1);
+    let flare = false; ls.group.traverse((c) => { if (c.name === 'muzzle-flash' && c.visible) flare = true; });
+    ok(flare, 'longshot: a muzzle flash while it recoils');
+  }
+  // Nurse: beam API
+  {
+    const nu = M.makeRobot('nurse');
+    ok(nu.tip && typeof nu.setBeam === 'function', 'nurse: tip and setBeam');
+    at(nu, 'revive', 2, 0.5);
+    ok(!nu.beamOn, 'nurse: no beam until asked');
+    nu.setBeam(0.4, 0.3, -3, 0.5);
+    ok(nu.beamOn, 'nurse: beam on');
+    const tip = world(nu.tip);
+    ok(tip.z < -0.8 && tip.y > 0.4 && tip.y < 1.4, `nurse: the syringe points forward in the revive pose (tip ${tip.toArray().map((v) => v.toFixed(2))})`);
+    for (const bad of [[NaN, 0, 0], [0, undefined, 0], [Infinity, 0, 0], [null], [0, 0, 0]]) { nu.setBeam(...bad, 0.5); finiteTransforms(nu.group, `nurse beam ${bad}`); }
+    nu.setBeam(null);
+    ok(!nu.beamOn, 'nurse: beam off');
+    // the beam end lands where it was asked, whatever the robot's own transform
+    nu.group.position.set(10, 0, -4);
+    nu.group.rotation.y = 1.1;
+    at(nu, 'revive', 2, 0.5);
+    nu.setBeam(0.4, 0.3, -3, 0.5);
+    nu.group.updateMatrixWorld(true);
+    let far = -1;
+    nu.group.traverse((c) => { if (c.isMesh && !c.userData.base && c.geometry.type === 'BoxGeometry' && c.visible && c.parent.visible) { const b = new THREE.Box3().setFromObject(c); far = Math.max(far, b.getCenter(new THREE.Vector3()).distanceTo(new THREE.Vector3(10, 0, -4))); } });
+    ok(far > 0.5, 'nurse: the beam moves with the robot');
+  }
+  // Mimic: looks like a machine until it unfolds
+  {
+    const mi = M.makeRobot('mimic');
+    ok(mi.dormantHeight === 1.92 && mi.dormantHeadY === 1.62, 'mimic: dormant numbers');
+    at(mi, 'dormant', 1, 0);
+    const bb = visBox(mi.group);
+    ok(Math.abs(bb.max.y - 1.92) < 0.06 && bb.min.y > -0.03, `mimic: a dormant machine is ${bb.max.y.toFixed(2)} m tall, on the floor`);
+    ok(bb.max.x - bb.min.x < 1.2 && bb.max.z - bb.min.z < 1.6, `mimic: its footprint is machine-sized (${(bb.max.x - bb.min.x).toFixed(2)} x ${(bb.max.z - bb.min.z).toFixed(2)})`);
+    ok(mi.eyes.every((e) => !e.visible), 'mimic: no eyes while dormant');
+    const body = new THREE.Box3();
+    mi.group.traverse((c) => { if (c.isMesh && c.userData.base) body.expandByObject(c); });
+    ok(body.max.x - body.min.x < 1.16, `mimic: dormant width ${(body.max.x - body.min.x).toFixed(2)}: the arms lie flat against the sides`);
+    at(mi, 'unfold', 1, 1);
+    const eyesOn = mi.eyes.every((e) => e.visible);
+    const top1 = visBox(mi.group).max.y;
+    at(mi, 'idle', 1, 0);
+    const top2 = visBox(mi.group).max.y;
+    ok(eyesOn && Math.abs(top1 - top2) < 0.12, `mimic: the unfold ends in the idle stance (tops ${top1.toFixed(2)} and ${top2.toFixed(2)})`);
+    ok(top2 > 2.2, 'mimic: awake it is taller than the machine (it stands up on legs)');
+    let prev = null;
+    let jump = 0;
+    for (let k = 0; k <= 1.0001; k += 0.02) { // the unfold is continuous
+      at(mi, 'unfold', 1, k);
+      const b = visBox(mi.group);
+      const v = [b.max.y, b.min.y, b.max.x, b.min.x];
+      if (prev) jump = Math.max(jump, ...v.map((x, i) => Math.abs(x - prev[i])));
+      prev = v;
+    }
+    ok(jump < 0.45, `mimic: the unfold moves smoothly (largest step ${jump.toFixed(2)} m per 0.02 of k)`);
+  }
+}
+
+// Weapons. The gun alone first (hands: false): muzzle, length, the record and the pump. Then Naebun's hands.
+const MAX_WEAPON_TRIS = 6000; // gun and hands together
+const nameCount = (o, name) => { let n = 0; o.traverse((c) => { if (c.name === name) n++; }); return n; };
+// triangles of a weapon without its record (the spinning disc is code, the same for every build of the vinyl) and
+// without its torch (budgeted on its own below)
+const triCount = (o) => {
+  let t = 0;
+  o.traverse((c) => {
+    if (!c.isMesh || c.name === 'torch' || c.name === 'lens') return;
+    for (let p = c.parent; p; p = p.parent) if (p.name === 'record') return;
+    t += (c.geometry.index ? c.geometry.index.count : c.geometry.attributes.position.count) / 3;
+  });
+  return t;
+};
 for (const id of M.WEAPON_IDS) {
-  const w = M.makeWeaponModel(id);
+  const w = M.makeWeaponModel(id, { hands: false });
+  ok(nameCount(w, 'hands') === 0, `${id}: hands: false leaves the hands off`);
   const mz = w.getObjectByName('muzzle');
   ok(!!mz, `${id}: muzzle`);
   const bb = new THREE.Box3().setFromObject(w);
@@ -225,11 +414,15 @@ for (const id of M.WEAPON_IDS) {
   ok(len > 0.4 && len < 0.95, `${id}: length ${len.toFixed(2)}`);
   ok(mz.position.z < -0.3 && mz.position.z > bb.min.z - 0.05, `${id}: muzzle z ${mz.position.z}`);
   ok(bb.min.z > -0.7, `${id}: extends to ${bb.min.z.toFixed(2)}`);
+  const MUZZLE = { pistol: [0, 0.045, -0.4], shotgun: [0, 0.05, -0.6], smg: [0, 0.035, -0.53], launcher: [0, 0.03, -0.63], vinyl: [0, 0.19, -0.54] };
+  ok(mz.position.distanceTo(new THREE.Vector3(...MUZZLE[id])) < 0.05, `${id}: muzzle ${mz.position.toArray()} is within 0.05 of the old one`);
+  ok(!!w.getObjectByName('body') && !!w.getObjectByName('glow'), `${id}: body and lamp`);
   if (id === 'shotgun') ok(!!w.getObjectByName('pump'), 'shotgun pump');
   if (id === 'vinyl') {
     // the record: a named group that spins when userData.update(t) is called, with an HDR label
     const rec = w.getObjectByName('record');
     ok(!!rec && typeof w.userData.update === 'function', 'vinyl: record and userData.update');
+    ok(!!w.getObjectByName('cradle'), 'vinyl: cradle');
     w.userData.update(0);
     const r0 = rec.rotation.y;
     w.userData.update(0.5);
@@ -242,21 +435,273 @@ for (const id of M.WEAPON_IDS) {
     const rb = new THREE.Box3().setFromObject(rec);
     ok(rb.max.x - rb.min.x > 0.21 && rb.max.x - rb.min.x < 0.26, `vinyl: record diameter ${(rb.max.x - rb.min.x).toFixed(2)}`);
     const wb = new THREE.Box3().setFromObject(w);
-    ok(wb.max.x - wb.min.x < 0.36 && wb.max.y < 0.35 && wb.min.y > -0.3, `vinyl viewmodel bounds x ${(wb.max.x - wb.min.x).toFixed(2)} y ${wb.min.y.toFixed(2)}..${wb.max.y.toFixed(2)}`);
+    ok(wb.max.x - wb.min.x < 0.4 && wb.max.y < 0.35 && wb.min.y > -0.3, `vinyl viewmodel bounds x ${(wb.max.x - wb.min.x).toFixed(2)} y ${wb.min.y.toFixed(2)}..${wb.max.y.toFixed(2)}`);
+    // the record sits on the platter, not inside the deck or floating off it
+    const platter = w.getObjectByName('cradle').children.find((c) => c.isMesh);
+    let top = -Infinity; // the slipmat: the highest point within the record's radius
+    const pp = platter.geometry.attributes.position;
+    for (let i = 0; i < pp.count; i++) if (Math.hypot(pp.getX(i), pp.getZ(i)) < 0.1) top = Math.max(top, pp.getY(i));
+    ok(rec.position.y - 0.0069 > top - 0.002 && rec.position.y - 0.0069 - top < 0.012 && Math.abs(rec.position.x) + Math.abs(rec.position.z) < 0.01, `vinyl: the record sits on the platter (platter top ${top.toFixed(4)}, record base ${(rec.position.y - 0.0069).toFixed(4)})`);
     const pk = M.makeWeaponPickup('vinyl');
     ok(typeof pk.userData.update === 'function', 'vinyl pickup: update hook');
     const before = pk.getObjectByName('record').rotation.y;
     pk.userData.update(1);
     ok(pk.getObjectByName('record').rotation.y !== before, 'vinyl pickup: record spins');
   }
+  // The torch: a mounted body and a separate glowing lens, a beam start and direction in the gun's frame, setTorch.
+  {
+    const tm = w.getObjectByName('torch');
+    const lm = w.getObjectByName('lens');
+    ok(!!tm && !!lm && tm.isMesh && lm.isMesh && tm.parent === w && lm.parent === w, `${id}: torch and lens meshes`);
+    const L = w.userData.lens;
+    ok(L && L.pos.length === 3 && L.dir.length === 3 && [...L.pos, ...L.dir].every(Number.isFinite), `${id}: userData.lens is finite`);
+    const lp = new THREE.Vector3(...L.pos);
+    const ld = new THREE.Vector3(...L.dir);
+    ok(Math.abs(ld.length() - 1) < 1e-6 && ld.z < -0.99, `${id}: the beam points along -z (${ld.toArray()})`);
+    ok(lp.distanceTo(mz.position) < 0.35, `${id}: lens ${lp.distanceTo(mz.position).toFixed(2)} m from the muzzle`);
+    const tb = new THREE.Box3().setFromObject(tm);
+    const lb = new THREE.Box3().setFromObject(lm);
+    ok(lp.z - tb.min.z < 0.06, `${id}: the lens is at the front of the torch (${(lp.z - tb.min.z).toFixed(3)} m behind its front)`);
+    ok(lb.expandByScalar(0.003).containsPoint(lp), `${id}: userData.lens.pos is on the lens mesh`);
+    const nTorch = (tm.geometry.index.count + lm.geometry.index.count) / 3;
+    ok(tm.geometry.index.count / 3 >= 600 && nTorch <= 1500, `${id}: torch ${tm.geometry.index.count / 3} + lens ${lm.geometry.index.count / 3} triangles`);
+    ok(lm.material.type === 'MeshBasicMaterial' && tm.material.type === 'MeshStandardMaterial', `${id}: lens is a basic glow material, the body is the shared PBR one`);
+    // states: default mounted (not the pistol) and off; on drives the HDR glow with k; mounted false hides both
+    const lit = (o) => o.material.color.r;
+    const def = id !== 'pistol';
+    ok(tm.visible === def && lm.visible === def, `${id}: default torch ${def ? 'mounted' : 'not mounted'}`);
+    ok(lit(lm) < 0.5, `${id}: the lens starts unlit (${lit(lm).toFixed(2)})`);
+    w.userData.setTorch({ mounted: true, on: true });
+    ok(tm.visible && lm.visible && lit(lm) > 3 && lm.material.color.g > 3 && lm.material.color.b > 2.5, `${id}: on gives an HDR warm white (${lm.material.color.toArray().map((v) => v.toFixed(1))})`);
+    w.userData.setTorch({ mounted: true, on: true, k: 0.5 });
+    const half = lit(lm);
+    w.userData.setTorch({ mounted: true, on: true, k: 0 });
+    const zero = lit(lm);
+    w.userData.setTorch({ mounted: true, on: true, k: 1 });
+    ok(zero < half && half < lit(lm), `${id}: k scales the glow (${zero.toFixed(2)} < ${half.toFixed(2)} < ${lit(lm).toFixed(2)})`);
+    w.userData.setTorch({ on: false });
+    ok(lit(lm) < 0.5 && tm.visible, `${id}: on false puts the lens out and leaves the torch mounted`);
+    w.userData.setTorch({ mounted: false, on: true });
+    ok(!tm.visible && !lm.visible, `${id}: mounted false hides the torch and lens`);
+    w.userData.setTorch({ mounted: true });
+    ok(tm.visible && lm.visible && lit(lm) > 3, `${id}: an omitted on keeps its value`);
+    for (const odd of [undefined, null, {}, { k: NaN }, { k: -3 }, { k: 9 }, { mounted: undefined, on: undefined, k: Infinity }]) {
+      try { w.userData.setTorch(odd); } catch (e) { ok(false, `${id}: setTorch(${JSON.stringify(odd)}): ${e.message}`); }
+      ok(Number.isFinite(lit(lm)) && lit(lm) < 40, `${id}: setTorch(${JSON.stringify(odd)}) stays finite`);
+    }
+    w.userData.setTorch({ mounted: def, on: false });
+    const m2 = M.makeWeaponModel(id, { hands: false, torch: !def });
+    ok(m2.getObjectByName('torch').visible === !def, `${id}: the torch option sets the starting state`);
+    const m3 = M.makeWeaponModel(id, { hands: false });
+    ok(m3.getObjectByName('lens').material !== lm.material, `${id}: each model has its own lens material`);
+    // the lens colour is the only per-model state: the shared geometry and body material are not copied
+    ok(m3.getObjectByName('torch').geometry === tm.geometry && m3.getObjectByName('torch').material === tm.material, `${id}: torch geometry and material are shared`);
+  }
   const st = stats(w);
   const p = M.makeWeaponPickup(id);
+  // a floor pickup shows the fitted torch, unlit; the pistol's has none yet
+  {
+    const pt = p.getObjectByName('torch');
+    const pl = p.getObjectByName('lens');
+    const want = id !== 'pistol';
+    ok(!!pt && !!pl && pt.visible === want && pl.visible === want, `${id} pickup: torch ${want ? 'shown' : 'hidden'}`);
+    ok(pl.material.color.r < 0.5, `${id} pickup: the lens is unlit`);
+    const vb = new THREE.Box3();
+    p.updateMatrixWorld(true);
+    p.getObjectByName('item').traverseVisible((o) => { if (o.isMesh) vb.expandByObject(o); });
+    const ctr = vb.getCenter(new THREE.Vector3());
+    ok(Math.abs(ctr.x) < 0.06 && Math.abs(ctr.z) < 0.06, `${id} pickup: what shows is centred on the spin axis (${ctr.x.toFixed(2)}, ${ctr.z.toFixed(2)})`);
+  }
   const pb = new THREE.Box3().setFromObject(p);
   ok(Math.abs(pb.min.y) < 0.01, `${id} pickup floor ${pb.min.y}`);
   ok(pb.max.y > 0.9 && pb.max.y < 2.2, `${id} pickup top ${pb.max.y.toFixed(2)}`);
+  ok(nameCount(p, 'hands') === 0, `${id} pickup: no hands on a floor pickup`);
   finiteTransforms(p, `${id} pickup`);
-  console.log(`${id}: length ${len.toFixed(2)} muzzle ${mz.position.toArray().map((v) => v.toFixed(3)).join(',')} meshes ${st.meshes} tris ${st.tris} pickup top ${pb.max.y.toFixed(2)}`);
+
+  // Naebun's hands and forearms: present on the viewmodel, a gripping pose, nothing through the camera
+  const wh = M.makeWeaponModel(id);
+  const hs = [];
+  wh.traverse((c) => { if (c.name === 'hands') hs.push(c); });
+  ok(hs.length === (id === 'shotgun' ? 2 : 1) && hs.every((h) => h.isMesh), `${id}: hands meshes (${hs.length})`);
+  const tris = triCount(wh);
+  ok(tris <= MAX_WEAPON_TRIS && tris > 2500, `${id}: ${tris} triangles with hands (budget ${MAX_WEAPON_TRIS})`);
+  finiteTransforms(wh, `${id} with hands`);
+  for (const h of hs) {
+    const g = h.geometry;
+    const n = g.attributes.position.count;
+    ok(g.index.array.every((i) => i < n) && g.attributes.color.array.every((v) => v >= 0 && Number.isFinite(v)), `${id}: hands mesh data is clean`);
+    const col = g.attributes.color.array;
+    let skin = 0;
+    let sleeve = 0;
+    for (let i = 0; i < col.length; i += 3) {
+      if (col[i] > 0.25 && col[i] > col[i + 1] * 1.2 && col[i + 1] > col[i + 2] * 1.1) skin++;
+      if (col[i + 2] > col[i] * 2.2 && col[i + 2] > 0.04) sleeve++;
+    }
+    ok(skin > 20 && sleeve > 20, `${id}: hands are skin (${skin} verts) and a purple sleeve (${sleeve} verts)`);
+  }
+  wh.updateMatrixWorld(true);
+  const hb = new THREE.Box3();
+  hs.forEach((h) => hb.expandByObject(h));
+  const gunBox = new THREE.Box3().setFromObject(w);
+  ok(hb.intersectsBox(gunBox), `${id}: the hands are on the gun`);
+  ok(hb.max.z > gunBox.max.z && hb.min.y < gunBox.min.y + 0.1, `${id}: the forearms run back and down, off the screen`);
+  // the viewmodel pose from animateViewmodel (scale 0.68, resting spot, kick, reload dip): every hand vertex stays
+  // in front of the weapon camera's near plane (0.02) and the arms never reach across the screen
+  const m = new THREE.Matrix4();
+  const e = new THREE.Euler();
+  const v = new THREE.Vector3();
+  for (const x of [0.15, 0.4]) {
+    for (const [kick, dip, sw] of [[0, 0, 0], [1, 0, 0], [0, 1, 0], [0.5, 0.5, 1]]) {
+      e.set(0.03 + kick * 0.22 + dip * 0.7, 0.07 - dip * 0.25, dip * 0.2);
+      m.compose(new THREE.Vector3(x, -0.24 - dip * 0.22 - sw * 0.4, -0.62 + kick * 0.08), new THREE.Quaternion().setFromEuler(e), new THREE.Vector3(0.68, 0.68, 0.68));
+      let nearest = Infinity;
+      for (const h of hs) {
+        h.updateWorldMatrix(true, false);
+        const wm = new THREE.Matrix4().multiplyMatrices(m, h.matrixWorld);
+        const P = h.geometry.attributes.position;
+        for (let i = 0; i < P.count; i++) nearest = Math.min(nearest, -v.fromBufferAttribute(P, i).applyMatrix4(wm).z);
+      }
+      ok(nearest > 0.05, `${id}: hands stay ${nearest.toFixed(2)} m in front of the camera (x ${x} kick ${kick} dip ${dip})`);
+    }
+  }
+  if (id === 'shotgun') {
+    // the left hand is a child of the pump: it slides with it, the right hand stays put
+    const pump = wh.getObjectByName('pump');
+    const left = pump.getObjectByName('hands');
+    const right = hs.find((h) => h !== left);
+    ok(!!left && left.parent === pump && right.parent === wh, 'shotgun: the left hand is on the pump');
+    const at = (o) => { wh.updateMatrixWorld(true); return new THREE.Box3().setFromObject(o).getCenter(new THREE.Vector3()); };
+    const l0 = at(left);
+    const r0 = at(right);
+    pump.position.z = -0.06;
+    const l1 = at(left);
+    const r1 = at(right);
+    ok(Math.abs(l1.z - l0.z + 0.06) < 1e-6 && r1.distanceTo(r0) < 1e-6, 'shotgun: the pump slides the left hand and leaves the right hand');
+    pump.position.z = 0;
+  }
+  console.log(`${id}: length ${len.toFixed(2)} muzzle ${mz.position.toArray().map((v) => v.toFixed(3)).join(',')} meshes ${st.meshes} tris ${st.tris} (${tris} with hands) pickup top ${pb.max.y.toFixed(2)}`);
 }
+// The pistol's torch attach rig: Naebun's left hand brings the loose torch to the rail, seats it, and withdraws.
+{
+  const rig = M.makeTorchAttach();
+  ok(rig.group instanceof THREE.Group && typeof rig.setPose === 'function' && rig.seatK > 0.4 && rig.seatK < 0.8, `attach rig: group, setPose and seatK ${rig.seatK}`);
+  const pistol = M.makeWeaponModel('pistol', { hands: false });
+  const root = new THREE.Group();
+  root.add(pistol, rig.group);
+  const loose = rig.group.getObjectByName('looseTorch');
+  const hand = rig.group.getObjectByName('attachHand');
+  ok(!!loose && !!hand && !!loose.getObjectByName('torch') && !!loose.getObjectByName('lens'), 'attach rig: hand, loose torch and lens');
+  ok(loose.getObjectByName('torch').geometry === pistol.getObjectByName('torch').geometry && loose.getObjectByName('lens').geometry === pistol.getObjectByName('lens').geometry, 'attach rig: the loose torch shares the mounted torch geometry');
+  const handTris = hand.geometry.index.count / 3;
+  ok(handTris > 400 && handTris <= 1200, `attach rig: hand ${handTris} triangles`);
+  for (const k of [-1, 0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1, 2, NaN, undefined, null, Infinity, -Infinity]) {
+    try { rig.setPose(k); } catch (e) { ok(false, `attach rig setPose(${k}): ${e.message}`); }
+    finiteTransforms(rig.group, `attach rig k=${k}`);
+  }
+  // colours: skin and the purple sleeve, as on the other hands
+  {
+    const col = hand.geometry.attributes.color.array;
+    let skin = 0;
+    let sleeve = 0;
+    for (let i = 0; i < col.length; i += 3) {
+      if (col[i] > 0.25 && col[i] > col[i + 1] * 1.2 && col[i + 1] > col[i + 2] * 1.1) skin++;
+      if (col[i + 2] > col[i] * 2.2 && col[i + 2] > 0.04) sleeve++;
+    }
+    ok(skin > 20 && sleeve > 20, `attach rig: the hand is skin (${skin} verts) and a purple sleeve (${sleeve} verts)`);
+  }
+  // visibility: shown from 0 up to just before 1, invisible at 1; the loose torch goes at seatK
+  rig.setPose(0);
+  ok(rig.group.visible && loose.visible, 'attach rig: shown with its torch at 0');
+  rig.setPose(rig.seatK - 0.01);
+  ok(rig.group.visible && loose.visible, 'attach rig: the loose torch is shown just before seatK');
+  rig.setPose(rig.seatK);
+  ok(rig.group.visible && !loose.visible, 'attach rig: the loose torch is hidden from seatK');
+  rig.setPose(0.99);
+  ok(rig.group.visible && !loose.visible, 'attach rig: still shown at 0.99');
+  rig.setPose(1);
+  ok(!rig.group.visible, 'attach rig: invisible at 1');
+  rig.setPose(2);
+  ok(!rig.group.visible, 'attach rig: invisible past 1');
+  rig.setPose(NaN);
+  ok(rig.group.visible, 'attach rig: NaN counts as 0');
+  // at seatK the loose torch is exactly the mounted one (compared as world boxes, within 2 mm)
+  const boxOf = (o) => new THREE.Box3().setFromObject(o);
+  pistol.userData.setTorch({ mounted: true });
+  const same = (a, b) => a.min.distanceTo(b.min) < 0.002 && a.max.distanceTo(b.max) < 0.002;
+  const dist = (k) => {
+    rig.setPose(k);
+    root.updateMatrixWorld(true);
+    return boxOf(loose.getObjectByName('torch')).getCenter(new THREE.Vector3()).distanceTo(boxOf(pistol.getObjectByName('torch')).getCenter(new THREE.Vector3()));
+  };
+  rig.setPose(rig.seatK);
+  root.updateMatrixWorld(true);
+  ok(same(boxOf(loose.getObjectByName('torch')), boxOf(pistol.getObjectByName('torch'))), 'attach rig: the loose torch is the mounted torch at seatK');
+  ok(same(boxOf(loose.getObjectByName('lens')), boxOf(pistol.getObjectByName('lens'))), 'attach rig: the loose lens is the mounted lens at seatK');
+  ok(dist(rig.seatK - 0.002) < 0.003, `attach rig: the click is continuous (${(dist(rig.seatK - 0.002) * 1000).toFixed(1)} mm off 2 thousandths before the seat)`);
+  // the hand is in the same place relative to the torch at every k (it holds it): a rigid group
+  rig.setPose(0.3);
+  root.updateMatrixWorld(true);
+  const rel = (o) => boxOf(o).getCenter(new THREE.Vector3()).distanceTo(boxOf(loose.getObjectByName('torch')).getCenter(new THREE.Vector3()));
+  const r1 = rel(hand);
+  rig.setPose(0.5);
+  root.updateMatrixWorld(true);
+  ok(Math.abs(rel(hand) - r1) < 1e-4, 'attach rig: the hand and the loose torch move as one');
+  // the approach closes in, the withdrawal opens out
+  const d = [0, 0.1, 0.2, 0.3, 0.36, 0.45].map(dist);
+  ok(d.every((v, i) => i === 0 || v < d[i - 1]), `attach rig: the approach closes in (${d.map((v) => v.toFixed(2)).join(' > ')})`);
+  const handPos = (k) => {
+    rig.setPose(k);
+    root.updateMatrixWorld(true);
+    return boxOf(hand).getCenter(new THREE.Vector3());
+  };
+  const seatPos = handPos(rig.seatK);
+  const w = [0.7, 0.8, 0.9, 0.99].map((k) => handPos(k).distanceTo(seatPos));
+  ok(w.every((v, i) => i === 0 || v > w[i - 1]) && w[0] < 0.02, `attach rig: the hand withdraws (${w.map((v) => v.toFixed(2)).join(' < ')})`);
+  // seen from the game's weapon camera (fov 70, the viewmodel root as animateViewmodel places it): out of frame at 0,
+  // in frame at the seat, nothing through the near plane, in portrait and landscape
+  const tan = Math.tan((70 * Math.PI) / 360);
+  for (const [aspect, x, y] of [[390 / 844, 0.08, -0.205], [844 / 390, 0.375, -0.24], [1, 0.15, -0.24]]) {
+    const wm = new THREE.Matrix4().compose(new THREE.Vector3(x, y, -0.62), new THREE.Quaternion().setFromEuler(new THREE.Euler(0.03, 0.07, 0)), new THREE.Vector3(0.68, 0.68, 0.68));
+    const view = (k) => {
+      rig.setPose(k);
+      rig.group.updateMatrixWorld(true);
+      let inFrame = 0;
+      let handIn = 0;
+      let near = Infinity;
+      const v = new THREE.Vector3();
+      if (!rig.group.visible) return { inFrame, handIn, near };
+      rig.group.traverseVisible((o) => {
+        if (!o.isMesh) return;
+        const P = o.geometry.attributes.position;
+        const m = new THREE.Matrix4().multiplyMatrices(wm, o.matrixWorld);
+        for (let i = 0; i < P.count; i++) {
+          v.fromBufferAttribute(P, i).applyMatrix4(m);
+          const depth = -v.z;
+          near = Math.min(near, depth);
+          if (depth > 0.02 && Math.abs(v.x) <= depth * tan * aspect && Math.abs(v.y) <= depth * tan) {
+            inFrame++;
+            if (o === hand) handIn++;
+          }
+        }
+      });
+      return { inFrame, handIn, near };
+    };
+    const tag = `aspect ${aspect.toFixed(2)}`;
+    const v0 = view(0);
+    ok(v0.inFrame === 0, `attach rig: out of frame at k = 0 (${tag}, ${v0.inFrame} vertices in frame)`);
+    const vs = view(rig.seatK);
+    ok(vs.handIn > 150, `attach rig: the hand is in frame at the seat (${tag}, ${vs.handIn} vertices)`);
+    for (const k of [0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.99]) {
+      const vk = view(k);
+      ok(vk.near > 0.05, `attach rig: stays ${vk.near.toFixed(2)} m in front of the camera (${tag}, k ${k})`);
+    }
+    const seen = [0.2, 0.4, 0.5].map((k) => view(k).handIn);
+    ok(seen.every((n) => n > 0), `attach rig: the hand is in frame through the approach (${tag}, ${seen})`);
+  }
+}
+// A weapon missing from the Blender data falls back to the procedural model (no hands): exercised by the old parts
+// staying in models.js; a bogus id still throws.
+try { M.makeWeaponModel('nope'); ok(false, 'unknown weapon should throw'); } catch { /* expected */ }
 const h = M.makeHealthPickup();
 const hb = new THREE.Box3().setFromObject(h);
 ok(Math.abs(hb.min.y) < 0.01 && hb.max.y > 0.5, 'health pickup bounds');
@@ -309,30 +754,30 @@ for (const id of M.DRINK_IDS) {
   ok(tris > 500 && tris < 8000, `${id} drink triangles ${tris}`);
 }
 
-// Freddie.
+// Naebun.
 {
-  const f = M.makeFreddie();
-  ok(f.group instanceof THREE.Group && f.muzzle && typeof f.setPose === 'function', 'freddie fields');
-  ok(Math.abs(f.height - 1.8) < 0.05, `freddie height ${f.height}`);
+  const f = M.makeNaebun();
+  ok(f.group instanceof THREE.Group && f.muzzle && typeof f.setPose === 'function', 'naebun fields');
+  ok(Math.abs(f.height - 1.8) < 0.05, `naebun height ${f.height}`);
   const st = stats(f.group);
-  ok(st.meshes <= 18, `freddie ${st.meshes} meshes`);
+  ok(st.meshes <= 18, `naebun ${st.meshes} meshes`);
   for (const s of ['idle', 'spin', 'nonsense']) {
     for (const t of TS) {
       for (const k of KS) {
-        try { f.setPose(s, t, k); } catch (e) { ok(false, `freddie ${s}: ${e.message}`); }
-        finiteTransforms(f.group, `freddie ${s} t=${t} k=${k}`);
+        try { f.setPose(s, t, k); } catch (e) { ok(false, `naebun ${s}: ${e.message}`); }
+        finiteTransforms(f.group, `naebun ${s} t=${t} k=${k}`);
       }
     }
   }
   f.setPose('idle', 0, 0);
   const bb = new THREE.Box3().setFromObject(f.group);
-  ok(Math.abs(bb.max.y - 1.8) < 0.12, `freddie top ${bb.max.y.toFixed(2)}`);
-  ok(Math.abs(bb.min.y) < 0.03, `freddie feet ${bb.min.y.toFixed(3)}`);
+  ok(Math.abs(bb.max.y - 1.8) < 0.12, `naebun top ${bb.max.y.toFixed(2)}`);
+  ok(Math.abs(bb.min.y) < 0.03, `naebun feet ${bb.min.y.toFixed(3)}`);
   f.setPose('spin', 1, 0.5);
   f.group.updateMatrixWorld(true);
   const mp = f.muzzle.getWorldPosition(new THREE.Vector3());
-  ok(mp.z < -0.8 && mp.y > 1 && mp.y < 1.7, `freddie muzzle ${mp.toArray().map((v) => v.toFixed(2))}`);
-  console.log(`freddie: height ${f.height} meshes ${st.meshes} tris ${st.tris} muzzle (spin) ${mp.toArray().map((v) => v.toFixed(2))}`);
+  ok(mp.z < -0.8 && mp.y > 1 && mp.y < 1.7, `naebun muzzle ${mp.toArray().map((v) => v.toFixed(2))}`);
+  console.log(`naebun: height ${f.height} meshes ${st.meshes} tris ${st.tris} muzzle (spin) ${mp.toArray().map((v) => v.toFixed(2))}`);
 }
 
 for (const kind of ['bottle', 'rocket', 'disc']) {
@@ -371,6 +816,193 @@ ok(stats(imp).meshes > 0, 'impact');
 ok(imp.children[0].material !== M.makeImpact().children[0].material, 'impact material is per instance');
 try { M.makeRobot('nope'); ok(false, 'unknown robot should throw'); } catch { /* expected */ }
 try { M.makeDrinkPickup('nope'); ok(false, 'unknown drink should throw'); } catch { /* expected */ }
+
+// ---- The prepared arsenal (src/arsenal.js, modelled in scripts/blender/arsenal.py): three weapons, upgrades, records, effects ----
+{
+  ok(JSON.stringify(M.ARSENAL_WEAPON_IDS) === '["beam","grenade","airhorn"]', 'ARSENAL_WEAPON_IDS');
+  ok(JSON.stringify(M.ARSENAL_UPGRADE_IDS) === '["clip","reload","altfire"]', 'ARSENAL_UPGRADE_IDS');
+  const v3 = (a) => Array.isArray(a) && a.length === 3 && a.every(Number.isFinite);
+  const hasTorch = { beam: true, airhorn: true, grenade: false };
+  for (const id of M.ARSENAL_WEAPON_IDS) {
+    const w = M.makeWeaponModel(id, { hands: false });
+    ok(nameCount(w, 'hands') === 0, `${id}: hands: false leaves the hands off`);
+    const mz = w.getObjectByName('muzzle');
+    ok(!!mz && !!w.getObjectByName('body') && !!w.getObjectByName('glow'), `${id}: muzzle, body and lamp`);
+    const bb = new THREE.Box3().setFromObject(w);
+    ok(bb.min.z > -0.7 && bb.min.z < -0.05 && bb.max.z < 0.45, `${id}: extends z ${bb.min.z.toFixed(2)} to ${bb.max.z.toFixed(2)}`);
+    ok(mz.position.z < -0.05 && mz.position.z > bb.min.z - 0.05, `${id}: muzzle z ${mz.position.z}`);
+    finiteTransforms(w, `${id} (arsenal)`);
+    const p = M.makeWeaponPickup(id);
+    const pb = new THREE.Box3().setFromObject(p);
+    ok(Math.abs(pb.min.y) < 0.01 && pb.max.y > 0.9 && pb.max.y < 2.2, `${id} pickup: floor ${pb.min.y.toFixed(2)}, top ${pb.max.y.toFixed(2)}`);
+    ok(nameCount(p, 'hands') === 0, `${id} pickup: no hands`);
+    finiteTransforms(p, `${id} pickup (arsenal)`);
+
+    const wh = M.makeWeaponModel(id);
+    const hs = [];
+    wh.traverse((c) => { if (c.name === 'hands') hs.push(c); });
+    ok(hs.length === 1 && hs[0].isMesh, `${id}: Naebun's hand is there (${hs.length})`);
+    const tris = stats(wh).tris; // every mesh: body, lamp, lights, hands and the torch
+    ok(tris >= 3000 && tris <= MAX_WEAPON_TRIS, `${id}: ${tris} triangles with hands and torch (3000 to ${MAX_WEAPON_TRIS})`);
+    finiteTransforms(wh, `${id} with hands (arsenal)`);
+    console.log(`${id} (arsenal): ${tris} triangles with hands and torch, pickup top ${pb.max.y.toFixed(2)}, length ${(bb.max.z - bb.min.z).toFixed(2)}`);
+    {
+      const g = hs[0].geometry;
+      const n = g.attributes.position.count;
+      ok(g.index.array.every((i) => i < n) && g.attributes.color.array.every((x) => x >= 0 && Number.isFinite(x)), `${id}: hands mesh data is clean`);
+    }
+    // the same viewmodel pose as the other guns (portrait and landscape): every hand vertex stays well in front of the camera
+    wh.updateMatrixWorld(true);
+    const m = new THREE.Matrix4();
+    const e = new THREE.Euler();
+    const v = new THREE.Vector3();
+    for (const x of [0.15, 0.4]) {
+      for (const [kick, dip, sw] of [[0, 0, 0], [1, 0, 0], [0, 1, 0], [0.5, 0.5, 1]]) {
+        e.set(0.03 + kick * 0.22 + dip * 0.7, 0.07 - dip * 0.25, dip * 0.2);
+        m.compose(new THREE.Vector3(x, -0.24 - dip * 0.22 - sw * 0.4, -0.62 + kick * 0.08), new THREE.Quaternion().setFromEuler(e), new THREE.Vector3(0.68, 0.68, 0.68));
+        let nearest = Infinity;
+        for (const h of hs) {
+          h.updateWorldMatrix(true, false);
+          const wm = new THREE.Matrix4().multiplyMatrices(m, h.matrixWorld);
+          const P = h.geometry.attributes.position;
+          for (let i = 0; i < P.count; i++) nearest = Math.min(nearest, -v.fromBufferAttribute(P, i).applyMatrix4(wm).z);
+        }
+        ok(nearest > 0.05, `${id}: hands stay ${nearest.toFixed(2)} m in front of the camera (x ${x} kick ${kick} dip ${dip})`);
+      }
+    }
+
+    // the torch API: `torch` and `lens` meshes, userData.lens, userData.setTorch({ mounted, on, k }), mounted and off to begin with
+    ok(typeof wh.userData.setTorch === 'function', `${id}: setTorch exists`);
+    const torchM = wh.getObjectByName('torch');
+    const lensM = wh.getObjectByName('lens');
+    if (hasTorch[id]) {
+      ok(!!torchM && !!lensM && torchM.isMesh && lensM.isMesh && lensM.material.type === 'MeshBasicMaterial', `${id}: torch and lens meshes, the lens a basic material`);
+      ok(wh.userData.lens && v3(wh.userData.lens.pos) && v3(wh.userData.lens.dir), `${id}: userData.lens has pos and dir`);
+      const d = new THREE.Vector3(...wh.userData.lens.dir);
+      ok(Math.abs(d.length() - 1) < 1e-6 && d.z < -0.9, `${id}: the lens looks forward (${wh.userData.lens.dir})`);
+      const lp = new THREE.Vector3(...wh.userData.lens.pos);
+      const lb = new THREE.Box3().setFromObject(lensM);
+      ok(lb.expandByScalar(0.01).containsPoint(lp), `${id}: userData.lens.pos is on the lens (${lp.toArray().map((x) => x.toFixed(3))})`);
+      ok(torchM.visible && lensM.visible, `${id}: new weapons start mounted`);
+      const off = lensM.material.color.clone();
+      ok(Math.max(off.r, off.g, off.b) < 0.5, `${id}: the lens is dark glass while off`);
+      wh.userData.setTorch({ on: true });
+      ok(Math.max(lensM.material.color.r, lensM.material.color.g) > 2, `${id}: lit, the lens is HDR (${lensM.material.color.r.toFixed(1)})`);
+      wh.userData.setTorch({ on: true, k: 0 });
+      ok(Math.max(lensM.material.color.r, lensM.material.color.g) < 0.5, `${id}: k = 0 is dark again`);
+      wh.userData.setTorch({ on: true, k: 0.5 });
+      const half = lensM.material.color.r;
+      wh.userData.setTorch({ k: 1 });
+      ok(lensM.material.color.r > half && half > 0.5, `${id}: brightness follows k, and omitted keys keep their value`);
+      wh.userData.setTorch({ mounted: false });
+      ok(!torchM.visible && !lensM.visible, `${id}: unmounted hides the torch and the lens`);
+      wh.userData.setTorch({ mounted: true, on: false });
+      ok(torchM.visible && lensM.visible && Math.max(lensM.material.color.r, lensM.material.color.g) < 0.5, `${id}: mounted and off again`);
+      for (let i = 0; i < 200; i++) wh.userData.setTorch({ mounted: true, on: i % 3 === 0, k: [NaN, undefined, -3, 9, 0.4][i % 5] });
+      ok([lensM.material.color.r, lensM.material.color.g, lensM.material.color.b].every((x) => Number.isFinite(x) && x < 12), `${id}: setTorch every frame with odd values stays finite`);
+      const other = M.makeWeaponModel(id);
+      other.userData.setTorch({ on: true });
+      wh.userData.setTorch({ on: false });
+      ok(other.getObjectByName('lens').material !== lensM.material, `${id}: each model has its own lens material`);
+      const pu = M.makeWeaponModel(id, { hands: false, torch: false });
+      ok(!pu.getObjectByName('torch').visible, `${id}: { torch: false } starts unmounted`);
+    } else {
+      ok(!torchM && !lensM && !wh.userData.lens, `${id}: it is thrown, so it has no torch`);
+      wh.userData.setTorch({ mounted: true, on: true, k: 1 }); // harmless
+    }
+  }
+  // the Feedback Beam's meter and emitter
+  {
+    const b = M.makeWeaponModel('beam');
+    const vis = () => [0, 1, 2, 3, 4].map((i) => b.getObjectByName(`led${i}`).visible);
+    ok(vis().every(Boolean), 'beam: all five LEDs light when the meter is full');
+    for (const [f, n] of [[0, 0], [0.01, 1], [0.2, 1], [0.21, 2], [0.5, 3], [0.99, 5], [1, 5], [1.7, 5], [-1, 0], [NaN, 0]]) {
+      b.userData.setCharge(f);
+      ok(vis().filter(Boolean).length === n, `beam: setCharge(${f}) lights ${n} LED(s) (${vis().filter(Boolean).length})`);
+    }
+    const em = b.getObjectByName('emitter');
+    b.userData.setBeam(false);
+    const dim = em.material.color.r + em.material.color.g + em.material.color.b;
+    b.userData.setBeam(true, 1);
+    const hot = em.material.color.r + em.material.color.g + em.material.color.b;
+    ok(hot > dim * 2 && Math.max(em.material.color.r, em.material.color.g) > 2, `beam: the emitter blazes while the beam is on (${dim.toFixed(1)} to ${hot.toFixed(1)})`);
+    for (const k of [NaN, undefined, -2, 7]) b.userData.setBeam(true, k);
+    ok(Number.isFinite(em.material.color.r), 'beam: setBeam copes with odd values');
+    ok(M.makeWeaponModel('beam').getObjectByName('emitter').material !== em.material, 'beam: each model has its own emitter material');
+  }
+  // the grenade in flight
+  {
+    const g = M.makeProjectile('grenade');
+    const spin = g.getObjectByName('spin');
+    ok(!!spin && typeof g.userData.setFuse === 'function', 'grenade projectile: a spin child and setFuse');
+    const gb = new THREE.Box3().setFromObject(g);
+    ok(gb.max.y - gb.min.y > 0.2 && gb.max.y - gb.min.y < 0.8, `grenade projectile: ${(gb.max.y - gb.min.y).toFixed(2)} m across`);
+    for (const f of [1, 0.5, 0.1, 0, -1, 2, NaN]) for (const t of [0, 3.3, NaN]) g.userData.setFuse(f, t);
+    spin.rotation.x = 2.2;
+    finiteTransforms(g, 'grenade projectile');
+    ok(stats(g).tris < 4000, `grenade projectile: ${stats(g).tris} triangles`);
+    try { M.makeProjectile('nope'); } catch { ok(false, 'the old projectile kinds still fall through to the bottle'); }
+  }
+  // upgrade pickups and records
+  for (const id of M.ARSENAL_UPGRADE_IDS) {
+    const p = M.makeUpgradePickup(id);
+    const pb = new THREE.Box3().setFromObject(p);
+    ok(Math.abs(pb.min.y) < 0.01 && pb.max.y > 0.9 && pb.max.y < 1.9, `${id} upgrade pickup: floor ${pb.min.y.toFixed(2)}, top ${pb.max.y.toFixed(2)}`);
+    ok(!!p.getObjectByName('item') && stats(p).tris > 800 && stats(p).tris < 5000, `${id} upgrade pickup: ${stats(p).tris} triangles`);
+    finiteTransforms(p, `${id} upgrade pickup`);
+    let glow = false;
+    p.traverse((c) => { if (c.isMesh && c.material.color && Math.max(c.material.color.r, c.material.color.g, c.material.color.b) > 2) glow = true; });
+    ok(glow, `${id} upgrade pickup: something glows (HDR)`);
+  }
+  try { M.makeUpgradePickup('nope'); ok(false, 'unknown upgrade should throw'); } catch { /* expected */ }
+  {
+    const looks = new Set();
+    for (const i of [0, 1, 2, 3, 4, 7, 8, -1, NaN, 2.6]) {
+      const p = M.makeRecordPickup(i);
+      const pb = new THREE.Box3().setFromObject(p);
+      ok(Math.abs(pb.min.y) < 0.01 && pb.max.y > 0.9 && pb.max.y < 1.9, `record ${i}: floor ${pb.min.y.toFixed(2)}, top ${pb.max.y.toFixed(2)}`);
+      finiteTransforms(p, `record ${i}`);
+      ok(stats(p).tris > 500 && stats(p).tris < 4000, `record ${i}: ${stats(p).tris} triangles`);
+      if (i >= 0 && i < 4) {
+        let h = 0;
+        p.getObjectByName('item').traverse((c) => { if (c.isMesh) h += c.geometry.attributes.color.array.reduce((a, x, k) => a + x * (k + 1) % 7, 0); });
+        looks.add(h.toFixed(3));
+      }
+    }
+    ok(looks.size === 4, `four label variants look different (${looks.size})`);
+    ok(M.makeRecordPickup(0).name === M.makeRecordPickup(4).name && M.makeRecordPickup(1).name !== M.makeRecordPickup(0).name, 'the variant repeats every four records');
+  }
+  // the effects
+  {
+    const bm = M.makeBeam();
+    for (const len of [0, 1, 18, NaN, undefined, -3]) for (const r of [0, 0.5, 1, NaN, 9, -1]) { bm.update(len, r, 3.3); finiteTransforms(bm.group, `beam fx ${len} ${r}`); }
+    ok(bm.group.children.length >= 4, 'beam fx: core, sheath, glow and a spot');
+    for (const kind of ['ring', 'cone']) {
+      const sw = M.makeShockwave(kind);
+      for (const k of [-1, 0, 0.3, 0.7, 1, 2, NaN]) for (const radius of [7, 0, 20]) { sw.update(k, radius, 0.62); finiteTransforms(sw.group, `${kind} wave k=${k}`); }
+      sw.update(0.5, 7, 0.62);
+      const sb = new THREE.Box3().setFromObject(sw.group);
+      ok(sb.max.x - sb.min.x > 2, `${kind} wave: reaches out at k = 0.5 (${(sb.max.x - sb.min.x).toFixed(1)} m across)`);
+      sw.group.traverse((c) => { if (c.isMesh) ok(c.material.blending === THREE.AdditiveBlending && !c.material.depthWrite, `${kind} wave: additive, no depth write`); });
+    }
+    ok(M.makeShockwave('ring').materials !== M.makeShockwave('ring').materials, 'waves have their own materials');
+    const st = M.makeStunMark();
+    for (const t of [0, 1.7, NaN, undefined, 1e6]) { st.update(t); finiteTransforms(st.group, `stun mark ${t}`); }
+  }
+  // the mesh data itself
+  {
+    const hole = [];
+    for (const id of M.ARSENAL_WEAPON_IDS) {
+      const wh = M.makeWeaponModel(id);
+      wh.traverse((c) => {
+        if (!c.isMesh || !c.geometry.index) return;
+        const n = c.geometry.attributes.position.count;
+        if (c.geometry.index.array.some((i) => i >= n) || c.geometry.attributes.position.array.some((x) => !Number.isFinite(x))) hole.push(`${id}/${c.name}`);
+      });
+    }
+    ok(hole.length === 0, `arsenal mesh indices are in range and finite (${hole})`);
+  }
+}
 
 if (failed) {
   console.error(`${failed} check(s) failed`);

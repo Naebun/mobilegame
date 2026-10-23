@@ -15,7 +15,7 @@ const { outputFiles } = await build({
 const js = outputFiles[0].text.replace(/<\/script/gi, '<\\/script');
 
 const css = (await readFile('src/style.css', 'utf8')).replace(/^:root \{[^}]*\}\n/m, '');
-const html = `<title>Freddie's Last Set</title>
+const html = `<title>Naebun's Last Set</title>
 <style>
 :root { --bg: #050309; color-scheme: dark; }
 html, body { background: var(--bg); }

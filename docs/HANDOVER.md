@@ -1,4 +1,4 @@
-# Handover: Freddie's Last Set
+# Handover: Naebun's Last Set
 
 Written so the chat can be cleared and work resumed from a cold start. Read this, then `CLAUDE.md`, `ROADMAP.md` and
 `README.md`. The status section is the part most likely to be stale, so check it against `git log` first.
@@ -13,12 +13,12 @@ Written so the chat can be cleared and work resumed from a cold start. Read this
 - Robots are melee ("Dr Fizzbang") or ranged ("Bampot and Nephew"). Invented names, never real brands.
 - Controls: two grey boxes, left moves, right aims and auto-fires, no aim assist. Unlimited ammo, limited clips.
 - Last Orders (the super drink) never triggers in the boss room, does not stop time, and switches to a third-person
-  camera while Freddie spins.
+  camera while Naebun spins.
 - Org style: British English, plain peer tone, no em dashes. Say what is verified and what is assumed.
 
 ## The game in one paragraph
 Portrait first-person 3D horror shooter for the phone browser, set in a Cowgate basement club in Edinburgh. Dark
-comedy, light Scottish voice. Six linear areas, pre-placed sleeping robots that wake on noticing Freddie, doors that
+comedy, light Scottish voice. Six linear areas, pre-placed sleeping robots that wake on noticing Naebun, doors that
 open when an area is clear, four floor-pickup weapons, a Bouncer boss. Drinks are the power-ups, each with a
 first-person drinking animation. Three.js r160 is vendored, plain ES modules, no backend. Full-game plan (about two
 hours, 8 to 10 levels, iOS from the last four years) is in `docs/full-game-plan.md`.
@@ -41,7 +41,7 @@ from `main`.
   medium, low), auto-drop when frames run slow, `?q=low|medium|high`, `?perf`, `?test`.
 - **World** (`src/world.js`): PBR brick, stone, timber and plaster from generated data textures, baked AO and light
   pools, mirror ball, light shafts. 11 drink pickups and 3 weapons placed, none in the boss room.
-- **Models** (`src/models.js`): battered robots, weapons, pickups, projectiles, drink pickups and viewmodels, Freddie
+- **Models** (`src/models.js`): battered robots, weapons, pickups, projectiles, drink pickups and viewmodels, Naebun
   for the third-person view.
 - **Drinks** (`src/data.js` `DRINKS`, `docs/drinks.md`): Dram (heal), Orange (speed), Heavy (guard), Energy (rapid
   fire), Last Orders (laser).
@@ -55,7 +55,7 @@ Done and verified headless (now on `main`): the models agent's work is integrate
 (casual 100, good 100, sloppy 93 percent). The Claude Artifact was republished as version 7 and includes all of this.
 
 Still open:
-1. Review screenshots of each drinking animation and the Freddie third-person spin. Level and robot shots were
+1. Review screenshots of each drinking animation and the Naebun third-person spin. Level and robot shots were
    reviewed. The others were only checked by the models agent.
 2. Cost on a real phone is unknown. Software numbers are in `ROADMAP.md`. High and medium cost about the same there,
    so tiers may need re-spacing once a phone has been tried.
@@ -95,13 +95,21 @@ extrude, bevel and primitive operators (they order output by pointer hash). The 
 are still code. About 19k triangles for all five drinks and 370 KB of source; trim segment counts in `drinks.py` first
 if load time matters.
 
+**Weapons and hands.** `scripts/blender/weapons.py` models the five weapons and Naebun's hands and forearms and writes
+`src/weapon-meshes.js` (same packed format, about 620 KB, byte-for-byte reproducible). Parts: `body`, `pump` (shotgun fore-end,
+with the left hand as its child), `cradle` (vinyl platter; the record is still code so it can spin) and `hands`. Muzzle
+and lamp positions travel in the data. `makeWeaponModel(id, { hands: false })` leaves the hands off (pickups use it);
+the procedural `WEAPON_PARTS` in `models.js` stay as the fallback for a weapon missing from the data. `kit.py` gained
+`loft` (a section swept along a path: grips, fingers, sleeves), `sweep`/`curve`, more surface types and a per-part
+smoothing angle; `drinks.py` output is unchanged (checked with `cmp`). Previews: `weapons.py --preview smg --view fp`.
+
 Still not decided: how Blender *textures* would reach the game. `world.js` and `models.js` are procedural only (no
 image files, run under plain Node). Baked textures would need either committed image files or more data embedded in
 modules, which changes that rule. Raise it with the owner before starting.
 
 ## Open questions for the owner
 1. When to start Blender texture work, and whether image files may enter the repo. (Models are done for the drinks;
-   say if the robots, weapons or Freddie should move to Blender too.)
+   say if the robots, weapons or Naebun should move to Blender too.)
 2. Playtest feedback on difficulty and look.
 
 ## Landscape (branch `level-2`)
@@ -112,3 +120,49 @@ the vertical field of view as the screen widens (85 degrees in portrait, about 5
 viewmodel out to the right. Tested by `ui-check` (12 view sizes, side insets), the smoke test (rotate to 844 x 390 and
 back) and screenshots from `scripts/harness/screen-views.mjs`. Not tested: a real phone rotating, iOS reporting a stale
 size after rotation (the engine re-measures at 0, 120 and 450 ms to cover it), real thumb reach on the landscape boxes.
+
+## Control modes, settings page and saved progress
+Two modes: PC (default: the grey boxes and buttons are hidden, the mouse aims with no button held, left click fires) and
+mobile (the boxes). `detectMobile()` in `game3d.js` picks mobile on a phone or tablet at start-up (matchMedia plus user
+agent; `?pc` and `?mobile` force it for tests); a choice saved on the Settings page wins. Settings (`screens.drawSettings`):
+CONTROLS (PC or MOBILE), SENSITIVITY (PC only) and RESET PROGRESS (two taps). `engine.js` handles pointer lock, movement,
+the left button and the wheel (`input.mouse`), and `wantsMouseLock()` says when it is wanted (playing, in PC mode), so the
+engine lets go in the menus. The controls screen has a PC page with keycaps and a mouse diagram. `src/save.js` keeps the
+furthest level unlocked, levels done, best scores and whether the torch is fitted in a cookie (name `fls`, a year, this
+page's path) and in localStorage, merging both on load; the title offers CONTINUE once level 2 is unlocked. Tested headless
+by `combat-check` (aim, fire, wheel, sensitivity, the save format) and in the smoke test (detection, both modes, cookie
+written, reload offers CONTINUE, settings, reset). Not tested: a real mouse and real pointer lock (the tests inject input),
+Safari's cookie expiry rules (it may drop script-set cookies after about a week without a visit; local storage has the
+same limit for sites not added to the home screen, which is why both are written).
+
+## The torch
+A level definition says `dark: true` (level 2 does; level 1 does not), plus `fill` (a tiny light on the camera) and
+`torch` (the spotlight and beam settings). The torch is part of each weapon model: `makeWeaponModel` has `torch` and `lens`
+meshes and `userData.lens` ({ pos, dir }, dir always -z) and `userData.setTorch({ mounted, on, k })`. Each frame
+`game3d.js` `updateTorch()` reads the lens in the weapon scene, converts it for the main camera (the two cameras have
+different fields of view) and places a SpotLight and a beam cone there, so the light follows the gun through the reload dip,
+the recoil and the swap. The four pickup guns arrive with a torch fitted; the pistol does not. At the start of a dark level
+without a fitted torch `S.attach` runs `makeTorchAttach()` (a left hand carries the module to the pistol, a click at `k` 0.6,
+the hand withdraws) and the pistol cannot fire until it ends; the fitted state is saved. F toggles the torch on a computer.
+Models are in `scripts/blender/weapons.py` (five torches, the attach hand; `preview.py` views `lside`, `liso`, `lfront`);
+tests are in `models-check`, `combat-check` and the smoke test (`torch-fitting`). Known, not fixed: the pistol torch is
+mostly hidden from the first-person camera (you see a cyan glint and the beam); the shotgun's beam starts inside the horn
+flare; the vinyl gooseneck arches about 0.25 m above the deck. Not seen: a real phone.
+
+## Blender assets (weapons, hands, props)
+Drinks, weapons (with their torches) plus Naebun's hands, and 27 level props are modelled in Blender and generated into data modules
+(`src/drink-meshes.js`, `src/weapon-meshes.js`, `src/prop-meshes.js`) by `scripts/blender/{drinks,weapons,props}.py`. Never
+edit the output; each is reproducible (run twice and `cmp`). `models.js` decodes weapons and falls back to the older procedural
+models; `world.js` places props with `placeProp` and falls back to procedural props (the low tier uses them, to stay inside
+its triangle cap). Details and the prop ranking: `docs/props.md`. Known: level 2 high is close to the 150k triangle limit
+(about 145k); the weapons' left forearms read as plain purple tubes in portrait; the Vaults are dark enough that old and new
+props are hard to tell apart; nothing has been seen on a phone. The textures question is open: `docs/texture-options.md`.
+
+## Prepared objects (built, not placed)
+At the owner's request the roadmap's enemies, weapons, upgrades and collectibles are built and tested ahead of their levels.
+No level map uses any of them. Enemies (Fizzbang Shaken, Bampot Longshot, Bampot Nurse, Vending Mimic): `docs/enemies-next.md`,
+`scripts/harness/enemies-check.mjs`. Arsenal (Feedback Beam, Bass-Drop Grenade, Airhorn, the SMG alt-fire, clip and reload
+upgrades, ten collectible records and the SETLIST screen): `docs/arsenal.md`, `scripts/blender/arsenal.py` (writes
+`src/arsenal-meshes.js`), `src/arsenal.js`, `src/arsenal-play.js`, `scripts/harness/arsenal-check.mjs`. Every number is a first
+guess; nothing has been played by a person or heard. The sim bots cannot dodge a laser, run from a Shaken, hunt a Nurse or
+use the new weapons, so they need teaching before these go into a level. Level 3 and later are still not to be built.

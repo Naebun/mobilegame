@@ -21,6 +21,7 @@ Math.random = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
 function fresh() {
   game.init(VIEW);
   game.testHook('level', 2);
+  game.testHook('torch', { attached: true }); // the torch is already fitted (the fitting sequence is tested on its own below)
   const S = game.getState();
   if (S.debugMode) throw new Error('combat-check must run in normal mode');
   return { S, W: game.getWorld() };
@@ -61,7 +62,7 @@ function setEnemy(S, e, x, z, yaw) { e.x = x; e.z = z; e.yaw = yaw; e.kx = e.kz 
   e.hp = e.maxHp;
 }
 
-// ---- the shielded robot turns slowly, so Freddie can get behind it ----
+// ---- the shielded robot turns slowly, so Naebun can get behind it ----
 {
   const { S } = fresh();
   const e = S.enemies.find((q) => q.kind === 'shielded');
@@ -199,6 +200,126 @@ function setEnemy(S, e, x, z, yaw) { e.x = x; e.z = z; e.yaw = yaw; e.kx = e.kz 
     return true;
   });
   ok(hurt === def.slam.damage, `the pole slam hits for ${def.slam.damage} (took ${hurt})`);
+}
+
+// ---- mouse look: moving the mouse aims, the left button fires, only on a computer with the setting on ----
+{
+  const { S } = fresh();
+  S.enemies.forEach((q) => { q.dead = true; q.state = 'dead'; q.robot.group.visible = false; });
+  game.testHook('play'); // this makes a new player object, so take it afterwards
+  const p = S.player;
+  const yaw0 = p.yaw;
+  game.testHook('setting', { input: 'mobile', sens: 1 });
+  game.testHook('mouse', { dx: 200, dy: 0 });
+  run(S, 0.1);
+  ok(p.yaw === yaw0, 'mobile mode ignores mouse movement (touch boxes only)');
+  game.testHook('setting', { input: null });
+  game.testHook('mobile', false);
+  game.testHook('mouse', { dx: 200, dy: 0 });
+  run(S, 0.1);
+  ok(yaw0 - p.yaw > 0.3, 'PC is the default mode: the mouse aims with no button held');
+  const yawA = p.yaw;
+  game.testHook('mobile', true);
+  game.testHook('mouse', { dx: 200, dy: 0 });
+  run(S, 0.1);
+  ok(p.yaw === yawA, 'a mobile browser switches to mobile mode on its own (no saved choice)');
+  game.testHook('setting', { input: 'pc' });
+  ok(game.getState().settings.input === 'pc', 'a saved choice wins over detection');
+  game.testHook('mouse', { dx: 100, dy: 0 });
+  run(S, 0.1);
+  ok(p.yaw < yawA - 0.15, 'PC chosen by hand works on a mobile browser too');
+  game.testHook('mobile', false);
+  game.testHook('setting', { input: 'pc', sens: 1 });
+  p.yaw = yaw0;
+  game.testHook('mouse', { dx: 200, dy: 0 });
+  run(S, 0.1);
+  const turned = yaw0 - p.yaw;
+  ok(near(turned, 200 * 0.0022, 0.01), `mouse look: 200 counts turn the view right by ${(200 * 0.0022).toFixed(2)} rad (${turned.toFixed(3)})`);
+  const pitch0 = p.pitch;
+  game.testHook('mouse', { dx: 0, dy: -100 });
+  run(S, 0.1);
+  ok(p.pitch - pitch0 > 0.1, 'moving the mouse up looks up');
+  game.testHook('setting', { sens: 2 });
+  const y1 = p.yaw;
+  game.testHook('mouse', { dx: 100, dy: 0 });
+  run(S, 0.1);
+  ok(near(y1 - p.yaw, 100 * 0.0022 * 1.7, 0.01), 'HIGH sensitivity turns further for the same movement');
+  game.testHook('setting', { sens: 1 });
+  const shots0 = S.shots;
+  game.testHook('mouse', { dx: 0, dy: 0, down: true });
+  run(S, 0.6);
+  ok(S.shots > shots0, 'holding the left button fires');
+  game.testHook('mouse', { down: false });
+  const shots1 = S.shots;
+  run(S, 0.6);
+  ok(S.shots === shots1, 'letting go stops firing (no touch box involved)');
+  game.testHook('giveWeapons');
+  const w0 = p.weapon;
+  game.testHook('mouse', { wheel: 1 });
+  run(S, 0.1);
+  ok(p.weapon !== w0, 'the wheel swaps weapon');
+  game.testHook('mouse', null);
+  game.testHook('setting', { input: null });
+}
+
+// ---- the gun torch: dark levels need it fitted, the pistol keeps it, lit levels do not ----
+{
+  const { S } = fresh(); // level 2, the dark one
+  const T = () => game.testHook('torch');
+  game.testHook('torch', { attached: false });
+  game.testHook('play'); // resetLevel: the fitting sequence starts
+  ok(T().dark === true, 'level 2 is a dark level');
+  ok(T().attach && !T().attached && !T().on, 'a dark level starts with the torch not yet fitted, and the fitting sequence ready');
+  const shots0 = S.shots;
+  const hold = input();
+  hold.keys.add(' ');
+  run(S, 1.5, hold);
+  ok(S.shots === shots0, 'the pistol cannot fire while the torch is being fitted');
+  ok(T().attach && !T().on, 'still fitting after 1.5 s');
+  run(S, 5, input());
+  ok(!T().attach && T().attached && T().on && T().k === 1, 'after the sequence the torch is fitted, on and at full brightness');
+  ok(game.getState().save.torch === true, 'the fitted torch is saved with the progress');
+  const s1 = S.shots;
+  run(S, 0.8, hold);
+  ok(S.shots > s1, 'and the pistol fires again');
+  game.testHook('play'); // retry: no second fitting
+  ok(!T().attach && T().on, 'a retry keeps the torch (no second fitting)');
+  const off = input();
+  off.keys.add('f');
+  run(S, 0.1, off);
+  ok(!T().on, 'F switches the torch off');
+  const off2 = input();
+  run(S, 0.1, off2);
+  const on = input();
+  on.keys.add('f');
+  run(S, 0.1, on);
+  ok(T().on, 'and on again');
+  game.testHook('level', 1);
+  ok(T().dark === false && !T().attach && !T().on, 'a lit level has no fitting sequence and the torch stays off');
+  game.testHook('level', 2);
+  ok(!T().attach && T().on, 'going back to the dark level, the fitted torch is already on');
+  game.testHook('torch', { attached: false });
+  game.testHook('play');
+  ok(T().attach, 'a new game (the pistol without a torch) sees the fitting again');
+  game.testHook('torch', { attached: true });
+}
+
+// ---- saved progress: the format a cookie can carry ----
+{
+  const store = await import('../../src/save.js');
+  const { LEVELS } = await import('../../src/data.js');
+  ok(store.MAX_LEVELS === LEVELS.length, `the save knows how many levels there are (${store.MAX_LEVELS} of ${LEVELS.length})`);
+  const f = store.fresh();
+  ok(f.unlocked === 1 && f.done.length === 0, 'a fresh save has level 1 unlocked and nothing done');
+  ok(store.clean(null).unlocked === 1 && store.clean('x').unlocked === 1 && store.clean({ unlocked: 'nope' }).unlocked === 1, 'junk becomes a fresh save');
+  ok(store.clean({ unlocked: 99 }).unlocked === store.MAX_LEVELS, 'unlocked cannot pass the last level');
+  ok(store.clean({ done: [1] }).unlocked === 2, 'finishing level 1 unlocks level 2');
+  ok(JSON.stringify(store.clean({ done: [2, 1, 1, 7, -3, 'a'] }).done) === '[1,2]', 'done is a clean sorted set of real levels');
+  ok(JSON.stringify(store.clean({ best: { 1: 500, 2: -4, 9: 100, x: 5 } }).best) === '{"1":500}', 'only real positive best scores survive');
+  const m = store.merge(store.clean({ unlocked: 2, best: { 1: 100 } }), store.clean({ done: [1], best: { 1: 300, 2: 50 } }));
+  ok(m.unlocked === 2 && m.best[1] === 300 && m.best[2] === 50 && m.done.join() === '1', 'two copies merge to whichever is further on');
+  ok(JSON.stringify(store.load()) === JSON.stringify(f), 'under plain Node (no cookie or storage) load() is a fresh save, and save() does not throw');
+  store.save(f);
 }
 
 console.log(`\ncombat-check: ${checks - failures}/${checks} checks passed`);

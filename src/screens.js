@@ -5,6 +5,7 @@
 
 import { text, rrect, drawSkyline, hash } from './draw.js';
 import { outlined, fit, wrapLines, paragraph, weaponIcon, panel, corners, circle } from './hud.js';
+import { RECORDS } from './data.js';
 
 const MAGENTA = '#ff2e93';
 const CYAN = '#22d3ee';
@@ -22,7 +23,7 @@ export const DEATH_LINES_3D = [
   'Reviewed: one star. "Dead on arrival."',
   'Beaten by a fizzy drink. In your own club.',
   'The robots were not feeling the set.',
-  'Last orders, Freddie.',
+  'Last orders, Naebun.',
   'Not the first DJ to get booed off in Edinburgh.',
   'Aye, it is like that on a Saturday.',
   'You have had worse Fringe gigs.',
@@ -59,7 +60,7 @@ function titleGeom(view) {
 
 // ---- buttons ----
 
-export function buttons(mode, view, state) {
+function baseButtons(mode, view, state) {
   const st = state || {};
   const t = num(st.t);
   const sb = num(safe(view).bottom);
@@ -71,7 +72,15 @@ export function buttons(mode, view, state) {
   if (F.land) {
     // landscape: a stack in the right-hand column, centred on the screen (the controls page uses a bottom row instead)
     const specs = [];
-    if (mode === 'title') specs.push(['new', 'NEW GAME', true, 52, null], ['debug', `DEBUG MODE: ${st.debugMode ? 'ON' : 'OFF'}`, false, 40, st.debugMode ? AMBER : null]);
+    if (mode === 'title') {
+      if (st.resumeLevel) specs.push(['resume', `CONTINUE: LEVEL ${st.resumeLevel}`, true, 52, null]);
+      specs.push(['new', 'NEW GAME', !st.resumeLevel, st.resumeLevel ? 44 : 52, null], ['settings', 'SETTINGS', false, 44, null]);
+      specs.push(['debug', `DEBUG MODE: ${st.debugMode ? 'ON' : 'OFF'}`, false, 40, st.debugMode ? AMBER : null]);
+    } else if (mode === 'settings') {
+      specs.push(['input', `CONTROLS: ${st.input === 'mobile' ? 'MOBILE' : 'PC'}`, true, 52, null]);
+      if (st.input !== 'mobile') specs.push(['sens', `MOUSE SENSITIVITY: ${str(st.sensLabel) || 'MEDIUM'}`, false, 44, null]);
+      specs.push(['reset', st.resetArmed ? 'TAP AGAIN TO ERASE' : 'RESET PROGRESS', false, 44, st.resetArmed ? AMBER : null], ['back', 'BACK', false, 44, null]);
+    }
     else if (mode === 'dead' && t > 0.9) specs.push(['retry', 'RETRY LEVEL', true, 52, null], ['menu', 'MAIN MENU', false, 44, null]);
     else if (mode === 'complete' && t > 1) {
       if (st.hasNext) specs.push(['next', 'NEXT LEVEL', true, 52, null]);
@@ -101,8 +110,30 @@ export function buttons(mode, view, state) {
   }
   if (mode === 'title') {
     const y = Math.max(view.h * 0.46, titleGeom(view).bottom);
-    add('new', 'NEW GAME', y);
-    add('debug', `DEBUG MODE: ${st.debugMode ? 'ON' : 'OFF'}`, y + 68, false, 40, st.debugMode ? AMBER : null);
+    let yy = y;
+    if (st.resumeLevel) {
+      add('resume', `CONTINUE: LEVEL ${st.resumeLevel}`, yy);
+      yy += 62;
+      add('new', 'NEW GAME', yy, false, 44);
+      yy += 56;
+    } else {
+      add('new', 'NEW GAME', yy);
+      yy += 64;
+    }
+    add('settings', 'SETTINGS', yy, false, 44);
+    add('debug', `DEBUG MODE: ${st.debugMode ? 'ON' : 'OFF'}`, yy + 52, false, 40, st.debugMode ? AMBER : null);
+  } else if (mode === 'settings') {
+    const pc = st.input !== 'mobile';
+    const y = view.h - sb - 24 - (pc ? 52 + 12 + 44 * 3 + 12 * 2 + 8 : 52 + 12 + 44 * 2 + 12 + 8); // a stack at the bottom, words above
+    let yy = y;
+    add('input', `CONTROLS: ${pc ? 'PC' : 'MOBILE'}`, yy);
+    yy += 64;
+    if (pc) {
+      add('sens', `MOUSE SENSITIVITY: ${str(st.sensLabel) || 'MEDIUM'}`, yy, false, 44);
+      yy += 56;
+    }
+    add('reset', st.resetArmed ? 'TAP AGAIN TO ERASE' : 'RESET PROGRESS', yy, false, 44, st.resetArmed ? AMBER : null);
+    add('back', 'BACK', yy + 56, false, 44);
   } else if (mode === 'controls') {
     if (view.h < 560) {
       const y = view.h - sb - 100;
@@ -128,6 +159,31 @@ export function buttons(mode, view, state) {
     }
   } else if (mode === 'voicemail' && t > 0.8) {
     add('continue', 'CONTINUE', view.h - sb - 96);
+  }
+  return list;
+}
+
+// The menu buttons for a mode. The title gains a SETLIST button beside SETTINGS once a record has been found (it shares
+// SETTINGS' row, so the stack never grows taller on a short screen); the setlist page has one BACK button at the bottom.
+export function buttons(mode, view, state) {
+  const st = state || {};
+  if (mode === 'setlist') {
+    const sl = num(safe(view).left);
+    const sr = num(safe(view).right);
+    const bw = Math.min(240, view.w - 48 - sl - sr);
+    const h = 44;
+    return [{ id: 'back', label: 'BACK', x: sl + (view.w - sl - sr - bw) / 2, y: view.h - num(safe(view).bottom) - (landscape(view) ? 12 : 22) - h, w: bw, h, primary: true, accent: null }];
+  }
+  const list = baseButtons(mode, view, state);
+  if (mode === 'title' && num(st.records) > 0) {
+    const i = list.findIndex((b) => b.id === 'settings');
+    if (i >= 0) {
+      const b = list[i];
+      const gap = 10;
+      const half = (b.w - gap) / 2;
+      list[i] = { ...b, w: half };
+      list.splice(i + 1, 0, { id: 'setlist', label: `SETLIST ${Math.floor(num(st.records))}/${RECORDS.length}`, x: b.x + half + gap, y: b.y, w: half, h: b.h, primary: false, accent: null });
+    }
   }
   return list;
 }
@@ -183,8 +239,8 @@ export function drawTitle(ctx, view, state) {
   drawSkyline(ctx, view.w, view.h);
   ctx.globalAlpha = 1;
 
-  const f = fit(ctx, "FREDDIE'S", F.w - 40, big, 800, 28);
-  heavy(ctx, "FREDDIE'S", cx, cy, f.size, MAGENTA);
+  const f = fit(ctx, "NAEBUN'S", F.w - 40, big, 800, 28);
+  heavy(ctx, "NAEBUN'S", cx, cy, f.size, MAGENTA);
   // the neon sign stutters now and then
   const flick = Math.floor(t * 14) % 41 === 0 || Math.floor(t * 14) % 41 === 2 ? 0.55 : 1;
   ctx.globalAlpha = flick;
@@ -207,11 +263,51 @@ export function drawTitle(ctx, view, state) {
   const list = buttons('title', view, st);
   drawButtons(ctx, list);
   if (st.debugMode) {
-    const d = list[1];
+    const d = list.find((b) => b.id === 'debug') || list[list.length - 1];
     outlined(ctx, '2x fire rate, 2x damage, 2x health', d.x + d.w / 2, d.y + d.h + 18, 12, AMBER, 'center', 600);
     outlined(ctx, 'Scores are not recorded', d.x + d.w / 2, d.y + d.h + 36, 12, 'rgba(251,191,36,0.75)', 'center', 500);
   }
-  outlined(ctx, 'Left thumb moves. Right thumb aims and fires. Drag anywhere else to aim.', view.w / 2, view.h - num(safe(view).bottom) - 16, 12, 'rgba(255,255,255,0.6)', 'center', 500);
+  const hint = fit(ctx, st.input === 'mobile' ? 'Left thumb moves. Right thumb aims and fires. Drag anywhere else to aim.' : 'W A S D to move. Mouse to aim. Left click to fire.', view.w - 24, 12, 500, 8);
+  outlined(ctx, hint.str, view.w / 2, view.h - num(safe(view).bottom) - 16, hint.size, 'rgba(255,255,255,0.6)', 'center', 500);
+}
+
+// ---- settings ----
+
+// What each control mode does, in words.
+const INPUT_HELP = {
+  pc: [
+    ['PC MODE', 'The grey touch boxes are hidden. Click the game once to capture the mouse, then move it to aim: no button held. Left click fires, the wheel swaps weapon, Esc lets go.'],
+    ['KEYS', 'W A S D to move, R to reload, Q to swap, F for the torch. Arrow keys and space also work.'],
+  ],
+  mobile: [
+    ['MOBILE MODE', 'Two grey boxes: the left thumb moves, the right thumb aims and fires. Drag anywhere else to aim without firing.'],
+  ],
+};
+
+export function drawSettings(ctx, view, state) {
+  const st = state || {};
+  const t = num(st.t);
+  const F = frame(view);
+  const top = num(safe(view).top);
+  dim(ctx, view, 0.8);
+  const titleY = top + Math.max(F.land ? 28 : 36, view.h * 0.07);
+  heavy(ctx, 'SETTINGS', F.cx, titleY, F.land ? 26 : 30, MAGENTA);
+  const list = buttons('settings', view, st);
+  const w = F.w - (F.land ? 16 : 56);
+  let y = titleY + 38;
+  const size = view.h < 600 ? 13 : 14;
+  const limit = F.land ? view.h - num(safe(view).bottom) - 10 : list[0].y - 10;
+  const sections = [...INPUT_HELP[st.input === 'mobile' ? 'mobile' : 'pc'], ['CHOSEN FOR YOU', 'A phone or tablet starts in mobile mode and a computer in PC mode. Change it here and it is remembered.'], ['SAVED PROGRESS', 'Your furthest level and best scores are kept in a cookie in this browser (and local storage). Clearing the site data clears them.']];
+  for (const [head, body] of sections) {
+    outlined(ctx, head, F.cx, y, 12, CYAN, 'center', 800);
+    y += 10 + size * 0.9;
+    const lines = wrapLines(ctx, body, w, size, 500, 6).length;
+    if (y + lines * (size + 4) > limit) break; // never run under the buttons on a short screen
+    y += paragraph(ctx, body, F.cx, y, w, size, '#e5e0f5', 'center', 500, size + 4) + 12;
+  }
+  if (st.saved) outlined(ctx, fit(ctx, str(st.saved), w, 12, 600, 8).str, F.cx, Math.min(y + 4, limit - 4), 12, '#9fb3c8', 'center', 600);
+  void t;
+  drawButtons(ctx, list);
 }
 
 // ---- controls ----
@@ -422,21 +518,17 @@ const CELLS = [
 ];
 const TIP = 'Clear every robot in an area to unlock the next door.';
 // Keyboard play on a computer (the same keys as readControls in game3d.js).
-const KEYS = 'PC:  WASD move   ARROWS aim   SPACE fire   R reload   Q swap';
 
-// The tip strip with the keyboard line under it, in one rounded box. h is the whole box height.
-function tipStrip(ctx, x, y, w, h, cx, keys = true) {
+// The tip strip: one line in a rounded box. h is the box height.
+function tipStrip(ctx, x, y, w, h, cx, text = TIP) {
   rrect(ctx, x, y, w, h, 10);
   ctx.fillStyle = 'rgba(255,46,147,0.14)';
   ctx.fill();
   ctx.lineWidth = 1.5;
   ctx.strokeStyle = 'rgba(255,46,147,0.6)';
   ctx.stroke();
-  const tf = fit(ctx, TIP, w - 24, 13, 700, 9);
-  outlined(ctx, tf.str, cx, keys ? y + h * 0.3 : y + h / 2 + 0.5, tf.size, '#ffe0ef', 'center', 700, 'rgba(4,2,8,0)');
-  if (!keys) return;
-  const kf = fit(ctx, KEYS, w - 24, 12, 700, 8);
-  outlined(ctx, kf.str, cx, y + h * 0.72, kf.size, '#a5f3fc', 'center', 700, 'rgba(4,2,8,0)');
+  const tf = fit(ctx, text, w - 24, 13, 700, 9);
+  outlined(ctx, tf.str, cx, y + h / 2 + 0.5, tf.size, '#ffe0ef', 'center', 700, 'rgba(4,2,8,0)');
 }
 
 // Landscape: the four cells in one row, the tip strip and the two buttons along the bottom.
@@ -451,7 +543,7 @@ function drawControlsWide(ctx, view, st) {
   const titleY = top + 24;
   heavy(ctx, 'CONTROLS', cx, titleY, 24, MAGENTA);
   const list = buttons('controls', view, st);
-  const tipH = 56; // the tip and the keyboard line
+  const tipH = 30;
   const tipY = list[0].y - 10 - (tipH - 6);
   const pad = 16;
   const gap = 10;
@@ -482,9 +574,151 @@ function drawControlsWide(ctx, view, st) {
   drawButtons(ctx, list);
 }
 
+// ---- PC controls page ----
+
+// A keyboard key: a rounded cap with a label, lit when `on`.
+function keycap(ctx, cx, cy, w, h, label, on) {
+  rrect(ctx, cx - w / 2, cy - h / 2 + 2, w, h, 6);
+  ctx.fillStyle = 'rgba(0,0,0,0.4)';
+  ctx.fill();
+  panel(ctx, cx - w / 2, cy - h / 2, w, h, 6, on ? 'rgba(34,211,238,0.45)' : 'rgba(120,124,138,0.4)', on ? CYAN : '#ffffff', on ? 0.9 : 0.4);
+  outlined(ctx, label, cx, cy + 0.5, Math.max(10, Math.min(w * 0.5, 18)), '#ffffff', 'center', 800, 'rgba(4,2,8,0.6)');
+}
+
+function wasdDiagram(ctx, cx, cy, ds, t) {
+  const k = ds * 0.3;
+  const lit = Math.floor(t * 1.6) % 4;
+  keycap(ctx, cx, cy - k * 0.55, k, k, 'W', lit === 0);
+  keycap(ctx, cx - k * 1.1, cy + k * 0.55, k, k, 'A', lit === 3);
+  keycap(ctx, cx, cy + k * 0.55, k, k, 'S', lit === 2);
+  keycap(ctx, cx + k * 1.1, cy + k * 0.55, k, k, 'D', lit === 1);
+}
+
+// A mouse that drifts, a crosshair that follows it, and the left button pulsing as it fires.
+function mouseDiagram(ctx, cx, cy, ds, t) {
+  const w = ds * 0.46;
+  const h = ds * 0.7;
+  const dx = Math.sin(t * 1.3) * ds * 0.12;
+  const dy = Math.cos(t * 1.7) * ds * 0.05;
+  const x = cx - w / 2 + dx;
+  const y = cy - h / 2 + dy;
+  panel(ctx, x, y, w, h, w / 2, 'rgba(120,124,138,0.42)', '#ffffff');
+  const pulse = 0.5 + 0.5 * Math.sin(t * 9);
+  ctx.save();
+  rrect(ctx, x, y, w, h, w / 2);
+  ctx.clip();
+  ctx.fillStyle = `rgba(34,211,238,${0.35 + 0.35 * pulse})`;
+  ctx.fillRect(x, y, w / 2, h * 0.42);
+  ctx.restore();
+  ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(x, y + h * 0.42);
+  ctx.lineTo(x + w, y + h * 0.42);
+  ctx.moveTo(x + w / 2, y);
+  ctx.lineTo(x + w / 2, y + h * 0.42);
+  ctx.stroke();
+  rrect(ctx, x + w / 2 - 2, y + h * 0.12, 4, h * 0.16, 2);
+  ctx.fillStyle = '#ffffff';
+  ctx.fill();
+  const ax = cx + ds * 0.42 + dx * 1.6;
+  const ay = cy - ds * 0.1 + dy * 3;
+  ctx.strokeStyle = CYAN;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(ax - 8, ay);
+  ctx.lineTo(ax + 8, ay);
+  ctx.moveTo(ax, ay - 8);
+  ctx.lineTo(ax, ay + 8);
+  ctx.stroke();
+}
+
+function swapKeysDiagram(ctx, cx, cy, ds, t) {
+  keycap(ctx, cx - ds * 0.3, cy, ds * 0.34, ds * 0.34, 'Q', Math.floor(t * 1.2) % 2 === 0);
+  const w = ds * 0.26;
+  const h = ds * 0.46;
+  panel(ctx, cx + ds * 0.2 - w / 2, cy - h / 2, w, h, w / 2, 'rgba(120,124,138,0.42)', '#ffffff');
+  const roll = (Math.floor(t * 2.4) % 2) * 5;
+  rrect(ctx, cx + ds * 0.2 - 2, cy - h * 0.34 + roll * 0.4, 4, h * 0.2, 2);
+  ctx.fillStyle = CYAN;
+  ctx.fill();
+}
+
+function reloadKeyDiagram(ctx, cx, cy, ds, t) {
+  const cyc = (t % 3) / 3;
+  keycap(ctx, cx, cy, ds * 0.38, ds * 0.38, 'R', cyc < 0.25);
+  const pw = ds * 0.7;
+  rrect(ctx, cx - pw / 2, cy + ds * 0.3, pw, 5, 2.5);
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.fill();
+  const p = clamp((cyc - 0.25) / 0.6, 0, 1);
+  if (p > 0.03) {
+    rrect(ctx, cx - pw / 2, cy + ds * 0.3, pw * p, 5, 2.5);
+    ctx.fillStyle = CYAN;
+    ctx.fill();
+  }
+}
+
+const PC_CELLS = [
+  { kind: 'move', sub: 'W A S D', head: 'MOVE', cap: 'Walk with W A S D.' },
+  { kind: 'aim', sub: 'MOUSE', head: 'AIM AND FIRE', cap: 'Move the mouse to aim, with no button held. Left click fires. Click the game once to capture the mouse; Esc lets go. No aim assist.' },
+  { kind: 'swap', sub: 'Q OR WHEEL', head: 'SWAP', cap: 'Walk over weapons to pick them up. Q or the mouse wheel cycles them.' },
+  { kind: 'reload', sub: 'R', head: 'RELOAD', cap: 'Reloads on its own when the clip is empty. Press R to do it early. Ammo is unlimited, clips are not. F switches the torch.' },
+];
+const PC_TIP = 'Clear every robot in an area to unlock the next door. Arrow keys and Space also work.';
+
+// PC mode: the same four cells as the touch page, with keys and a mouse. One row of four in landscape, two by two in portrait.
+function drawControlsPc(ctx, view, st) {
+  const t = num(st.t);
+  const top = num(safe(view).top);
+  const sl = num(safe(view).left);
+  const sr = num(safe(view).right);
+  const W = view.w - sl - sr;
+  const land = landscape(view);
+  const cx = sl + W / 2;
+  dim(ctx, view, 0.8);
+  const titleY = top + (land ? 24 : Math.max(30, view.h * 0.055));
+  heavy(ctx, 'CONTROLS', cx, titleY, land ? 24 : 28, MAGENTA);
+  const list = buttons('controls', view, st);
+  const tipH = 30;
+  const tipY = list[0].y - 10 - (tipH - 6);
+  const cols = land ? 4 : 2;
+  const rows = 4 / cols;
+  const pad = 16;
+  const gap = 12;
+  const cw = (W - pad * 2 - gap * (cols - 1)) / cols;
+  const capSize = cw < 175 ? 11.5 : 12.5;
+  const capLh = capSize + 3.5;
+  const capLines = Math.max(...PC_CELLS.map((c) => wrapLines(ctx, c.cap, cw - 6, capSize, 500, 8).length));
+  const areaTop = titleY + 20;
+  const rowH = (tipY - 8 - areaTop) / rows;
+  const textH = 16 + 19 + capLines * capLh + 8;
+  const ds = clamp(rowH - textH - 8, 44, Math.min(cw * 0.7, 110));
+  PC_CELLS.forEach((c, i) => {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    const ccx = sl + pad + cw / 2 + col * (cw + gap);
+    const y0 = areaTop + row * rowH + Math.max(0, (rowH - textH - ds - 8) / 2);
+    const dcy = y0 + 4 + ds / 2;
+    if (c.kind === 'move') wasdDiagram(ctx, ccx, dcy, ds, t);
+    else if (c.kind === 'aim') mouseDiagram(ctx, ccx, dcy, ds, t);
+    else if (c.kind === 'swap') swapKeysDiagram(ctx, ccx, dcy, ds, t);
+    else reloadKeyDiagram(ctx, ccx, dcy, ds, t);
+    let ty = y0 + 4 + ds + 12;
+    outlined(ctx, c.sub, ccx, ty, 10.5, '#9fb3c8', 'center', 600);
+    ty += 16;
+    const hf = fit(ctx, c.head, cw - 6, 17, 800, 11);
+    outlined(ctx, hf.str, ccx, ty, hf.size, c.kind === 'aim' ? CYAN : '#ffffff', 'center', 800);
+    paragraph(ctx, c.cap, ccx, ty + 19, cw - 6, capSize, '#d6d0ea', 'center', 500, capLh);
+  });
+  tipStrip(ctx, sl + pad, tipY, W - pad * 2, tipH - 6, cx, PC_TIP);
+  drawButtons(ctx, list);
+}
+
 export function drawControls(ctx, view, state) {
   const st = state || {};
   const t = num(st.t);
+  if (st.input !== 'mobile') return drawControlsPc(ctx, view, st);
   if (landscape(view)) return drawControlsWide(ctx, view, st);
   const cx = view.w / 2;
   const top = num(safe(view).top);
@@ -501,8 +735,7 @@ export function drawControls(ctx, view, state) {
   const capLines = (c) => wrapLines(ctx, c.cap, cw - 6, capSize, 500, 6).length;
   const cap1 = Math.max(capLines(CELLS[0]), capLines(CELLS[1])) * capLh;
   const cap2 = Math.max(capLines(CELLS[2]), capLines(CELLS[3])) * capLh;
-  const withKeys = view.h >= 620; // a short portrait screen has no room for the keyboard line
-  const tipH = (view.h < 560 ? 30 : 34) + (withKeys ? 24 : 0);
+  const tipH = view.h < 560 ? 30 : 34;
   const headH = 11 + 20 + 4;
   const avail = startY - 10 - tipH - (titleY + 18);
   const diagH2 = view.h < 560 ? 50 : 56;
@@ -538,7 +771,7 @@ export function drawControls(ctx, view, state) {
 
   // tip strip, just above the buttons
   const ty = startY - 10 - tipH + 4;
-  tipStrip(ctx, 16, ty, view.w - 32, tipH - 6, cx, withKeys);
+  tipStrip(ctx, 16, ty, view.w - 32, tipH - 6, cx);
   drawButtons(ctx, list);
 }
 
@@ -681,7 +914,7 @@ export function drawComplete(ctx, view, state) {
   heavy(ctx, f.str, cx, y0 - (1 - a) * 12, f.size, AMBER);
   let y = y0 + (F.land ? 38 : 44);
   y += paragraph(ctx, str(st.line) || 'The Cowgate is quiet. Mostly.', cx, y, F.w - 48, 18, '#ffffff', 'center', 600);
-  y += paragraph(ctx, str(st.sub) || 'Freddie gets paid in exposure.', cx, y + 4, F.w - 48, 15, '#e5e0f5', 'center', 500);
+  y += paragraph(ctx, str(st.sub) || 'Naebun gets paid in exposure.', cx, y + 4, F.w - 48, 15, '#e5e0f5', 'center', 500);
 
   // stats row
   const kills = Math.floor(num(st.kills));
@@ -709,4 +942,93 @@ export function drawComplete(ctx, view, state) {
   else outlined(ctx, st.newBest ? 'NEW BEST' : `Best ${Math.floor(num(st.best))}`, cx, ny, 14, st.newBest ? CYAN : '#c9c2e0', 'center', 600);
   ctx.globalAlpha = 1;
   drawButtons(ctx, buttons('complete', view, st), t, 1);
+}
+
+// ---- setlist ----
+
+const RECORD_LABELS = ['#e8d34a', '#e0357c', '#22b8d4', '#7ac943']; // the label colours of the record models, in order
+
+// A 12 inch record seen face on: black vinyl with grooves and a coloured label, or a grey blank for a slot not yet found.
+function recordDisc(ctx, cx, cy, r, found, i) {
+  circle(ctx, cx, cy, r);
+  ctx.fillStyle = found ? '#101014' : 'rgba(120,124,138,0.35)';
+  ctx.fill();
+  if (found) {
+    ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+    ctx.lineWidth = 1;
+    for (const k of [0.62, 0.78, 0.92]) {
+      circle(ctx, cx, cy, r * k);
+      ctx.stroke();
+    }
+  }
+  circle(ctx, cx, cy, r * 0.36);
+  ctx.fillStyle = found ? RECORD_LABELS[i % RECORD_LABELS.length] : 'rgba(200,196,220,0.25)';
+  ctx.fill();
+  circle(ctx, cx, cy, Math.max(1.2, r * 0.07));
+  ctx.fillStyle = found ? '#101014' : 'rgba(30,26,44,0.8)';
+  ctx.fill();
+}
+
+// The found records with the joke each one carries, and a locked slot for each one still out there. One column in
+// portrait, two in landscape (three if the list ever gets long), always above the BACK button.
+export function drawSetlist(ctx, view, state) {
+  const st = state || {};
+  const found = new Set(Array.isArray(st.found) ? st.found.filter((x) => typeof x === 'string') : []);
+  const n = RECORDS.length;
+  const have = RECORDS.filter((r) => found.has(r.id)).length;
+  const F = frame(view);
+  const top = num(safe(view).top);
+  const sl = num(safe(view).left);
+  const sr = num(safe(view).right);
+  dim(ctx, view, 0.82);
+  const titleY = top + Math.max(F.land ? 24 : 36, view.h * (F.land ? 0.07 : 0.06));
+  heavy(ctx, 'SETLIST', view.w / 2, titleY, F.land ? 26 : 30, MAGENTA);
+  outlined(ctx, `${have} of ${n} records found`, view.w / 2, titleY + (F.land ? 24 : 30), 13, have === n ? '#86efac' : '#c9c2e0', 'center', 700);
+
+  const back = buttons('setlist', view, st)[0];
+  const y0 = titleY + (F.land ? 40 : 50);
+  const yb = back.y - 10;
+  const cols = F.land ? (n > 12 ? 3 : 2) : (n > 12 ? 2 : 1);
+  const perCol = Math.ceil(n / cols);
+  const gap = 6;
+  const rowH = clamp((yb - y0 - gap * (perCol - 1)) / perCol, 18, 64);
+  const W = view.w - sl - sr - 32;
+  const colW = (W - 10 * (cols - 1)) / cols;
+  for (let i = 0; i < n; i++) {
+    const r = RECORDS[i];
+    const isFound = found.has(r.id);
+    const col = Math.floor(i / perCol);
+    const x = sl + 16 + col * (colW + 10);
+    const y = y0 + (i % perCol) * (rowH + gap);
+    rrect(ctx, x, y, colW, rowH, 10);
+    ctx.fillStyle = isFound ? 'rgba(255,255,255,0.09)' : 'rgba(255,255,255,0.04)';
+    ctx.fill();
+    ctx.lineWidth = 1.4;
+    ctx.strokeStyle = isFound ? 'rgba(255,46,147,0.55)' : 'rgba(255,255,255,0.12)';
+    ctx.stroke();
+    const dr = Math.min(rowH / 2 - 4, 17);
+    recordDisc(ctx, x + 10 + dr, y + rowH / 2, dr, isFound, i);
+    const tx = x + 20 + dr * 2;
+    const tw = colW - (tx - x) - 10;
+    const head = isFound ? str(r.title) : 'LOCKED';
+    const body = isFound ? str(r.line) : 'Still out there somewhere.';
+    const tall = rowH >= 44;
+    const hs = rowH >= 34 ? 13 : 11.5;
+    const ft = fit(ctx, `${pad2(i + 1)}  ${head}`, tw, hs, 800, 8);
+    if (rowH < 30) { // one line only: title and joke together
+      const f1 = fit(ctx, `${pad2(i + 1)}  ${head}${isFound ? `: ${body}` : ''}`, tw, 11.5, 700, 8);
+      outlined(ctx, f1.str, tx, y + rowH / 2, f1.size, isFound ? '#ffffff' : 'rgba(255,255,255,0.4)', 'left', 700);
+    } else {
+      outlined(ctx, ft.str, tx, y + (tall ? 14 : rowH * 0.33), ft.size, isFound ? '#ffffff' : 'rgba(255,255,255,0.45)', 'left', 800);
+      const size = tall ? 12 : 11;
+      const cap = tall ? 2 : 1;
+      const all = wrapLines(ctx, body, tw, size, 500, 8);
+      const lines = all.slice(0, cap);
+      if (all.length > cap) lines[cap - 1] = fit(ctx, `${lines[cap - 1]}…`, tw, size, 500, size).str; // too long for the room: an ellipsis
+      for (let k = 0; k < lines.length; k++) {
+        outlined(ctx, lines[k], tx, y + (tall ? 30 : rowH * 0.7) + k * (size + 2), size, isFound ? '#d9d2ee' : 'rgba(255,255,255,0.3)', 'left', 500);
+      }
+    }
+  }
+  drawButtons(ctx, [back]);
 }

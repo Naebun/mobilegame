@@ -1,4 +1,4 @@
-# Freddie's Last Set
+# Naebun's Last Set
 
 ## Standing rule: levels
 Levels 1 (the Cowgate) and 2 (the Vaults) exist. Level 2 was built with the owner's explicit permission. **Never build
@@ -11,12 +11,29 @@ voice. Portrait and landscape (the layout follows the screen shape; `hud.layout(
 Two levels so far. Read `README.md` for the layout and `docs/fps-design.md` for the module contract.
 
 ## Conventions
+- **Drinks and weapons are always modelled in Blender**, every one of them, new ones included (the generated data modules
+  `src/drink-meshes.js`, `src/weapon-meshes.js` and the script that writes them; never procedural code). That covers weapon
+  torches, upgrade pickups and the like. Robots and level dressing may stay procedural or use the prop kit.
+- The player character is called Naebun, and the game is "Naebun's Last Set".
+- **Control modes:** PC mode (the default: mouse look, the grey touch boxes hidden) and mobile mode (the grey boxes). A
+  mobile browser switches to mobile mode on its own at start-up unless the player has chosen on the Settings page.
+- **The torch** is mounted on the gun, with a beam that follows where the gun points (not a light on the camera). Only a few
+  levels are dark enough to need it (level 2 now, 2 or 3 of the 10 in all); Naebun fits the pistol's torch at the start of
+  the first dark level, and every other gun already has one fitted.
+- **Prepared objects:** the roadmap's enemies, weapons, upgrades and collectibles may be built and tested ahead of time, but
+  they stay unplaced: no level map uses them until the owner says to put them in a level.
 - Match the surrounding code: 2-space indent, single quotes, semicolons, short comments that say why. British English.
 - `world.js` and `models.js` are procedural only: geometry, flat colours and generated `THREE.DataTexture`s. No image
   files, no canvas textures, no DOM access, so they run under plain Node (used by the headless tests).
 - The five drink meshes are modelled in Blender (`scripts/blender/drinks.py`) and generated into `src/drink-meshes.js`,
   which `models.js` decodes. That file is data, not hand-written: change the script and rerun it, never edit the output.
   Geometry and vertex colour only, still no image files. Texture work has not started.
+- The five weapons and Naebun's hands and forearms are modelled in Blender too (`scripts/blender/weapons.py` generates
+  `src/weapon-meshes.js`; same rules: change the script, never the output). The procedural `WEAPON_PARTS` in `models.js` stay as
+  the fallback.
+- Level props (barrels, casks, columns, speakers, bar, booths, tombs, carts and more) are modelled in Blender too
+  (`scripts/blender/props.py` generates `src/prop-meshes.js`; see `docs/props.md`). `world.js` places them with `placeProp`
+  and keeps the procedural props as the fallback and for the low tier. Change the script, never the output.
 - Look of the 3D world: gritty and real. Exposed brick, stone, timber, plaster, iron, warm tungsten light. Not
   sci-fi: no neon trim strips, no glowing panels. Neon is limited to a couple of classic bar signs. The 2D UI keeps
   its neon pink and cyan.
@@ -31,11 +48,13 @@ Two levels so far. Read `README.md` for the layout and `docs/fps-design.md` for 
   Ammo is unlimited, clips are not; reload is automatic when empty or via RELOAD. Button taps are read from press
   events, not live touches, so they work at any frame rate. `hud.layout(view)` is the single source of truth for the
   box and button rectangles.
+- The Settings page (from the title) switches CONTROLS between PC and MOBILE and sets mouse sensitivity (PC only). In PC mode the
+  mouse aims with no button held and the left button fires. Progress is saved by `src/save.js` (cookie plus localStorage); debug runs never write it.
 - Menu buttons come from `screens.buttons(mode, view, state)`, used for both drawing and hit testing.
 - NEW GAME goes to the controls screen first; only START GAME begins the run.
 
 ## Balance rule
-Debug mode (home-screen toggle, `DEBUG_MULT` in `game3d.js`) gives Freddie 2x fire rate, 2x damage and 2x health.
+Debug mode (home-screen toggle, `DEBUG_MULT` in `game3d.js`) gives Naebun 2x fire rate, 2x damage and 2x health.
 **Never balance against it.** All tuning is for normal mode. Debug runs must not write the best score.
 
 ## Testing

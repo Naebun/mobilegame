@@ -6,8 +6,8 @@ have not had a human play this level, and nothing here has been seen on a real p
 
 ## Story and flow
 
-Level 1 ends on NEXT LEVEL. A voicemail card from Cheryl (Freddie's agent) plays, then the level 2 intro, then play.
-Freddie starts level 2 with the pistol only and full health, same as level 1. There is no save data, and no carry-over of
+Level 1 ends on NEXT LEVEL. A voicemail card from Cheryl (Naebun's agent) plays, then the level 2 intro, then play.
+Naebun starts level 2 with the pistol only and full health, same as level 1. There is no save data, and no carry-over of
 weapons. Best scores are kept per level (`mobilegame.fps.best` for level 1, `mobilegame.fps.best.2` for level 2). Debug
 runs still never write a best score.
 
@@ -46,8 +46,12 @@ percent faster. Last Orders is refused in its room, like the Bouncer's.
 ## Look
 
 Nearly dark on purpose. The baked ambient tint is a third of level 1's, the fog is near and black, and the world's four
-point lights are braziers and lamps. Wall torches light pools through the baked light (no extra lights). Freddie's own
-torch is much stronger than in level 1 (`LEVEL_DEF.torch` in `src/levels/vaults.js`). Flames are soft crossed quads
+point lights are braziers and lamps. Wall torches light pools through the baked light (no extra lights). The level is dark enough that the gun torch is needed:
+at the start Naebun fits a torch to the pistol by hand (a short animation; the pistol cannot fire until it is on), and from then
+on the torch is a spotlight and a visible beam placed on the torch lens, so it points where the gun points, including through
+the reload dip and the recoil. Every other gun already has a torch fitted. There is no light on the camera in this level apart
+from a tiny fill (`fill` in `src/levels/vaults.js`); the torch settings are `torch` there and `dark: true` marks the level.
+F switches the torch off and on (PC). Flames are soft crossed quads
 drawn additively and re-shaped every frame. The ceiling is flat with stone arch ribs under it; a true barrel vault was
 tried on paper and dropped, because doors in the long walls would be cut off by the curve.
 
@@ -74,6 +78,10 @@ person and plays better than a thumb in a small box with no aim assist. Last run
 | sloppy | 83 percent | 147 (71) | Plague Cellar 4, Tour Guide 1 |
 | casual | 97 percent | 106 (44) | Plague Cellar 1 |
 | good | 90 percent | 90 (26) | Plague Cellar 2, Tour Guide 1 |
+
+A later re-run on the same map with no balance change (the Blender weapons shifted the bot's seeded random sequence)
+gave sloppy 67, casual 90 and good 93 percent. So 30 runs is good for about plus or minus 15 points, and the Plague
+Cellar is where the bot dies in both runs.
 
 So level 2 is meant to be clearly harder than level 1, which every bot beats every time. "Good" scoring below "casual"
 is run-to-run noise at 30 runs, or the good bot's fast turning catching on columns; we have not dug into which. Two

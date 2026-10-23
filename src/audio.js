@@ -197,6 +197,23 @@ export function ricochet() {
   osc('triangle', 1250, t, 0.12, 0.08, sfxBus, { to: 700 });
 }
 
+// The torch clicking home on the rail: a short dry clack and a tick.
+export function torchClick() {
+  if (!running()) return;
+  const t = ac.currentTime;
+  osc('square', 240, t, 0.05, 0.2, sfxBus, { to: 110 });
+  osc('square', 1800, t + 0.03, 0.03, 0.1, sfxBus, { to: 1200 });
+  noise(t, 0.04, 0.16, sfxBus, { freq: 3500 });
+}
+
+// The torch switching on: a small rising hum and a click.
+export function torchOn() {
+  if (!running()) return;
+  const t = ac.currentTime;
+  osc('sine', 180, t, 0.25, 0.12, sfxBus, { to: 520, attack: 0.05 });
+  osc('square', 1500, t, 0.03, 0.12, sfxBus, { to: 900 });
+}
+
 export function reload(done = false) {
   if (!running()) return;
   const t = ac.currentTime;
@@ -216,7 +233,7 @@ export function door() {
   noise(t, 0.5, 0.2, sfxBus, { type: 'bandpass', freq: 300, to: 900 });
 }
 
-// A heavy robot fist landing on Freddie.
+// A heavy robot fist landing on Naebun.
 export function melee() {
   if (!running()) return;
   const t = ac.currentTime;
@@ -363,4 +380,222 @@ export function laserEnd() {
   const t = ac.currentTime;
   osc('sine', 130, t, 0.7, 0.7, sfxBus, { to: 30 });
   noise(t, 0.6, 0.4, sfxBus, { type: 'lowpass', freq: 1200, to: 120 });
+}
+
+// ---- prepared enemies (docs/enemies-next.md) ----
+
+// One tick of a Fizzbang Shaken's rattle: a bead in a tin. `level` 0..1: higher is louder and higher, so the rattle
+// climbs as it closes in. Ticks closer than 30 ms are dropped so a crowd of them cannot flood the context.
+let lastRattle = 0;
+export function rattle(level = 0) {
+  if (!running()) return;
+  const t = ac.currentTime;
+  if (t - lastRattle < 0.03) return;
+  lastRattle = t;
+  const l = Math.max(0, Math.min(1, level));
+  osc('square', 700 + l * 1500 + Math.random() * 120, t, 0.035, 0.05 + 0.1 * l, sfxBus, { to: 380 + l * 500 });
+  noise(t, 0.03, 0.06 + 0.12 * l, sfxBus, { freq: 2600 + l * 3200 });
+}
+
+// A can about to go: a rising hiss with a whine under it.
+export function hiss() {
+  if (!running()) return;
+  const t = ac.currentTime;
+  noise(t, 0.75, 0.3, sfxBus, { type: 'highpass', freq: 2200, to: 6500 });
+  osc('sine', 420, t, 0.75, 0.12, sfxBus, { to: 1500, attack: 0.1 });
+}
+
+// The burst: a fizzy whump with a spray of pops on top.
+export function fizz() {
+  if (!running()) return;
+  const t = ac.currentTime;
+  osc('sine', 240, t, 0.4, 0.6, sfxBus, { to: 55 });
+  noise(t, 0.7, 0.45, sfxBus, { type: 'bandpass', freq: 3000, to: 600 });
+  noise(t, 0.12, 0.4, sfxBus, { type: 'lowpass', freq: 1500, to: 200 });
+  for (let i = 0; i < 6; i++) osc('sine', 900 + Math.random() * 1600, t + 0.05 + Math.random() * 0.4, 0.05, 0.12, sfxBus, { to: 300 });
+}
+
+// The Longshot starting to charge: a thin whine that climbs for the whole charge, `seconds` long.
+export function snipeCharge(seconds = 1.65) {
+  if (!running()) return;
+  const t = ac.currentTime;
+  osc('sine', 500, t, seconds, 0.1, sfxBus, { to: 2200, attack: 0.4 });
+  osc('triangle', 250, t, seconds, 0.07, sfxBus, { to: 1100, attack: 0.4 });
+}
+
+// The line locks: two quick high beeps, so the player knows the aim has stopped moving.
+export function lock() {
+  if (!running()) return;
+  const t = ac.currentTime;
+  osc('square', 1760, t, 0.05, 0.14, sfxBus);
+  osc('square', 2349, t + 0.08, 0.06, 0.14, sfxBus);
+}
+
+// The shot itself: a flat crack, a heavy thump and a long tail.
+export function snipe() {
+  if (!running()) return;
+  const t = ac.currentTime;
+  noise(t, 0.12, 0.7, sfxBus, { freq: 1500 });
+  osc('sine', 200, t, 0.5, 0.8, sfxBus, { to: 40 });
+  osc('sawtooth', 1100, t, 0.1, 0.3, sfxBus, { to: 180 });
+  noise(t + 0.05, 0.6, 0.3, sfxBus, { type: 'lowpass', freq: 500, to: 80 });
+}
+
+// A Nurse starting to revive: a soft rising hum for the `seconds` of the channel.
+export function reviveStart(seconds = 3.6) {
+  if (!running()) return;
+  const t = ac.currentTime;
+  osc('sine', 220, t, seconds, 0.08, sfxBus, { to: 520, attack: 0.3 });
+  osc('triangle', 330, t, seconds, 0.05, sfxBus, { to: 780, attack: 0.5 });
+}
+
+// A robot getting back up: a bright little rising chime and a clank.
+export function reviveDone() {
+  if (!running()) return;
+  const t = ac.currentTime;
+  [392, 523.3, 659.3, 784].forEach((f, i) => osc('sine', f, t + i * 0.07, 0.4, 0.16, sfxBus, { attack: 0.02 }));
+  osc('square', 130, t, 0.12, 0.2, sfxBus, { to: 70 });
+}
+
+// The Vending Mimic coming apart into a robot: servo whine, clanks, a hydraulic hiss.
+export function unfold() {
+  if (!running()) return;
+  const t = ac.currentTime;
+  osc('sawtooth', 110, t, 0.8, 0.2, sfxBus, { to: 330, attack: 0.1 });
+  osc('square', 150, t + 0.15, 0.1, 0.25, sfxBus, { to: 70 });
+  osc('square', 120, t + 0.45, 0.1, 0.25, sfxBus, { to: 60 });
+  noise(t + 0.2, 0.5, 0.2, sfxBus, { type: 'bandpass', freq: 2500, to: 800 });
+}
+
+// ---------------------------------------------------------------------------------------------
+// The prepared arsenal (docs/arsenal.md)
+// ---------------------------------------------------------------------------------------------
+
+// The Feedback Beam: a low buzz with a squeal that climbs while it stays on one target (k 0 to 1). beamHum(false) stops it.
+let beamNodes = null;
+export function beamHum(on, k = 0) {
+  if (!running()) return;
+  const t = ac.currentTime;
+  if (!on) {
+    if (beamNodes) {
+      const b = beamNodes;
+      beamNodes = null;
+      b.gain.gain.cancelScheduledValues(t);
+      b.gain.gain.setTargetAtTime(0.0001, t, 0.04);
+      b.oscs.forEach((o) => o.stop(t + 0.3));
+    }
+    return;
+  }
+  if (!beamNodes) {
+    const gain = ac.createGain();
+    gain.gain.value = 0.0001;
+    gain.connect(sfxBus);
+    const mk = (type, f, g) => {
+      const o = ac.createOscillator();
+      o.type = type;
+      o.frequency.value = f;
+      const og = ac.createGain();
+      og.gain.value = g;
+      o.connect(og);
+      og.connect(gain);
+      o.start();
+      return { o, og };
+    };
+    const hum = mk('sawtooth', 98, 0.5);
+    const beat = mk('square', 101, 0.3);
+    const squeal = mk('sine', 1500, 0.05);
+    beamNodes = { gain, hum, beat, squeal, oscs: [hum.o, beat.o, squeal.o] };
+    gain.gain.setTargetAtTime(0.16, t, 0.03);
+  }
+  const b = beamNodes;
+  b.squeal.o.frequency.setTargetAtTime(1500 + k * 2200, t, 0.08);
+  b.squeal.og.gain.setTargetAtTime(0.05 + k * 0.45, t, 0.08);
+  b.hum.o.frequency.setTargetAtTime(98 + k * 24, t, 0.1);
+}
+
+// The grenade leaving Naebun's hand: a short whoosh and a clink of the pin.
+export function grenadeThrow() {
+  if (!running()) return;
+  const t = ac.currentTime;
+  noise(t, 0.22, 0.28, sfxBus, { type: 'bandpass', freq: 500, to: 1800 });
+  osc('triangle', 1900, t, 0.06, 0.12, sfxBus, { to: 1300 });
+  osc('sine', 120, t, 0.12, 0.25, sfxBus, { to: 70 });
+}
+
+// The grenade hitting something solid: a dull metal knock, a little different each time.
+export function grenadeBounce() {
+  if (!running()) return;
+  const t = ac.currentTime;
+  const f = 150 + Math.random() * 50;
+  osc('triangle', f, t, 0.1, 0.3, sfxBus, { to: f * 0.5 });
+  osc('square', f * 4.2, t, 0.03, 0.08, sfxBus, { to: f * 3 });
+  noise(t, 0.05, 0.15, sfxBus, { type: 'lowpass', freq: 2200 });
+}
+
+// The bass drop: a sub sweep down the floor, a thump, a wash of low noise.
+export function bassDrop() {
+  if (!running()) return;
+  const t = ac.currentTime;
+  osc('sine', 150, t, 1.1, 0.95, sfxBus, { to: 28 });
+  osc('triangle', 300, t, 0.35, 0.3, sfxBus, { to: 55 });
+  noise(t, 0.7, 0.4, sfxBus, { type: 'lowpass', freq: 500, to: 60 });
+  noise(t, 0.05, 0.3, sfxBus, { type: 'highpass', freq: 3000 });
+}
+
+// The airhorn: three horns blaring together, a little out of tune, with a wobble.
+export function airhorn() {
+  if (!running()) return;
+  const t = ac.currentTime;
+  const out = ac.createGain();
+  out.gain.setValueAtTime(0.0001, t);
+  out.gain.exponentialRampToValueAtTime(0.42, t + 0.015);
+  out.gain.setValueAtTime(0.42, t + 0.38);
+  out.gain.exponentialRampToValueAtTime(0.0001, t + 0.62);
+  const lp = ac.createBiquadFilter();
+  lp.type = 'lowpass';
+  lp.frequency.value = 3400;
+  out.connect(lp);
+  lp.connect(sfxBus);
+  const lfo = ac.createOscillator();
+  lfo.frequency.value = 9;
+  const lfoGain = ac.createGain();
+  lfoGain.gain.value = 5;
+  lfo.connect(lfoGain);
+  [466, 587.3, 698.5, 932].forEach((f, i) => {
+    const o = ac.createOscillator();
+    o.type = i === 3 ? 'sine' : 'sawtooth';
+    o.frequency.value = f * (1 + (i - 1.5) * 0.004);
+    lfoGain.connect(o.frequency);
+    const g = ac.createGain();
+    g.gain.value = i === 3 ? 0.2 : 0.3;
+    o.connect(g);
+    g.connect(out);
+    o.start(t);
+    o.stop(t + 0.7);
+  });
+  lfo.start(t);
+  lfo.stop(t + 0.7);
+  noise(t, 0.12, 0.2, sfxBus, { type: 'bandpass', freq: 1800 });
+}
+
+// One round of the SMG's alt-fire burst: the SMG's own sound.
+export function burst() {
+  shoot('smg');
+}
+
+// An upgrade picked up: three quick rising notes and a click.
+export function upgrade() {
+  if (!running()) return;
+  const t = ac.currentTime;
+  [523.3, 659.3, 784, 1046.5].forEach((f, i) => osc('triangle', f, t + i * 0.075, 0.25, 0.2, sfxBus, { attack: 0.01 }));
+  osc('square', 220, t, 0.05, 0.12, sfxBus, { to: 440 });
+}
+
+// A record found: a scratch, then a chime.
+export function recordFound() {
+  if (!running()) return;
+  const t = ac.currentTime;
+  osc('sawtooth', 1000, t, 0.16, 0.18, sfxBus, { to: 180 });
+  noise(t, 0.14, 0.18, sfxBus, { type: 'bandpass', freq: 2400, to: 700 });
+  [880, 1318.5, 1760].forEach((f, i) => osc('sine', f, t + 0.18 + i * 0.09, 0.5, 0.16, sfxBus, { attack: 0.01 }));
 }
