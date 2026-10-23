@@ -2,7 +2,7 @@
 // Run: node scripts/harness/ui-check.mjs
 import assert from 'node:assert/strict';
 import { layout, drawPlayHud } from '../../src/hud.js';
-import { buttons, drawTitle, drawControls, drawIntro, drawDead, drawComplete, drawVoicemail, drawSettings, drawSetlist } from '../../src/screens.js';
+import { buttons, drawTitle, drawControls, drawIntro, drawDead, drawComplete, drawVoicemail, drawSettings, drawSetlist, drawDifficulty } from '../../src/screens.js';
 
 let calls = 0;
 function fakeCtx() {
@@ -53,9 +53,10 @@ const hudStates = [
     toast: { text: long, t: 99 }, banner: { title: long, sub: long, t: 0, max: 0 },
     objective: long, areaName: long, enemiesLeft: 1,
     boss: { name: long, hp: huge, maxHp: 0 },
-    debugMode: true,
+    debugMode: true, difficulty: 'EXTRA HARD',
     move: { active: true, nx: huge, ny: -huge }, look: { active: true, nx: NaN, ny: 9 }, firing: true,
   },
+  { difficulty: 'HARD', score: 123456, timeSec: 754 }, { difficulty: long, debugMode: true }, { difficulty: null }, { difficulty: 5 },
   { toast: { text: '', t: 1 }, banner: { title: '', sub: '', t: 1, max: 1 }, objective: null, areaName: undefined, enemiesLeft: 0 },
   // the prepared arsenal: eight weapons on the strip, a charge meter, upgrade chips and the ALT button, mobile and PC, odd values too
   {
@@ -104,8 +105,8 @@ for (const v of views) {
   for (const h of hudStates) drawPlayHud(ctx, v, h);
 
   // every menu button stays on screen, clear of the side insets, and nothing overlaps, in both orientations
-  const bstates = [undefined, null, {}, { t: -1 }, { t: 0.5 }, { t: 5, debugMode: true }, { t: huge }, { t: NaN }, { t: 3, hasNext: true }, { t: 3, input: 'pc', sensLabel: 'MEDIUM', debugMode: true, resumeLevel: 2, resetArmed: true }, { t: 3, input: 'mobile' }, { t: 3, records: 4, resumeLevel: 2, debugMode: true }, { t: 3, records: 10 }, { t: 3, records: NaN }, { t: 3, records: huge }];
-  for (const mode of ['title', 'controls', 'settings', 'setlist', 'dead', 'complete', 'voicemail', 'bogus']) {
+  const bstates = [undefined, null, {}, { t: -1 }, { t: 0.5 }, { t: 5, debugMode: true }, { t: huge }, { t: NaN }, { t: 3, hasNext: true }, { t: 3, input: 'pc', sensLabel: 'MEDIUM', debugMode: true, resumeLevel: 2, resetArmed: true }, { t: 3, input: 'mobile' }, { t: 3, records: 4, resumeLevel: 2, debugMode: true }, { t: 3, records: 10 }, { t: 3, records: NaN }, { t: 3, records: huge }, { t: 1, difficulty: 'hard', resumeLevel: 2 }, { t: 1, difficulty: 'extra', resumeLevel: 2, debugMode: true, records: 4 }, { t: 1, difficulty: 'bogus', input: 'pc' }, { t: 1, difficulty: 'extra', input: 'mobile' }, { t: 1, difficulty: null, input: 'pc' }];
+  for (const mode of ['title', 'difficulty', 'controls', 'settings', 'setlist', 'dead', 'complete', 'voicemail', 'bogus']) {
     for (const s of bstates) {
       const list = buttons(mode, v, s);
       assert.ok(Array.isArray(list));
@@ -135,6 +136,32 @@ for (const v of views) {
     assert.deepEqual(buttons('setlist', v, { t: 0 }).map((b) => b.id), ['back']);
   }
   assert.equal(buttons('title', v, { t: 0, resumeLevel: 2 })[0].label, 'CONTINUE: LEVEL 2');
+  assert.equal(buttons('title', v, { t: 0, resumeLevel: 2, difficulty: 'normal' })[0].label, 'CONTINUE: LEVEL 2', 'normal adds nothing to CONTINUE');
+  assert.equal(buttons('title', v, { t: 0, resumeLevel: 2, difficulty: 'hard' })[0].label, 'CONTINUE: LEVEL 2 (HARD)');
+  assert.equal(buttons('title', v, { t: 0, resumeLevel: 2, difficulty: 'extra' })[0].label, 'CONTINUE: LEVEL 2 (EXTRA HARD)');
+  assert.equal(buttons('title', v, { t: 0, resumeLevel: 2, difficulty: 'bogus' })[0].label, 'CONTINUE: LEVEL 2', 'an unknown mode adds nothing');
+  // the difficulty page: three choices and BACK, inside the screen and the insets, clear of each other, big enough to hit
+  for (const sel of [undefined, 'normal', 'hard', 'extra', 'bogus']) {
+    for (const input of ['pc', 'mobile', undefined]) {
+      const d = buttons('difficulty', v, { t: 0, difficulty: sel, input });
+      assert.deepEqual(d.map((b) => b.id), ['mode:normal', 'mode:hard', 'mode:extra', 'back'], 'three choices, then BACK');
+      assert.deepEqual(d.map((b) => b.label), ['NORMAL', 'HARD', 'EXTRA HARD', 'BACK']);
+      assert.deepEqual(d.slice(0, 3).map((b) => b.mode), ['normal', 'hard', 'extra']);
+      assert.deepEqual(d.slice(0, 3).map((b) => b.n), [1, 2, 3], 'the number keys');
+      assert.ok(d.slice(0, 3).every((b) => typeof b.sub === 'string' && b.sub.length > 5 && b.sub.length < 60), 'one short line each');
+      assert.equal(d.filter((b) => b.selected).length, 1, 'exactly one choice is highlighted');
+      assert.equal(d.find((b) => b.selected).mode, ['normal', 'hard', 'extra'].includes(sel) ? sel : 'normal', 'the highlight follows the current mode (normal if unknown)');
+      for (const b of d.slice(0, 3)) assert.ok(b.w >= 120 && b.h >= 52, `choice ${b.id} is a fair touch target at ${v.w}x${v.h} (${b.w.toFixed(0)}x${b.h.toFixed(0)})`);
+      const sel0 = d.slice(0, 3);
+      for (const b of sel0) assert.ok(b.y + b.h <= d[3].y, `choice ${b.id} stays above BACK`);
+      assert.ok(sel0.every((b) => b.y >= ((v.safe && v.safe.top) || 0) + 50), 'and below the heading');
+    }
+  }
+  {
+    const d = buttons('difficulty', v, { t: 0 });
+    if (v.w > v.h * 1.05) assert.ok(d[0].y === d[1].y && d[1].y === d[2].y && d[0].x < d[1].x && d[1].x < d[2].x, 'landscape: side by side');
+    else assert.ok(d[0].x === d[1].x && d[0].y < d[1].y && d[1].y < d[2].y, 'portrait: one column');
+  }
   assert.deepEqual(buttons('settings', v, { t: 0, input: 'pc' }).map((b) => b.id), ['input', 'sens', 'reset', 'back']);
   assert.deepEqual(buttons('settings', v, { t: 0, input: 'mobile' }).map((b) => b.id), ['input', 'reset', 'back']);
   assert.equal(buttons('settings', v, { input: 'pc' })[0].label, 'CONTROLS: PC');
@@ -161,6 +188,14 @@ for (const v of views) {
     drawVoicemail(ctx, v, s);
     drawSettings(ctx, v, s);
     drawSetlist(ctx, v, s);
+    drawDifficulty(ctx, v, s);
+  }
+  for (const d of [undefined, 'normal', 'hard', 'extra', 'bogus', null, 7]) {
+    for (const input of ['pc', 'mobile']) drawDifficulty(ctx, v, { t: 2, difficulty: d, input });
+    drawTitle(ctx, v, { t: 2, difficulty: d, resumeLevel: 2, best: 1234, levelName: 'THE COWGATE', levelNumber: 1 });
+    drawDead(ctx, v, { t: 3, difficulty: d, levelName: long, score: 5, best: 9 });
+    drawComplete(ctx, v, { t: 3, difficulty: d, score: 5, best: 9, newBest: true, kills: 2, totalEnemies: 2 });
+    drawComplete(ctx, v, { t: 3, difficulty: d, score: 5, best: 9, kills: 2, totalEnemies: 2, hasNext: true });
   }
   for (const found of [undefined, null, 'haar', [], ['haar'], ['haar', 'gala', 5, null, {}, 'nope'], ['haar', 'bypass', 'gala', 'pipes', 'wee', 'supper', 'tram', 'hold', 'foot', 'refund'], Array.from({ length: 50 }, (_, i) => `x${i}`)]) {
     drawSetlist(ctx, v, { t: 1, found });

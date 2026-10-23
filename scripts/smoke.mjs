@@ -1,11 +1,13 @@
 // End-to-end check of the first-person game in headless Chromium (software WebGL) with synthetic multi-touch.
 // Covers: menus and the controls screen, the grey move and look boxes, auto-fire, clip and reload, weapon swap,
-// the linear route (areas, doors, enemies that stay dead), death and retry, level complete, and debug mode.
+// the linear route (areas, doors, enemies that stay dead), death and retry, level complete, debug mode, and the difficulty
+// choice (NEW GAME, pick a mode, controls, START; Hard robots; the mode and a best per mode in the cookie; CONTINUE in the same mode).
 // Screenshots go to the directory in argv[2] (default: cwd) as smoke-*.png.
 import { spawn } from 'node:child_process';
 import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
+import { DIFFICULTY } from '../src/data.js'; // the multipliers, so a retuned table does not break the checks
 
 const port = Number(process.env.PORT || 8099);
 const outDir = process.argv[2] || '.';
@@ -70,9 +72,21 @@ try {
       mode: s.mode, x: p.x, z: p.z, yaw: p.yaw, health: p.health, maxHealth: p.maxHealth, weapon: p.weapon,
       clip: p.ammo[p.weapon], reloading: p.reloadT > 0, shots: s.shots, kills: s.kills,
       alive: s.enemies.filter((e) => !e.dead).length, total: s.totalEnemies, areas: s.areas.map((a) => ({ id: a.def.id, cleared: a.cleared })),
-      debugMode: s.debugMode, owned: Object.keys(p.owned), allClear: s.allClear,
+      debugMode: s.debugMode, owned: Object.keys(p.owned), allClear: s.allClear, difficulty: s.difficulty,
     };
   });
+  const readSave = () => page.evaluate(() => {
+    const c = document.cookie.split('; ').find((x) => x.startsWith('fls='));
+    return c ? JSON.parse(decodeURIComponent(c.slice(4))) : null;
+  });
+  const hps = (kind) => page.evaluate((k) => window.__game.getState().enemies.filter((e) => e.kind === k).map((e) => e.maxHp), kind);
+  // NEW GAME asks for a difficulty before the controls screen; START GAME is still pressed on the controls screen
+  const toControls = async (mode) => {
+    await pressButton('new');
+    await until("s.mode === 'difficulty'");
+    await pressButton(`mode:${mode}`);
+    await until("s.mode === 'controls'");
+  };
   const shot = (name) => page.screenshot({ path: join(outDir, `smoke-${name}.png`) });
 
   // medium tier: the full post pipeline (HDR, bloom, MSAA) at a cost software WebGL can bear
@@ -116,14 +130,24 @@ try {
 
   // menus: title -> controls -> intro -> play
   await pressButton('new');
-  check(await until("s.mode === 'controls'"), 'NEW GAME opens the controls screen');
-  await shot('controls');
+  check(await until("s.mode === 'difficulty'"), 'NEW GAME opens the difficulty screen first');
+  check((await hook('buttons')).map((b) => b.id).join() === 'mode:normal,mode:hard,mode:extra,back', 'it offers NORMAL, HARD, EXTRA HARD and BACK');
+  await page.waitForTimeout(800);
+  await shot('difficulty');
   await pressButton('back');
   check(await until("s.mode === 'title'"), 'BACK returns to the title');
   await pressButton('new');
+  await until("s.mode === 'difficulty'");
+  await pressButton('mode:hard');
+  check(await until("s.mode === 'controls' && s.difficulty === 'hard'"), 'picking HARD goes on to the controls screen');
+  await shot('controls');
+  await pressButton('back');
+  check(await until("s.mode === 'difficulty'"), 'BACK on the controls screen returns to the difficulty screen');
+  await pressButton('mode:hard');
   await until("s.mode === 'controls'");
   await page.waitForTimeout(1500);
   check((await state()).mode === 'controls', 'the game does not start until START GAME is pressed');
+  check(!(await readSave()), 'nothing is saved before START GAME');
   await pressButton('start');
   check(await until("s.mode === 'intro'"), 'START GAME shows the level intro');
   await page.waitForTimeout(1200);
@@ -143,6 +167,10 @@ try {
   });
   check(placed1.by.mimic === 1 && placed1.by.shaken === 1 && placed1.by.longshot === 1 && placed1.by.nurse === 1 && s0.total === 21, `level 1 holds one of each newer robot (${JSON.stringify(placed1.by)})`);
   check(placed1.asleep && placed1.mimicDisguised, 'they are all asleep, and the Mimic is a drinks machine from the start');
+  const hp = (base, mode) => Math.round(base * DIFFICULTY[mode].health);
+  check(s0.difficulty === 'hard' && (await hps('fizzbang')).every((h) => h === hp(60, 'hard')) && (await hps('bouncer'))[0] === hp(450, 'hard'), `a Hard run: a Dr Fizzbang bot has ${(await hps('fizzbang'))[0]} hp (60 x ${DIFFICULTY.hard.health}) and the Bouncer ${(await hps('bouncer'))[0]}`);
+  check((await readSave()).difficulty === 'hard', 'the choice is in the cookie');
+  check((await hook('hud')).difficulty === 'HARD', 'the HUD is told the run is Hard');
   await page.waitForTimeout(1000);
   await shot('play-start');
 
@@ -201,7 +229,7 @@ try {
   await ptr('pointerdown', 2, lx, ly);
   check(await until('s.shots >= 2'), 'the launcher fires rockets');
   await ptr('pointerup', 2, lx, ly);
-  check(await until('s.projectiles.length === 0', null, 15000), 'rockets explode on impact and clean up');
+  check(await until('s.projectiles.length === 0', null, 60000), 'rockets explode on impact and clean up'); // game time runs slower than the clock on a busy machine
 
   // enemy bottles: a Bampot and Nephew bot with a clear line of sight throws one
   await hook('play');
@@ -318,6 +346,7 @@ try {
   });
   check(v.id === 'vaults' && v.level === 2, 'the world is now the Vaults');
   check(v0.weapon === 'pistol' && v0.owned.length === 1 && v0.health === v0.maxHealth, 'Naebun starts level 2 with the pistol only and full health');
+  check(v0.difficulty === 'hard' && (await hps('tourguide'))[0] === hp(360, 'hard'), `the run stays Hard on level 2 (the Tour Guide has ${(await hps('tourguide'))[0]} hp, 360 x ${DIFFICULTY.hard.health})`);
   check(v.kinds.includes('shielded') && v.kinds.includes('tourguide') && v.kinds.includes('fizzbang') && v.kinds.includes('bampot'), `level 2 has its robots (${v.kinds.join(', ')})`);
   check(v.weapons.includes('vinyl') && v.weapons.includes('launcher'), `the Vinyl Disc and the launcher lie on the floor (${v.weapons.join(', ')})`);
   check(['shaken', 'longshot', 'nurse', 'mimic'].every((k) => v.kinds.includes(k)), `level 2 also holds the newer robots (${v.kinds.join(', ')})`);
@@ -362,16 +391,22 @@ try {
   const back = await page.waitForFunction(() => window.__game.getWorld().id === 'cowgate', null, { timeout: 30000 }).then(() => true, () => false);
   check(back, 'and the Cowgate is loaded again behind it (the swap waits for a drawn frame)');
 
-  // death and retry
-  await pressButton('new');
-  await until("s.mode === 'controls'", null, 60000);
+  // the Hard bests so far, then a Normal run: death, retry, and a best score kept apart from the Hard one
+  const hardBest = await readSave();
+  check(hardBest.best.hard && hardBest.best.hard[1] > 0 && hardBest.best.hard[2] > 0 && !hardBest.best.normal, `finishing both levels on Hard saved Hard bests only (${JSON.stringify(hardBest.best)})`);
+  await toControls('normal');
   await pressButton('start');
   await until("s.mode === 'intro'", null, 60000);
   await until('s.introT > 0.9'); // a tap skips the intro only after 0.8 s of game time, which a slow software renderer takes a while to reach
   await tap(195, 400);
-  check(await until("s.mode === 'play'", null, 60000), 'a new game starts again after the levels (the death test needs play mode)');
+  check(await until("s.mode === 'play'", null, 60000), 'a Normal run starts');
+  check((await state()).difficulty === 'normal' && (await hps('fizzbang')).every((h) => h === 60), 'a Normal run has the plain 60 hp Dr Fizzbang bots');
+  check((await readSave()).difficulty === 'normal', 'starting it saves Normal as the mode');
+  await page.evaluate(() => { window.__game.getState().score = 321; });
   await hook('hurt', 1000);
   check(await until("s.mode === 'dead'"), 'dies at zero health');
+  const both = await readSave();
+  check(both.best.normal && both.best.normal[1] === 321 && both.best.hard[1] === hardBest.best.hard[1], `the Normal best (321) is kept apart from the Hard one (${JSON.stringify(both.best)})`);
   await page.waitForTimeout(2200);
   await until('s.deadT > 1.2', undefined, 90000);
   await shot('dead');
@@ -387,12 +422,14 @@ try {
   await pressButton('debug');
   check(await until('s.debugMode === true'), 'the debug button turns debug mode on');
   await shot('title-debug');
-  await pressButton('new');
-  await until("s.mode === 'controls'");
+  const beforeDebug = JSON.stringify(await readSave());
+  await toControls('extra');
   await pressButton('start');
   await until("s.mode === 'intro'");
   await tap(195, 400);
   await until("s.mode === 'play'");
+  check((await state()).difficulty === 'extra' && (await hps('fizzbang')).every((h) => h === hp(60, 'extra')), `a debug run can pick Extra Hard (a Dr Fizzbang bot has ${hp(60, 'extra')} hp: 60 x ${DIFFICULTY.extra.health}; debug does not touch the robots)`);
+  check(JSON.stringify(await readSave()) === beforeDebug, 'a debug run does not write the mode (or anything else) to the cookie');
   const dbg = await hook('stats');
   check(dbg.fireInterval === 0.14 && dbg.damageMult === 2 && dbg.maxHealth === 200, `debug mode is exactly 2x (${dbg.fireInterval}s, x${dbg.damageMult}, ${dbg.maxHealth} hp)`);
   await page.waitForTimeout(1200);
@@ -413,7 +450,11 @@ try {
   check(fovL.aspect > 2 && fovL.fov < 70, `landscape: the vertical field of view narrows (${fovL.fov.toFixed(1)} degrees at aspect ${fovL.aspect.toFixed(2)})`);
   await shot('land-title');
   await pressButton('new');
-  check(await until("s.mode === 'controls'"), 'landscape: NEW GAME opens the controls screen');
+  check(await until("s.mode === 'difficulty'"), 'landscape: NEW GAME opens the difficulty screen');
+  await page.waitForTimeout(800);
+  await shot('land-difficulty');
+  await pressButton('mode:hard');
+  check(await until("s.mode === 'controls'"), 'landscape: picking HARD opens the controls screen');
   await page.waitForTimeout(800);
   await shot('land-controls');
   await pressButton('start');
@@ -463,16 +504,18 @@ try {
   // saved progress: finishing the levels above wrote a cookie, and a reload offers CONTINUE
   const cookie = await page.evaluate(() => document.cookie.split('; ').find((c) => c.startsWith('fls=')) || '');
   const saved = cookie ? JSON.parse(decodeURIComponent(cookie.slice(4))) : null;
-  check(saved && saved.unlocked === 2 && saved.done.join() === '1,2' && saved.best[1] > 0, `progress is saved in a cookie (${cookie ? decodeURIComponent(cookie).slice(0, 80) : 'none'})`);
+  check(saved && saved.unlocked === 2 && saved.done.join() === '1,2' && saved.best.hard[1] > 0 && saved.best.normal[1] === 321 && saved.difficulty === 'hard', `progress, the mode and a best per mode are saved in a cookie (${cookie ? decodeURIComponent(cookie).slice(0, 120) : 'none'})`);
+  check(cookie.length < 600, `and the cookie is small (${cookie.length} characters)`);
   await page.goto(`http://localhost:${port}/?test&q=low&pc`);
   await page.waitForFunction(() => window.__game && window.__game.getState().player, null, { timeout: 60000 });
   await page.waitForTimeout(1200);
   const tb = await hook('buttons');
-  check(tb.map((b) => b.id).join() === 'resume,new,settings,setlist,debug' && tb[0].label === 'CONTINUE: LEVEL 2', `after a reload the title offers ${tb.map((b) => b.label).join(' | ')} (SETLIST because a record was found)`);
+  check(tb.map((b) => b.id).join() === 'resume,new,settings,setlist,debug' && tb[0].label === 'CONTINUE: LEVEL 2 (HARD)', `after a reload the title offers ${tb.map((b) => b.label).join(' | ')}`);
   await shot('title-continue');
   await pressButton('resume');
   check(await until("s.mode === 'voicemail' && s.level === 2"), 'CONTINUE goes to level 2 behind its voicemail');
   await page.waitForFunction(() => window.__game.getWorld().id === 'vaults', null, { timeout: 60000 });
+  check(await until("s.difficulty === 'hard' && s.enemies.some((e) => e.kind === 'tourguide' && e.maxHp === a)", hp(360, 'hard'), 30000), `CONTINUE resumes in Hard: the Tour Guide has ${hp(360, 'hard')} hp`);
   await hook('title');
   await page.waitForFunction(() => window.__game.getWorld().id === 'cowgate', null, { timeout: 60000 });
 
@@ -501,7 +544,18 @@ try {
   await pressButton('back');
   await until("s.mode === 'title'");
   await pressButton('new');
-  await until("s.mode === 'controls'");
+  await until("s.mode === 'difficulty'");
+  await page.waitForTimeout(800);
+  await shot('difficulty-pc');
+  await page.keyboard.down('3'); // a real key held long enough for a frame to see it: 3 picks EXTRA HARD
+  check(await until("s.mode === 'controls' && s.difficulty === 'extra'"), 'PC: the 3 key picks EXTRA HARD and goes on');
+  await page.keyboard.up('3');
+  await pressButton('back');
+  await until("s.mode === 'difficulty'");
+  await page.keyboard.down('Escape');
+  check(await until("s.mode === 'title' && s.difficulty === 'hard'"), 'PC: Escape goes back to the title (and the unstarted pick is dropped: the saved mode, Hard, shows)');
+  await page.keyboard.up('Escape');
+  await toControls('normal');
   await page.waitForTimeout(800);
   await shot('controls-pc');
   await pressButton('start');
@@ -528,6 +582,7 @@ try {
   await until('s.save.done.length === 0');
   const cleared = await page.evaluate(() => document.cookie.split('; ').find((c) => c.startsWith('fls=')) || '');
   check(!cleared || JSON.parse(decodeURIComponent(cleared.slice(4))).unlocked === 1, 'the second tap erases the saved progress');
+  check(!cleared || (() => { const c = JSON.parse(decodeURIComponent(cleared.slice(4))); return c.difficulty === 'normal' && !Object.keys(c.best || {}).length; })(), 'and the bests and the mode with it');
   await pressButton('back');
   await until("s.mode === 'title'");
   check((await hook('buttons')).map((b) => b.id).join() === 'new,settings,debug', 'with nothing saved the title is back to NEW GAME');

@@ -14,6 +14,14 @@ the `altfire` upgrade (right mouse button or E, an ALT button on mobile), the cl
 records with a joke each, saved in `src/save.js`, and a SETLIST screen on the title once one is found. Design, numbers, how to
 place them and what is not verified: `docs/arsenal.md`. Nothing has been played by a person; the numbers are first guesses.
 
+## Hard and Extra Hard (built, owner's request)
+Three difficulties, all open from the start, picked on a new screen on the NEW GAME path (title, difficulty, controls, START) and
+saved so CONTINUE resumes in the same mode. They multiply robot damage, health, speed and wind-up (the `DIFFICULTY` table in
+`src/data.js`), nothing else: same maps, same pickups, Naebun untouched, no telegraph under 0.35 s. Best scores are kept per mode and
+level. Rules, numbers and what the bots showed: `docs/difficulty.md`. Open: a human playtest of both modes (bots aim better than a
+thumb in a small box with no aim assist, so people will do worse), and whether the multipliers want another pass after that.
+
+
 ## Level 2 (the Vaults), merged to main
 Built on request: the level pipeline (`buildWorld({ level })`, definitions in `src/levels/`), the Vaults (six areas,
 nearly dark, torches), the Shielded Fizzbang, the Vinyl Disc, the Tour Guide boss, NEXT LEVEL with a Cheryl voicemail,

@@ -262,3 +262,48 @@ export const RECORDS = [
   { id: 'foot', title: 'FIRST FOOT FIRST', line: 'A Hogmanay banger. Nobody has found the coal.' },
   { id: 'refund', title: 'NO REFUNDS, B-SIDE', line: "The Tour Guide's greatest hit. No refunds." },
 ];
+
+// ---------------------------------------------------------------------------------------------
+// Difficulty (docs/difficulty.md). Hard and Extra Hard are multipliers on top of the normal-mode numbers above, picked once
+// per run on the difficulty screen and saved. They change robots only: never Naebun's weapons, health, pickups, stun
+// durations or score values, and never the maps or what is placed where. Normal is all 1s and leaves ENEMY_DEFS untouched.
+// Balance is still for normal mode alone: tune the table below, never the base numbers against it, and never against debug.
+// The first guesses (Hard 1.5 / 1.25 / 1.1 / 0.9, Extra 2 / 1.5 / 1.2 / 0.8) were too much for level 2 with the sim bots: the good bot
+// won 53 and 13 percent of runs there. These are the tuned values; the runs behind them are in docs/difficulty.md.
+//   damage  multiplies what a robot does to Naebun: melee, slam, bottles, the Longshot's shot, the Shaken's blast on Naebun
+//   health  multiplies a robot's hp (a Nurse's revive is a fraction of the new maximum, so it follows)
+//   speed   multiplies how fast a robot walks (the Shaken's lunge too); projectile speed and the enrage factor are left alone
+//   windup  multiplies how long a robot telegraphs before it strikes (0.9 = 10 percent quicker); see TELEGRAPH_FLOOR
+// ---------------------------------------------------------------------------------------------
+export const DIFFICULTY = {
+  normal: { id: 'normal', name: 'NORMAL', tag: '', line: 'The game as designed.', damage: 1, health: 1, speed: 1, windup: 1 },
+  hard: { id: 'hard', name: 'HARD', tag: 'HARD', line: 'Robots hit harder, last longer and move faster.', damage: 1.35, health: 1.2, speed: 1.1, windup: 0.9 },
+  extra: { id: 'extra', name: 'EXTRA HARD', tag: 'EXTRA HARD', line: 'Hits much harder, tougher and quicker again.', damage: 1.75, health: 1.35, speed: 1.15, windup: 0.85 },
+};
+export const DIFFICULTY_ORDER = ['normal', 'hard', 'extra'];
+// A warning is never shortened below this many seconds (a wind-up already shorter than it is left as it is). It is the time
+// Naebun gets to see a swing, a lock or a fuse and step out of it, so it matters more than any multiplier.
+export const TELEGRAPH_FLOOR = 0.35;
+
+const quicker = (secs, k) => (Number.isFinite(secs) ? Math.max(secs * k, Math.min(secs, TELEGRAPH_FLOOR)) : secs);
+const scaled = (v, k) => (Number.isFinite(v) ? Math.round(v * k) : v);
+
+// The numbers of one robot kind in one mode. Normal returns the very same object. Called once per robot, when it is spawned,
+// so every attack and every movement afterwards reads the scaled numbers from `e.def` and nothing else has to know.
+export function defFor(kind, mode = 'normal', table = DIFFICULTY) {
+  const base = ENEMY_DEFS[kind];
+  const d = table[mode];
+  if (!base || !d || (d.damage === 1 && d.health === 1 && d.speed === 1 && d.windup === 1)) return base;
+  const out = { ...base };
+  if (base.hp !== undefined) out.hp = scaled(base.hp, d.health);
+  if (base.speed !== undefined) out.speed = base.speed * d.speed;
+  if (base.damage !== undefined) out.damage = scaled(base.damage, d.damage);
+  if (base.windup !== undefined) out.windup = quicker(base.windup, d.windup);
+  if (base.aim !== undefined) out.aim = quicker(base.aim, d.windup); // a ranged robot's raise-and-aim
+  if (base.slam) out.slam = { ...base.slam, damage: scaled(base.slam.damage, d.damage), windup: quicker(base.slam.windup, d.windup) };
+  if (base.charge) out.charge = { ...base.charge, track: quicker(base.charge.track, d.windup), lock: quicker(base.charge.lock, d.windup) }; // Longshot
+  if (base.prime) out.prime = { ...base.prime, fuse: quicker(base.prime.fuse, d.windup), speed: base.prime.speed * d.speed }; // Shaken
+  if (base.burst) out.burst = { ...base.burst, player: scaled(base.burst.player, d.damage) }; // `robots` (damage to other robots) stays
+  if (base.dormant) out.dormant = { ...base.dormant, unfold: quicker(base.dormant.unfold, d.windup) }; // Mimic
+  return out;
+}

@@ -737,7 +737,7 @@ const PLACED = {
   // the save: round trip, an old save without the field, junk
   const old = { v: 1, unlocked: 2, done: [1], best: { 1: 4200 } }; // a cookie from before records
   const o = store.clean(old);
-  ok(Array.isArray(o.records) && o.records.length === 0 && o.unlocked === 2 && o.done.join() === '1' && o.best[1] === 4200, 'an old save without the field still loads, with no records');
+  ok(Array.isArray(o.records) && o.records.length === 0 && o.unlocked === 2 && o.done.join() === '1' && o.best.normal[1] === 4200, 'an old save without the field still loads, with no records');
   const oldTorch = store.clean({ v: 1, unlocked: 1, done: [], best: {}, torch: true });
   ok(oldTorch.torch === true && oldTorch.records.length === 0, 'and one from the torch version');
   const junk = [null, undefined, 5, 'x', [], {}, { records: 5 }, { records: 'haar' }, { records: { 0: 'haar' } }, { records: [1, null, {}, [], 'nope', '', 'HAAR', 'haar '] },
@@ -745,7 +745,7 @@ const PLACED = {
   for (const j of junk) {
     const c = store.clean(j);
     ok(Array.isArray(c.records) && c.records.every((id) => RECORDS.some((r) => r.id === id)) && new Set(c.records).size === c.records.length, `junk is rejected: ${String(JSON.stringify(j)).slice(0, 60)} gives [${c.records}]`);
-    ok(c.v === 1 && c.unlocked >= 1 && Array.isArray(c.done) && typeof c.best === 'object', 'and the rest of the save is still valid');
+    ok(c.v === 2 && c.unlocked >= 1 && Array.isArray(c.done) && typeof c.best === 'object', 'and the rest of the save is still valid');
   }
   ok(store.clean({ records: ['haar', 'haar', 'gala', 'gala'] }).records.join() === 'haar,gala', 'duplicates are dropped');
   ok(store.merge(store.clean({ records: ['haar'] }), store.clean({ records: ['gala'] })).records.join() === 'haar,gala', 'two copies of a save merge their records');

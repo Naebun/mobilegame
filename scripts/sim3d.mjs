@@ -1,7 +1,7 @@
 // Headless playtest bot for the first-person levels. Runs the real game logic (src/game3d.js) at 60 Hz in Node,
 // with no rendering, driven by a bot that navigates, aims, strafes and picks weapons.
 //
-//   node scripts/sim3d.mjs [--runs 30] [--skill sloppy|casual|good|both] [--trace SEED] [--level 1|2]
+//   node scripts/sim3d.mjs [--runs 30] [--skill sloppy|casual|good|both] [--trace SEED] [--level 1|2] [--difficulty normal|hard|extra]
 //   node scripts/sim3d.mjs --scenario shaken|longshot|nurse|mimic|pack [--runs 30] [--skill ...] [--blind 1]
 //
 // NORMAL MODE ONLY: balance is never tuned against debug mode. The bot is a proxy for a person, not a replacement:
@@ -33,6 +33,8 @@ const RUNS = Number(args.runs || 30);
 const SKILLS = args.skill === 'both' || !args.skill ? ['sloppy', 'casual', 'good'] : [args.skill];
 const TRACE = args.trace === undefined ? null : Number(args.trace);
 const LEVEL = Number(args.level || 1);
+const DIFF = args.difficulty || 'normal'; // the robots' multipliers (src/data.js DIFFICULTY); the bot itself is the same in every mode
+if (!['normal', 'hard', 'extra'].includes(DIFF)) throw new Error(`unknown --difficulty ${DIFF}`);
 const VIEW = { w: 390, h: 844, dpr: 1, safe: { top: 0, bottom: 0 } };
 const DT = 1 / 60;
 const LIMIT = 900; // seconds of game time before a run counts as stuck
@@ -92,6 +94,7 @@ export function runOnce(seed, skillName, opts = {}) {
   inited = true;
   game.testHook('level', level);
   game.testHook('torch', { attached: true }); // the bot never watches the torch being fitted
+  game.testHook('difficulty', DIFF); // before the player object is taken: it respawns the robots
   const S = game.getState();
   const W = game.getWorld();
   // Experiments only: --drop shaken,longshot,nurse,mimic,records,upgrades,newweapons or an item name takes those out of the level
@@ -494,6 +497,7 @@ const f = (n, d = 0) => (Number.isFinite(n) ? n.toFixed(d) : '-');
 function main() {
   const scenario = args.scenario || null;
   const blind = args.blind === '1'; // a bot that does not know about the newer things, for comparison
+  console.log(`level ${LEVEL}, ${DIFF}`);
   console.log('skill   win%  dead%  stuck%  time(s)  dmgTaken  melee/ranged   died in');
   for (const skill of SKILLS) {
     const rs = [];
