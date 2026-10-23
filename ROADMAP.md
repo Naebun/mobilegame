@@ -4,6 +4,15 @@
 Levels 1 and 2 are built. Level 2 was built with the owner's explicit permission. No later level is to be built without
 the owner's explicit permission, however obvious the next step looks.
 
+## Prepared weapons, upgrades and collectibles (built, tested, not placed)
+The owner approved the roadmap's weapons, upgrades and collectibles being built ahead of the levels that need them. They
+exist, are wired into the game and are tested on both levels, but **no level contains any of them** (asserted on every level
+by `scripts/harness/arsenal-check.mjs`). Feedback Beam, Bass-Drop Grenade and Airhorn (Blender models with hands, floor pickups,
+sounds, HUD icons, a mounted torch on the beam and the airhorn), stun for robots (bosses stunned less), the SMG alt-fire behind
+the `altfire` upgrade (right mouse button or E, an ALT button on mobile), the clip and reload upgrades, ten collectible
+records with a joke each, saved in `src/save.js`, and a SETLIST screen on the title once one is found. Design, numbers, how to
+place them later and what is not verified: `docs/arsenal.md`. Nothing has been played by a person; the numbers are first guesses.
+
 ## Level 2 (the Vaults), on branch `level-2`, not merged
 Built on request: the level pipeline (`buildWorld({ level })`, definitions in `src/levels/`), the Vaults (six areas,
 nearly dark, torches), the Shielded Fizzbang, the Vinyl Disc, the Tour Guide boss, NEXT LEVEL with a Cheryl voicemail,

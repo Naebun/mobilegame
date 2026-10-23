@@ -157,3 +157,12 @@ models; `world.js` places props with `placeProp` and falls back to procedural pr
 its triangle cap). Details and the prop ranking: `docs/props.md`. Known: level 2 high is close to the 150k triangle limit
 (about 145k); the weapons' left forearms read as plain purple tubes in portrait; the Vaults are dark enough that old and new
 props are hard to tell apart; nothing has been seen on a phone. The textures question is open: `docs/texture-options.md`.
+
+## Prepared objects (built, not placed)
+At the owner's request the roadmap's enemies, weapons, upgrades and collectibles are built and tested ahead of their levels.
+No level map uses any of them. Enemies (Fizzbang Shaken, Bampot Longshot, Bampot Nurse, Vending Mimic): `docs/enemies-next.md`,
+`scripts/harness/enemies-check.mjs`. Arsenal (Feedback Beam, Bass-Drop Grenade, Airhorn, the SMG alt-fire, clip and reload
+upgrades, ten collectible records and the SETLIST screen): `docs/arsenal.md`, `scripts/blender/arsenal.py` (writes
+`src/arsenal-meshes.js`), `src/arsenal.js`, `src/arsenal-play.js`, `scripts/harness/arsenal-check.mjs`. Every number is a first
+guess; nothing has been played by a person or heard. The sim bots cannot dodge a laser, run from a Shaken, hunt a Nurse or
+use the new weapons, so they need teaching before these go into a level. Level 3 and later are still not to be built.
