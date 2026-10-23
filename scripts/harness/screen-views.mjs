@@ -8,17 +8,20 @@ const out = process.argv[2];
 const want = (process.argv[3] || 'title,controls,intro,voicemail,dead,complete,play').split(',');
 const W = Number(process.env.W || 844);
 const H = Number(process.env.H || 390);
-const server = spawn('node', ['scripts/serve.mjs', '8095'], { stdio: 'ignore', cwd: process.cwd() });
+const PORT = process.env.PORT || '8095';
+const server = spawn('node', ['scripts/serve.mjs', PORT], { stdio: 'ignore', cwd: process.cwd() });
 await new Promise((r) => setTimeout(r, 700));
 const base = '/opt/pw-browsers';
 const exe = readdirSync(base).filter((d) => d.startsWith('chromium-')).map((d) => readdirSync(`${base}/${d}`).filter((x) => x.startsWith('chrome-linux')).map((x) => `${base}/${d}/${x}/chrome`)[0])[0];
 const b = await chromium.launch({ executablePath: exe, args: ['--use-angle=swiftshader', '--use-gl=angle', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
 const page = await (await b.newContext({ viewport: { width: W, height: H }, deviceScaleFactor: 1, hasTouch: true, isMobile: true })).newPage();
+page.setDefaultTimeout(Number(process.env.TIMEOUT || 30000)); // a busy machine needs longer
 const errs = [];
 page.on('pageerror', (e) => errs.push(e.message));
 page.on('console', (m) => m.type() === 'error' && !/favicon|404/.test(m.text()) && errs.push(m.text()));
-await page.goto(`http://localhost:8095/?test&q=${process.env.Q || 'medium'}&level=${process.env.LEVEL || 2}${process.env.PC ? '&pc' : ''}`);
+await page.goto(`http://localhost:${PORT}/?test&q=${process.env.Q || 'medium'}${process.env.EXTRA || ''}&level=${process.env.LEVEL || 2}${process.env.PC ? '&pc' : ''}`);
 await page.waitForFunction(() => window.__game && window.__game.getState().player, null, { timeout: 90000 });
+await page.waitForFunction(() => ['applied', 'failed', 'off'].includes(window.__game.testHook('baked').state), null, { timeout: 90000 }); // baked textures swapped in (or off: ?baked=0)
 const tag = `${W}x${H}`;
 for (const name of want) {
   if (name === 'play') {

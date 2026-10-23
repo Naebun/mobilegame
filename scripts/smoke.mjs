@@ -7,7 +7,7 @@ import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
 
-const port = 8099;
+const port = Number(process.env.PORT || 8099);
 const outDir = process.argv[2] || '.';
 const server = spawn('node', ['scripts/serve.mjs', String(port)], { stdio: 'ignore' });
 await new Promise((r) => setTimeout(r, 500));
@@ -78,6 +78,35 @@ try {
   check(gl.ok && gl.w > 0, `WebGL canvas is live (${gl.w}x${gl.h})`);
   check((await state()).mode === 'title', 'starts on the title screen over the 3D club');
   await shot('title');
+
+  // baked textures (src/textures.js): fetched in the background from the title screen, decoded, swapped in on medium
+  {
+    const swapped = await page.waitForFunction(() => ['applied', 'failed'].includes(window.__game.testHook('baked').state), null, { timeout: 90000 }).then(() => true, () => false);
+    const b = await hook('baked');
+    check(swapped && b.state === 'applied', `baked textures load and swap in on the medium tier (${b.state}: ${b.names.join(', ')})`);
+    check(['brick', 'paint', 'flag', 'stone', 'boards', 'floorboards'].every((n) => b.names.includes(n)), 'every baked surface is on the level 1 materials');
+    check(b.bytes > 4e6 && b.bytes < 40e6, `estimated GPU memory for the baked maps is ${(b.bytes / 1048576).toFixed(1)} MB`);
+    const px = await page.evaluate(() => {
+      const w = window.__game.getWorld();
+      let mat = null;
+      w.group.traverse((o) => { if (o.isMesh && o.material.map === w.textures.brick) mat = o.material; });
+      const mean = (img) => {
+        const c = document.createElement('canvas');
+        c.width = img.width; c.height = img.height;
+        const g = c.getContext('2d');
+        g.drawImage(img, 0, 0);
+        const d = g.getImageData(0, 0, c.width, c.height).data;
+        const m = [0, 0, 0];
+        for (let i = 0; i < d.length; i += 4) { m[0] += d[i]; m[1] += d[i + 1]; m[2] += d[i + 2]; }
+        return m.map((v) => v / (d.length / 4));
+      };
+      return mat && { alb: mean(mat.map.image), nrm: mean(mat.normalMap.image), rgh: mean(mat.roughnessMap.image), srgb: mat.map.colorSpace, nrmCs: mat.normalMap.colorSpace, aniso: mat.map.anisotropy, rep: mat.map.repeat.x, w: mat.map.image.width, vc: mat.vertexColors };
+    });
+    check(px && px.w === 1024 && px.alb[0] > px.alb[1] && px.alb[1] > px.alb[2] && px.alb[0] > 110 && px.alb[0] < 170, `the brick albedo decodes to brick colour (mean RGB ${px && px.alb.map((v) => v.toFixed(0)).join(' ')})`);
+    check(px && px.nrm[2] > 200 && Math.abs(px.nrm[0] - 128) < 14 && Math.abs(px.nrm[1] - 128) < 14, `the brick normal map decodes to a mostly flat tangent-space normal (mean RGB ${px && px.nrm.map((v) => v.toFixed(0)).join(' ')})`);
+    check(px && px.rgh[1] > 150, `the brick roughness map is mostly rough (mean green ${px && px.rgh[1].toFixed(0)})`);
+    check(px && px.srgb === 'srgb' && px.nrmCs === '' && px.vc, 'albedo is sRGB, the normal map is linear data and the level tints still ride in vertex colours');
+  }
 
   // menus: title -> controls -> intro -> play
   await pressButton('new');
@@ -454,6 +483,17 @@ try {
   await page.goto(`http://localhost:${port}/?test&q=low`);
   await page.waitForFunction(() => window.__game && window.__game.getState().player, null, { timeout: 60000 });
   check((await hook('stats')).input === 'mobile', 'a mobile browser starts in mobile mode on its own');
+
+  // low tier: nothing baked is fetched, the generated textures stay
+  {
+    const webp = [];
+    page.on('request', (r) => r.url().endsWith('.webp') && webp.push(r.url()));
+    await page.goto(`http://localhost:${port}/?test&q=low`);
+    await page.waitForFunction(() => window.__game && window.__game.getState().player, null, { timeout: 60000 });
+    await page.waitForTimeout(2500);
+    const b = await hook('baked');
+    check(b.state === 'off' && b.names.length === 0 && webp.length === 0, `the low tier fetches no baked textures and keeps the generated ones (state ${b.state}, ${webp.length} requests)`);
+  }
 
   check(errors.length === 0, `no console errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
 } finally {
