@@ -1,16 +1,30 @@
-// Saved progress: the furthest level unlocked, which levels are done, and the best score for each.
+// Saved progress: the furthest level unlocked, which levels are done, the difficulty chosen, and the best score for each
+// level in each difficulty (kept apart, so an Extra Hard score never hides a Normal one).
 // Stored in a first-party cookie (a year, this page's path only) and mirrored in localStorage. Either can be blocked or
 // cleared, so both are read and merged, and every write is wrapped: with neither available the game just does not remember.
 // Nothing here touches the DOM at import, so it also loads under plain Node (where load() returns a fresh save).
 
-import { RECORDS } from './data.js';
+import { RECORDS, DIFFICULTY_ORDER } from './data.js';
 
 const COOKIE = 'fls';
 const LS_KEY = 'mobilegame.save';
 const MAX_AGE = 60 * 60 * 24 * 365;
 export const MAX_LEVELS = 2; // the number of levels that exist; unlocked never goes past it
 
-export const fresh = () => ({ v: 1, unlocked: 1, done: [], best: {}, torch: false, records: [] }); // torch: the pistol's torch has been fitted
+export const MODES = DIFFICULTY_ORDER; // 'normal', 'hard', 'extra': any other mode name in a save is ignored
+const isMode = (m) => typeof m === 'string' && MODES.includes(m);
+const noBest = () => Object.fromEntries(MODES.map((m) => [m, {}]));
+
+// v2 added `difficulty` (the mode of the latest run, which CONTINUE resumes in) and made `best` per mode: best[mode][level].
+// A v1 save has no difficulty and best[level], and those scores are its normal-mode bests.
+export const fresh = () => ({ v: 2, unlocked: 1, done: [], best: noBest(), difficulty: 'normal', torch: false, records: [] }); // torch: the pistol's torch has been fitted
+
+export const bestOf = (save, mode, level) => (save.best[isMode(mode) ? mode : 'normal'] || {})[level] || 0;
+export function setBest(save, mode, level, score) {
+  const m = isMode(mode) ? mode : 'normal';
+  if (!save.best[m]) save.best[m] = {};
+  save.best[m][level] = score;
+}
 
 // Only ids of records that exist survive, once each, in the order of the list: anything else in the field is dropped.
 const cleanRecords = (raw) => {
@@ -27,11 +41,17 @@ export function clean(raw) {
   const u = Math.floor(Number(raw.unlocked));
   if (u >= 1) out.unlocked = Math.min(MAX_LEVELS, u);
   if (Array.isArray(raw.done)) out.done = [...new Set(raw.done.map(Number).filter((n) => Number.isInteger(n) && n >= 1 && n <= MAX_LEVELS))].sort();
-  if (raw.best && typeof raw.best === 'object') {
-    for (const [k, v] of Object.entries(raw.best)) {
-      const n = Number(k);
+  if (isMode(raw.difficulty)) out.difficulty = raw.difficulty;
+  if (raw.best && typeof raw.best === 'object' && !Array.isArray(raw.best)) {
+    const take = (mode, level, v) => {
+      const n = Number(level);
       const b = Math.floor(Number(v));
-      if (Number.isInteger(n) && n >= 1 && n <= MAX_LEVELS && b > 0 && b < 1e12) out.best[n] = b;
+      if (Number.isInteger(n) && n >= 1 && n <= MAX_LEVELS && b > 0 && b < 1e12) out.best[mode][n] = Math.max(out.best[mode][n] || 0, b);
+    };
+    for (const [k, v] of Object.entries(raw.best)) {
+      if (isMode(k)) {
+        if (v && typeof v === 'object' && !Array.isArray(v)) for (const [lv, sc] of Object.entries(v)) take(k, lv, sc);
+      } else take('normal', k, v); // a v1 save: best[level] is the normal-mode score
     }
   }
   for (const n of out.done) out.unlocked = Math.max(out.unlocked, Math.min(MAX_LEVELS, n + 1));
@@ -45,7 +65,8 @@ export function merge(a, b) {
   out.torch = a.torch || b.torch;
   out.records = cleanRecords([...(a.records || []), ...(b.records || [])]);
   out.done = [...new Set([...a.done, ...b.done])].sort();
-  for (const n of Object.keys({ ...a.best, ...b.best })) out.best[n] = Math.max(a.best[n] || 0, b.best[n] || 0);
+  for (const m of MODES) for (const n of Object.keys({ ...a.best[m], ...b.best[m] })) out.best[m][n] = Math.max(a.best[m][n] || 0, b.best[m][n] || 0);
+  out.difficulty = b.unlocked > a.unlocked ? b.difficulty : a.difficulty; // the copy that is further on knows the mode it was played in
   return out;
 }
 
@@ -71,9 +92,12 @@ export function load() {
   return c && l ? merge(c, l) : c || l || fresh();
 }
 
+// What is written: the same save without the empty modes, so the cookie stays small (clean() puts them back on reading).
+const compact = (s) => ({ ...s, best: Object.fromEntries(MODES.filter((m) => Object.keys(s.best[m]).length).map((m) => [m, s.best[m]])) });
+
 export function save(p) {
   const s = clean(p);
-  const json = JSON.stringify(s);
+  const json = JSON.stringify(compact(s));
   try {
     const secure = typeof location !== 'undefined' && location.protocol === 'https:' ? '; Secure' : '';
     document.cookie = `${COOKIE}=${encodeURIComponent(json)}; max-age=${MAX_AGE}; path=${cookiePath()}; SameSite=Lax${secure}`;

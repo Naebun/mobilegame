@@ -18,7 +18,7 @@ import * as screens from './screens.js';
 import * as M from './models.js';
 import * as store from './save.js';
 import { createArsenalPlay } from './arsenal-play.js';
-import { WEAPONS, WEAPON_ORDER, ENEMY_DEFS, PLAYER, LEVELS, DEATH_LINES, DRINKS, DRINK_ORDER } from './data.js';
+import { WEAPONS, WEAPON_ORDER, ENEMY_DEFS, PLAYER, LEVELS, DEATH_LINES, DRINKS, DRINK_ORDER, DIFFICULTY, DIFFICULTY_ORDER, defFor } from './data.js';
 
 const TAU = Math.PI * 2;
 const HURT_DUR = 0.38; // matches the hurt animation length in models.js
@@ -54,6 +54,9 @@ const Q = { tier: 'high', fixed: false, ema: 1 / 60, frames: 0, last: 0, perf: q
 // areas and everything in data.js are tuned for normal mode alone.
 const DEBUG_MULT = { fire: 2, damage: 2, health: 2 };
 const NORMAL_MULT = { fire: 1, damage: 1, health: 1 };
+// Difficulty (docs/difficulty.md) is a different thing: it scales the robots, once, when each is spawned (defFor in data.js).
+// Debug mode stacks on top of it and neither knows about the other. ?difficulty=hard|extra forces a mode, for tests.
+const forcedMode = () => (DIFFICULTY[query.get('difficulty')] ? query.get('difficulty') : null);
 
 const S = {
   mode: 'title', // title | controls | settings | voicemail | intro | play | dead | complete
@@ -75,6 +78,8 @@ const S = {
   deadT: 0,
   completeT: 0,
   debugMode: false,
+  difficulty: 'normal', // normal | hard | extra: this run's mode, fixed from START GAME on (src/data.js DIFFICULTY)
+  prevKeys: new Set(), // keys held on the previous menu step, so a key press is one press
   best: 0,
   newBest: false,
   score: 0,
@@ -164,11 +169,12 @@ export function init(view) {
   if (savedSettings && typeof savedSettings === 'object') S.settings = { input: savedSettings.input === 'pc' || savedSettings.input === 'mobile' ? savedSettings.input : null, sens: clamp(Math.round(Number(savedSettings.sens)) || 1, 0, MOUSE_SENS.length - 1) };
   S.save = store.load();
   S.torch.attached = S.save.torch === true;
-  for (let n = 1; n <= store.MAX_LEVELS; n++) { // scores from before the cookie save existed
+  for (let n = 1; n <= store.MAX_LEVELS; n++) { // scores from before the cookie save existed: they were normal mode
     const old = Number(read(bestKey(n))) || 0;
-    if (old > (S.save.best[n] || 0)) S.save.best[n] = old;
+    if (old > store.bestOf(S.save, 'normal', n)) store.setBest(S.save, 'normal', n, old);
   }
   S.level = startLevel();
+  S.difficulty = startMode();
   S.best = bestFor(S.level);
   S.debugMode = read(DEBUG_KEY) === true;
   const forced = query.get('q');
@@ -189,7 +195,13 @@ function startLevel() {
   return n >= 1 && n <= LEVELS.length ? Math.floor(n) : 1;
 }
 
-const bestFor = (n) => S.save.best[n] || 0;
+const bestFor = (n) => store.bestOf(S.save, S.difficulty, n);
+// The mode a new game starts highlighted in and CONTINUE resumes in: the saved one (or ?difficulty). The run's own mode is S.difficulty.
+const startMode = () => forcedMode() || S.save.difficulty;
+const setDifficulty = (m) => {
+  S.difficulty = DIFFICULTY[m] ? m : 'normal';
+  S.best = bestFor(startLevel());
+};
 
 function rememberDoors() {
   for (const k of Object.keys(initialOpen)) delete initialOpen[k];
@@ -552,6 +564,7 @@ function requestLevel(n) {
 
 function toTitle() {
   S.mode = 'title';
+  setDifficulty(startMode()); // a pick that was never started (or a debug run's) does not stay on the title
   if (world.level !== startLevel()) requestLevel(startLevel());
   else resetLevel();
   audio.setMood(0.1, false);
@@ -560,6 +573,10 @@ function toTitle() {
 function beginRun() {
   audio.unlock();
   if (S.level === 1) S.torch.attached = false; // a new game: the pistol has no torch until the first dark level
+  if (!S.debugMode && S.save.difficulty !== S.difficulty) { // the run's mode is saved so CONTINUE resumes in it; a debug run never writes it
+    S.save.difficulty = S.difficulty;
+    store.save(S.save);
+  }
   loadLevel(S.level);
   resetLevel();
   S.mode = 'intro';
@@ -572,8 +589,9 @@ function resumeGame() {
   const n = Math.min(S.save.unlocked, LEVELS.length);
   audio.unlock();
   S.torch.attached = S.save.torch === true;
+  S.difficulty = startMode(); // CONTINUE resumes in the saved mode
   if (world.level !== n || S.pendingLoad) requestLevel(n);
-  else { S.level = n; resetLevel(); }
+  else { S.level = n; S.best = bestFor(n); resetLevel(); }
   audio.setLevel(n - 1);
   if (n > 1 && LEVELS[n - 1].voicemail) {
     S.mode = 'voicemail';
@@ -600,7 +618,7 @@ function nextLevel() {
 // ---- enemies ----
 
 function spawnEnemy(area, sp) {
-  const def = ENEMY_DEFS[sp.kind];
+  const def = defFor(sp.kind, S.difficulty); // the run's difficulty is applied here and nowhere else
   const robot = makeRobot(sp.kind);
   robot.group.position.set(sp.x, 0, sp.z);
   robot.group.rotation.y = sp.yaw;
@@ -1511,7 +1529,7 @@ function die() {
   if (!S.debugMode && S.score > S.best) {
     S.best = S.score;
     S.newBest = true;
-    S.save.best[S.level] = S.best;
+    store.setBest(S.save, S.difficulty, S.level, S.best);
     store.save(S.save);
   }
   audio.gameOver();
@@ -1530,7 +1548,7 @@ function completeLevel() {
   if (!S.debugMode && S.score > S.best) {
     S.best = S.score;
     S.newBest = true;
-    S.save.best[S.level] = S.best;
+    store.setBest(S.save, S.difficulty, S.level, S.best);
     store.save(S.save);
   }
   audio.dawn();
@@ -2161,21 +2179,24 @@ function updateAreas() {
 
 // One line for the Settings page: how far the saved game is and the best scores.
 function progressText() {
-  const best = Object.keys(S.save.best).map((n) => `L${n} ${S.save.best[n]}`).join('  ');
-  return `Furthest level: ${S.save.unlocked}${S.save.done.length ? `   Done: ${S.save.done.join(', ')}` : ''}${best ? `   Best: ${best}` : ''}`;
+  const bests = S.save.best[S.save.difficulty];
+  const best = Object.keys(bests).map((n) => `L${n} ${bests[n]}`).join('  ');
+  const mode = DIFFICULTY[S.save.difficulty].tag;
+  return `Furthest level: ${S.save.unlocked}${S.save.done.length ? `   Done: ${S.save.done.join(', ')}` : ''}${best ? `   Best${mode ? ` (${mode})` : ''}: ${best}` : ''}`;
 }
 
 function stateFor(mode) {
   switch (mode) {
     case 'settings': return { t: S.t, input: inputMode(), sensLabel: MOUSE_SENS[S.settings.sens].label, resetArmed: S.resetArmed > 0, saved: progressText() };
     case 'setlist': return { t: S.t, found: S.save.records.slice() };
-    case 'title': return { t: S.t, records: S.save.records.length, input: inputMode(), resumeLevel: S.save.unlocked > 1 ? Math.min(S.save.unlocked, LEVELS.length) : 0, debugMode: S.debugMode, best: S.best, levelNumber: LEVELS[startLevel() - 1].number, levelName: LEVELS[startLevel() - 1].name };
+    case 'difficulty': return { t: S.t, input: inputMode(), difficulty: S.difficulty };
+    case 'title': return { t: S.t, records: S.save.records.length, input: inputMode(), resumeLevel: S.save.unlocked > 1 ? Math.min(S.save.unlocked, LEVELS.length) : 0, difficulty: S.difficulty, debugMode: S.debugMode, best: bestFor(startLevel()), levelNumber: LEVELS[startLevel() - 1].number, levelName: LEVELS[startLevel() - 1].name };
     case 'controls': return { t: S.t, input: inputMode() };
-    case 'dead': return { t: S.deadT, line: S.deadLine, score: S.score, best: S.best, newBest: S.newBest, debugMode: S.debugMode, levelName: levelInfo().name };
+    case 'dead': return { t: S.deadT, line: S.deadLine, score: S.score, best: S.best, newBest: S.newBest, debugMode: S.debugMode, difficulty: S.difficulty, levelName: levelInfo().name };
     case 'complete':
       return {
         t: S.completeT, score: S.score, best: S.best, newBest: S.newBest, timeSec: S.runT, kills: S.kills,
-        totalEnemies: S.totalEnemies, debugMode: S.debugMode, hasNext: S.level < LEVELS.length,
+        totalEnemies: S.totalEnemies, debugMode: S.debugMode, difficulty: S.difficulty, hasNext: S.level < LEVELS.length,
         title: levelInfo().doneTitle, line: levelInfo().doneLine, sub: levelInfo().doneSub,
       };
     case 'voicemail': return { t: S.mailT, mail: levelInfo().voicemail, level: levelInfo() };
@@ -2190,22 +2211,26 @@ function handlePresses(input, view) {
     if (!b) continue;
     audio.unlock();
     audio.blip();
-    switch (b.id) {
-      case 'new': S.mode = 'controls'; break;
-      case 'back': S.mode = 'title'; break;
+    switch (b.mode ? 'mode' : b.id) {
+      case 'new': S.mode = 'difficulty'; break;
+      case 'back':
+        if (S.mode === 'controls') S.mode = 'difficulty';
+        else { S.mode = 'title'; setDifficulty(startMode()); } // leaving the difficulty page (or any other) unpicks an unstarted choice
+        break;
       case 'settings': S.mode = 'settings'; S.resetArmed = 0; break;
       case 'setlist': S.mode = 'setlist'; break;
       case 'resume': resumeGame(); break;
       case 'reset': // two taps: the first arms it, the second erases the saved progress and scores
         if (S.resetArmed > 0) {
           S.save = store.reset();
-          S.best = 0;
+          setDifficulty(startMode());
           S.resetArmed = 0;
         } else S.resetArmed = 4;
         break;
       case 'input': S.settings.input = inputMode() === 'pc' ? 'mobile' : 'pc'; saveSettings(); break;
       case 'sens': S.settings.sens = (S.settings.sens + 1) % MOUSE_SENS.length; saveSettings(); break;
       case 'start': S.level = startLevel(); beginRun(); break;
+      case 'mode': setDifficulty(b.mode); S.mode = 'controls'; break; // a choice on the difficulty page: pick it and go on
       case 'next': nextLevel(); break;
       case 'continue': S.mode = 'intro'; S.introT = 0; break;
       case 'debug':
@@ -2221,6 +2246,27 @@ function handlePresses(input, view) {
       default:
     }
     return; // one press per frame is plenty, and a mode change invalidates the button list
+  }
+}
+
+// The difficulty page also answers the keyboard: 1 2 3 pick, Up and Down move the highlight, Enter picks it, Escape goes back.
+// `input.keys` holds what is down, so a press is a key that was not down on the previous menu step.
+function handleDifficultyKeys(input) {
+  const down = (k) => input.keys.has(k) && !S.prevKeys.has(k);
+  const at = DIFFICULTY_ORDER.indexOf(S.difficulty);
+  let pick = null;
+  DIFFICULTY_ORDER.forEach((m, i) => { if (down(String(i + 1))) pick = m; });
+  if (!pick && down('enter')) pick = S.difficulty;
+  if (down('arrowup') && at > 0) setDifficulty(DIFFICULTY_ORDER[at - 1]);
+  if (down('arrowdown') && at < DIFFICULTY_ORDER.length - 1) setDifficulty(DIFFICULTY_ORDER[at + 1]);
+  if (pick) {
+    audio.blip();
+    setDifficulty(pick);
+    S.mode = 'controls';
+  } else if (down('escape')) {
+    audio.blip();
+    S.mode = 'title';
+    setDifficulty(startMode());
   }
 }
 
@@ -2243,18 +2289,22 @@ export function update(dt, input, view) {
 
   switch (S.mode) {
     case 'title':
+    case 'difficulty':
     case 'controls':
     case 'settings':
     case 'setlist':
     case 'dead':
     case 'complete':
+      if (S.mode === 'difficulty') handleDifficultyKeys(input);
+      S.prevKeys.clear();
+      for (const k of input.keys) S.prevKeys.add(k);
       if (S.mode === 'dead') S.deadT += dt;
       if (S.mode === 'complete') S.completeT += dt;
       if (S.mode === 'dead' || S.mode === 'complete') {
         for (const e of S.enemies) if (e.state === 'dead') updateEnemy(e, dt);
       }
       handlePresses(input, view);
-      audio.setMood(S.mode === 'title' || S.mode === 'controls' || S.mode === 'settings' || S.mode === 'setlist' ? 0.1 : 0.4, S.mode === 'dead');
+      audio.setMood(S.mode === 'title' || S.mode === 'difficulty' || S.mode === 'controls' || S.mode === 'settings' || S.mode === 'setlist' ? 0.1 : 0.4, S.mode === 'dead');
       break;
     case 'voicemail':
       S.mailT += dt;
@@ -2396,7 +2446,7 @@ const BUFF_MAX = { speed: DRINKS.orange.seconds, guard: DRINKS.heavy.seconds, ra
 const hudState = {
   health: 0, maxHealth: 0, hurt: 0, damageDirs: null, weapon: { id: '', name: '', clip: 0, clipSize: 0, reload: null },
   weapons: null, hitMarker: 0, headshot: false, toast: null, banner: null, objective: '', enemiesLeft: 0, areaName: '',
-  boss: null, score: 0, timeSec: 0, debugMode: false, move: null, look: null, firing: false, buffs: null, cinematic: 0,
+  boss: null, score: 0, timeSec: 0, debugMode: false, difficulty: '', move: null, look: null, firing: false, buffs: null, cinematic: 0,
 };
 
 function buildHudState() {
@@ -2422,6 +2472,7 @@ function buildHudState() {
   h.score = S.score;
   h.timeSec = S.runT;
   h.debugMode = S.debugMode;
+  h.difficulty = DIFFICULTY[S.difficulty].tag; // '' in normal mode
   h.cinematic = S.camK;
   h.buffs = Object.entries(S.buffs).filter(([, t]) => t > 0).map(([id, t]) => ({ id, t, max: BUFF_MAX[id] }));
   h.move = S.ui.move;
@@ -2435,7 +2486,7 @@ function buildHudState() {
 function placeCamera() {
   const { camera } = R;
   const p = S.player;
-  if (S.mode === 'title' || S.mode === 'controls' || S.mode === 'settings' || S.mode === 'setlist') {
+  if (S.mode === 'title' || S.mode === 'difficulty' || S.mode === 'controls' || S.mode === 'settings' || S.mode === 'setlist') {
     // slow drift through the dance floor as a backdrop for the menus
     const a = world.areas.find((x) => x.id === levelInfo().titleArea) || world.areas[0];
     const cx = ((a.rect.c0 + a.rect.c1 + 1) / 2) * 2;
@@ -2729,6 +2780,9 @@ export function render(ctx, view, alpha) {
     case 'title':
       screens.drawTitle(ctx, view, stateFor('title'));
       break;
+    case 'difficulty':
+      screens.drawDifficulty(ctx, view, stateFor('difficulty'));
+      break;
     case 'controls':
       screens.drawControls(ctx, view, stateFor('controls'));
       break;
@@ -2773,6 +2827,9 @@ export function testHook(cmd, arg) {
     case 'play': resetLevel(); S.mode = 'play'; return undefined;
     case 'level': loadLevel(arg); resetLevel(); S.mode = 'play'; return undefined;
     case 'title': toTitle(); return undefined;
+    case 'difficulty': // set this run's mode ('normal' | 'hard' | 'extra') and respawn the robots in it; returns the mode in force
+      if (arg !== undefined) { setDifficulty(arg); S.best = bestFor(S.level); resetLevel(); }
+      return S.difficulty;
     case 'teleport': S.player.x = arg.x; S.player.z = arg.z; if (arg.yaw !== undefined) S.player.yaw = arg.yaw; return undefined;
     case 'killArea':
       for (const e of S.enemies) if (e.areaId === arg && !e.dead) damageEnemy(e, 1e6, false, e.x, e.z, 0);
@@ -2787,6 +2844,7 @@ export function testHook(cmd, arg) {
     case 'hurt': hurtPlayer(arg, S.player.x, S.player.z + 5, false); return undefined;
     case 'screen': // jump to a menu screen, for screenshots: title | controls | intro | voicemail | dead | complete
       if (arg === 'title') toTitle();
+      else if (arg === 'difficulty') S.mode = 'difficulty';
       else if (arg === 'controls') S.mode = 'controls';
       else if (arg === 'settings') S.mode = 'settings';
       else if (arg === 'setlist') S.mode = 'setlist';

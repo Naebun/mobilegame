@@ -937,7 +937,7 @@ export function drawPlayHud(ctx, view, h) {
 
   // top left: health, then score and time
   drawHealth(ctx, view, h, top, t);
-  outlined(ctx, `SCORE ${Math.floor(clamp(num(h.score), 0, 1e12))}   ${fmtTime(h.timeSec)}`, 18 + sideSafe(view).left, top + 40, 11, 'rgba(255,255,255,0.8)', 'left', 700);
+  outlined(ctx, `SCORE ${Math.floor(clamp(num(h.score), 0, 1e12))}   ${fmtTime(h.timeSec)}${h.difficulty ? `   ${str(h.difficulty).slice(0, 12)}` : ''}`, 18 + sideSafe(view).left, top + 40, 11, 'rgba(255,255,255,0.8)', 'left', 700); // the mode rides on the score line when it is not normal
 
   // top right: weapon row, then the debug badge
   if (furniture) drawWeapons(ctx, view, Array.isArray(h.weapons) ? h.weapons : EMPTY, top);

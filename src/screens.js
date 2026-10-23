@@ -5,7 +5,7 @@
 
 import { text, rrect, drawSkyline, hash } from './draw.js';
 import { outlined, fit, wrapLines, paragraph, weaponIcon, panel, corners, circle } from './hud.js';
-import { RECORDS } from './data.js';
+import { RECORDS, DIFFICULTY, DIFFICULTY_ORDER } from './data.js';
 
 const MAGENTA = '#ff2e93';
 const CYAN = '#22d3ee';
@@ -17,6 +17,9 @@ const num = (v, d = 0) => (Number.isFinite(v) ? v : d);
 const str = (v) => (v === null || v === undefined ? '' : String(v));
 const safe = (view) => view.safe || ZERO_SAFE;
 const pad2 = (n) => String(n).padStart(2, '0');
+// The label a run's difficulty carries on screen: '' for normal (and for anything unknown), else 'HARD' or 'EXTRA HARD'.
+const modeTag = (id) => (DIFFICULTY[id] && DIFFICULTY[id].tag) || '';
+const resumeLabel = (st) => `CONTINUE: LEVEL ${st.resumeLevel}${modeTag(st.difficulty) ? ` (${modeTag(st.difficulty)})` : ''}`;
 
 // Short lines for the integrator to pick from if it wants first-person-specific death lines.
 export const DEATH_LINES_3D = [
@@ -73,7 +76,7 @@ function baseButtons(mode, view, state) {
     // landscape: a stack in the right-hand column, centred on the screen (the controls page uses a bottom row instead)
     const specs = [];
     if (mode === 'title') {
-      if (st.resumeLevel) specs.push(['resume', `CONTINUE: LEVEL ${st.resumeLevel}`, true, 52, null]);
+      if (st.resumeLevel) specs.push(['resume', resumeLabel(st), true, 52, null]);
       specs.push(['new', 'NEW GAME', !st.resumeLevel, st.resumeLevel ? 44 : 52, null], ['settings', 'SETTINGS', false, 44, null]);
       specs.push(['debug', `DEBUG MODE: ${st.debugMode ? 'ON' : 'OFF'}`, false, 40, st.debugMode ? AMBER : null]);
     } else if (mode === 'settings') {
@@ -112,7 +115,7 @@ function baseButtons(mode, view, state) {
     const y = Math.max(view.h * 0.46, titleGeom(view).bottom);
     let yy = y;
     if (st.resumeLevel) {
-      add('resume', `CONTINUE: LEVEL ${st.resumeLevel}`, yy);
+      add('resume', resumeLabel(st), yy);
       yy += 62;
       add('new', 'NEW GAME', yy, false, 44);
       yy += 56;
@@ -163,6 +166,46 @@ function baseButtons(mode, view, state) {
   return list;
 }
 
+// The difficulty page: three large choices (each carries `sub`, the one line saying what changes, and `n`, its number key)
+// and BACK. Portrait stacks the choices in one column; landscape sets them side by side, so a 320 pt tall screen still has room.
+// The geometry is shared with drawDifficulty() through these rectangles, like every other screen.
+function difficultyButtons(view, st) {
+  const sl = num(safe(view).left);
+  const sr = num(safe(view).right);
+  const top = num(safe(view).top);
+  const sb = num(safe(view).bottom);
+  const land = landscape(view);
+  const short = view.h < 560;
+  const selected = DIFFICULTY[st.difficulty] ? st.difficulty : 'normal';
+  const bh = land || short ? 40 : 44;
+  const backW = Math.min(land ? 220 : 300, view.w - 48 - sl - sr);
+  const back = { id: 'back', label: 'BACK', x: sl + (view.w - sl - sr - backW) / 2, y: view.h - sb - (land ? 12 : short ? 14 : 22) - bh, w: backW, h: bh, primary: false, accent: null };
+  const titleY = top + Math.max(land ? 26 : short ? 26 : 36, view.h * (land ? 0.08 : 0.07));
+  const y0 = titleY + (land ? 40 : short ? 44 : 54);
+  const yb = back.y - (land ? 12 : 14);
+  const accents = [CYAN, AMBER, MAGENTA];
+  const list = DIFFICULTY_ORDER.map((id, i) => ({
+    id: `mode:${id}`, mode: id, n: i + 1, label: DIFFICULTY[id].name, sub: DIFFICULTY[id].line, primary: false, accent: accents[i], selected: id === selected,
+  }));
+  if (land) {
+    const W = view.w - sl - sr - 32;
+    const gap = 12;
+    const cw = Math.min(300, (W - gap * 2) / 3);
+    const ch = clamp(yb - y0, 72, 150);
+    const x0 = sl + (view.w - sl - sr - (cw * 3 + gap * 2)) / 2;
+    const y = y0 + Math.max(0, (yb - y0 - ch) / 2);
+    list.forEach((b, i) => Object.assign(b, { x: x0 + i * (cw + gap), y, w: cw, h: ch }));
+  } else {
+    const gap = short ? 10 : 14;
+    const cw = Math.min(view.w - 48 - sl - sr, 340);
+    const ch = clamp((yb - y0 - gap * 2) / 3, 52, 104);
+    const x = sl + (view.w - sl - sr - cw) / 2;
+    list.forEach((b, i) => Object.assign(b, { x, y: y0 + i * (ch + gap), w: cw, h: ch }));
+  }
+  list.push(back);
+  return list;
+}
+
 // The menu buttons for a mode. The title gains a SETLIST button beside SETTINGS once a record has been found (it shares
 // SETTINGS' row, so the stack never grows taller on a short screen); the setlist page has one BACK button at the bottom.
 export function buttons(mode, view, state) {
@@ -174,6 +217,7 @@ export function buttons(mode, view, state) {
     const h = 44;
     return [{ id: 'back', label: 'BACK', x: sl + (view.w - sl - sr - bw) / 2, y: view.h - num(safe(view).bottom) - (landscape(view) ? 12 : 22) - h, w: bw, h, primary: true, accent: null }];
   }
+  if (mode === 'difficulty') return difficultyButtons(view, st);
   const list = baseButtons(mode, view, state);
   if (mode === 'title' && num(st.records) > 0) {
     const i = list.findIndex((b) => b.id === 'settings');
@@ -251,7 +295,8 @@ export function drawTitle(ctx, view, state) {
 
   // "Level 1: the Cowgate" with the best score on the same line, so short screens do not collide
   const lvl = st.levelName ? `Level ${Math.floor(num(st.levelNumber, 1))}: ${str(st.levelName).toLowerCase().replace(/(^| )\w/g, (c) => c.toUpperCase())}` : 'Level 1: the Cowgate';
-  const best = num(st.best) > 0 ? `BEST ${Math.floor(num(st.best))}` : '';
+  const tag = modeTag(st.difficulty);
+  const best = num(st.best) > 0 ? `${tag ? `${tag} · ` : ''}BEST ${Math.floor(num(st.best))}` : tag; // the mode rides along with the best score
   ctx.font = '700 13px system-ui, -apple-system, sans-serif';
   const lw = ctx.measureText(lvl).width;
   const bw = best ? ctx.measureText(best).width : 0;
@@ -269,6 +314,59 @@ export function drawTitle(ctx, view, state) {
   }
   const hint = fit(ctx, st.input === 'mobile' ? 'Left thumb moves. Right thumb aims and fires. Drag anywhere else to aim.' : 'W A S D to move. Mouse to aim. Left click to fire.', view.w - 24, 12, 500, 8);
   outlined(ctx, hint.str, view.w / 2, view.h - num(safe(view).bottom) - 16, hint.size, 'rgba(255,255,255,0.6)', 'center', 500);
+}
+
+// ---- difficulty ----
+
+export function drawDifficulty(ctx, view, state) {
+  const st = state || {};
+  const land = landscape(view);
+  const top = num(safe(view).top);
+  const sl = num(safe(view).left);
+  const sr = num(safe(view).right);
+  const cx = sl + (view.w - sl - sr) / 2;
+  const short = view.h < 560;
+  dim(ctx, view, 0.8);
+  const titleY = top + Math.max(land ? 26 : short ? 26 : 36, view.h * (land ? 0.08 : 0.07));
+  heavy(ctx, 'DIFFICULTY', cx, titleY, land || short ? 26 : 30, MAGENTA);
+  const sub = fit(ctx, 'One pick for the whole run. Scores are kept for each.', view.w - 32 - sl - sr, 13, 600, 9);
+  outlined(ctx, sub.str, cx, titleY + (land || short ? 22 : 28), sub.size, '#c9c2e0', 'center', 600);
+  const list = buttons('difficulty', view, st);
+  const pc = st.input !== 'mobile';
+  for (const b of list) {
+    if (!b.mode) continue;
+    const tall = b.h >= 76;
+    rrect(ctx, b.x, b.y + 3, b.w, b.h, 14);
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.fill();
+    rrect(ctx, b.x, b.y, b.w, b.h, 14);
+    ctx.fillStyle = b.selected ? 'rgba(255,255,255,0.17)' : 'rgba(255,255,255,0.09)';
+    ctx.fill();
+    ctx.lineWidth = b.selected ? 3 : 1.8;
+    ctx.strokeStyle = b.accent;
+    ctx.globalAlpha = b.selected ? 1 : 0.55;
+    rrect(ctx, b.x, b.y, b.w, b.h, 14);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    const inner = b.w - 28;
+    if (pc) keycap(ctx, b.x + 20, b.y + (tall ? 22 : 17), 20, 20, String(b.n), b.selected);
+    const nx = b.x + b.w / 2;
+    if (tall) {
+      const f = fit(ctx, b.label, inner - (pc ? 44 : 0), land ? 21 : 24, 800, 13);
+      heavy(ctx, f.str, nx, b.y + 24, f.size, b.accent);
+      const size = land ? 12.5 : 13.5;
+      const lines = wrapLines(ctx, b.sub, inner, size, 500, 3);
+      const lh = size + 4;
+      const y1 = b.y + 24 + f.size * 0.5 + 10 + size * 0.5;
+      lines.forEach((ln, i) => outlined(ctx, ln, nx, y1 + i * lh, size, '#e5e0f5', 'center', 500));
+    } else { // a short screen: the name and the line each on one row
+      const f = fit(ctx, b.label, inner - (pc ? 44 : 0), 16, 800, 11);
+      outlined(ctx, f.str, nx, b.y + b.h * 0.32, f.size, b.accent, 'center', 800);
+      const g = fit(ctx, b.sub, inner, 11.5, 500, 8);
+      outlined(ctx, g.str, nx, b.y + b.h * 0.7, g.size, '#e5e0f5', 'center', 500);
+    }
+  }
+  drawButtons(ctx, list.filter((b) => !b.mode));
 }
 
 // ---- settings ----
@@ -862,7 +960,10 @@ export function drawDead(ctx, view, state) {
   const y0 = F.land ? top + Math.max(46, view.h * 0.14) : Math.max(view.h * 0.2, top + 70);
   const f = fit(ctx, 'THE SET IS OVER', F.w - 40, 34, 800, 20);
   heavy(ctx, f.str, cx, y0 + (1 - a) * -10, f.size, MAGENTA);
-  if (st.levelName) outlined(ctx, str(st.levelName), cx, y0 + 36, 14, '#9fb3c8', 'center', 600);
+  if (st.levelName) {
+    const lf = fit(ctx, str(st.levelName) + (modeTag(st.difficulty) ? ` · ${modeTag(st.difficulty)}` : ''), F.w - 40, 14, 600, 10);
+    outlined(ctx, lf.str, cx, y0 + 36, lf.size, '#9fb3c8', 'center', 600);
+  }
   let y = y0 + 70;
   if (st.line) y += paragraph(ctx, str(st.line), cx, y, F.w - 48, 16, '#e5e0f5', 'center', 500, 22);
   y = Math.max(F.land ? 0 : view.h * 0.46, y + 18);
@@ -939,7 +1040,7 @@ export function drawComplete(ctx, view, state) {
     ny += 22;
   }
   if (st.debugMode) outlined(ctx, 'DEBUG RUN: not recorded', cx, ny, 14, AMBER, 'center', 600);
-  else outlined(ctx, st.newBest ? 'NEW BEST' : `Best ${Math.floor(num(st.best))}`, cx, ny, 14, st.newBest ? CYAN : '#c9c2e0', 'center', 600);
+  else outlined(ctx, `${st.newBest ? 'NEW BEST' : `Best ${Math.floor(num(st.best))}`}${modeTag(st.difficulty) ? ` · ${modeTag(st.difficulty)}` : ''}`, cx, ny, 14, st.newBest ? CYAN : '#c9c2e0', 'center', 600);
   ctx.globalAlpha = 1;
   drawButtons(ctx, buttons('complete', view, st), t, 1);
 }
