@@ -531,6 +531,7 @@ def vinyl():
 LENS_HEX, LENS_K = 0xfff0d0, 8  # warm white; models.js drives the brightness, k is only the preview's
 POLY = 0x1b1c20                 # black polymer, painted so it wears at the edges
 CYAN_LAMP = 0x20c8e0
+TEAL = 0x1a7f8f                 # the pistol torch's paint: the gun's cyan pinstripe colour, darker, so the module reads as a fitting
 
 
 def new_torch():
@@ -548,36 +549,45 @@ def lens_disc(L, c, r, depth=0.004, seg=16):
         wear=0, at=c, rot=AY)
 
 
+PT_HW, PT_HH, PT_ZC = 0.032, 0.024, 0.124  # the pistol torch: housing half width and half height, and the axis height
+
+
 def pistol_torch():
-  """A clip-on tactical light under the dust cover: black polymer, ribbed dark head, chrome bezel, cyan accent lamp."""
+  """A clip-on tactical light on top of the slide, ahead of the rear sight (the Reverb Launcher carries its lamp on a top rail
+  too). The camera looks at the pistol from behind and above, so a module under the slide was hidden by it, and one on top is
+  seen from every angle: its rear face (a switch and a cyan lamp), its left flank (a speaker and a lamp window) and its head."""
   T, L = new_torch()
-  zc = -0.0545
-  # clamp plate on the rail, side jaws and a chrome thumbscrew on the left
-  T.add(box(0.058, 0.13, 0.012, 0.003, 1, sub=0.006), POLY, 'gloss', at=(0, 0.14, -0.0235))
+  zc, hw, hh = PT_ZC, PT_HW, PT_HH
+  # a saddle on the slide's top rib, side jaws gripping the flanks and a chrome thumbscrew on the left
+  T.add(box(0.058, 0.13, 0.012, 0.003, 1, sub=0.006), POLY, 'gloss', at=(0, 0.14, 0.094))
   for s in (-1, 1):
-    T.add(box(0.005, 0.055, 0.02, 0.0015, 1), POLY, 'gloss', at=(s * 0.0315, 0.14, -0.0135))
+    T.add(box(0.005, 0.07, 0.034, 0.0015, 1), POLY, 'gloss', at=(s * 0.0315, 0.14, 0.071))
   T.add(rev([(0.0045, 0), (0.0075, 0.001), (0.0075, 0.0055), (0.0045, 0.0065)], 10), CHROME, 'chrome', wear=0,
-        at=(-0.0345, 0.11, -0.0135), rot=(0, -PI / 2, 0))
-  T.add(rev([(0.0045, 0), (0.0045, 0.004)], 6), CHROME, 'chrome', wear=0, at=(0.0345, 0.11, -0.0135), rot=(0, PI / 2, 0))
-  # the housing, with grip ribs and a toggle on the flanks, and the cyan lamp window
-  T.add(loft([((0, 0.08, zc), 0.064, 0.05, 0.008), ((0, 0.2, zc), 0.064, 0.05, 0.008)], n=2, bevel=0.005, bsteps=1, sub=0.007),
-        POLY, 'gloss', wear=0.9)
+        at=(-0.034, 0.11, 0.071), rot=(0, -PI / 2, 0))
+  T.add(rev([(0.0045, 0), (0.0045, 0.004)], 6), CHROME, 'chrome', wear=0, at=(0.034, 0.11, 0.071), rot=(0, PI / 2, 0))
+  # the housing: steel, with grip ribs, a speaker on the left flank and a cyan lamp window on each
+  T.add(loft([((0, 0.085, zc), 2 * hw, 2 * hh, 0.008), ((0, 0.245, zc), 2 * hw, 2 * hh, 0.008)], n=2, bevel=0.005, bsteps=1, sub=0.007),
+        TEAL, 'gloss', wear=0.9)
   for s in (-1, 1):
-    for i in range(3):
-      T.add(box(0.0025, 0.004, 0.028, 0.0008, 0), RUBBER, 'rubber', wear=0, at=(s * 0.0325, 0.092 + i * 0.009, zc - 0.002))
-  T.add(box(0.0025, 0.026, 0.008, 0.001, 0), CYAN_LAMP, 'plastic', wear=0, at=(-0.0325, 0.165, zc + 0.007))
-  T.add(box(0.0025, 0.026, 0.008, 0.001, 0), CYAN_LAMP, 'plastic', wear=0, at=(0.0325, 0.165, zc + 0.007))
-  T.add(box(0.005, 0.016, 0.006, 0.0015, 1), CHROME, 'chrome', wear=0, at=(-0.034, 0.125, zc - 0.012))
+    for i in range(2):
+      T.add(box(0.0025, 0.004, 0.026, 0.0008, 0), RUBBER, 'rubber', wear=0, at=(s * (hw + 0.0005), 0.097 + i * 0.009, zc - 0.002))
+    T.add(box(0.0025, 0.04, 0.009, 0.001, 0), CYAN_LAMP, 'plastic', wear=0, at=(s * (hw + 0.0005), 0.21, zc + 0.008))
+  at, rot = V((-hw, 0.178, zc - 0.002)), (0, -PI / 2, 0)  # a light speaker: chrome surround, paper cone
+  T.add(rev([(0.0165, 0), (0.0165, 0.004), (0.0125, 0.0045)], 12), CHROME, 'chrome', wear=0, at=at, rot=rot)
+  T.add(rev([(0.0128, 0.0035), (0.007, 0.001), (0, 0.001)], 12), CONE, 'paper', wear=0, at=at, rot=rot)
+  # the rear face, the one the camera sees: a chrome toggle over a cyan lamp window
+  T.add(box(0.014, 0.008, 0.008, 0.002, 1), CHROME, 'chrome', wear=0, at=(0, 0.0845, zc + 0.002))
+  T.add(box(0.036, 0.0025, 0.007, 0.001, 0), CYAN_LAMP, 'plastic', wear=0, at=(0, 0.0835, zc - 0.013))
   # the head: a ribbed dark barrel (the speaker-grille look), a chrome bezel with a reflector, then the lens
-  head = [(0.022, 0.198), (0.0245, 0.2), (0.0245, 0.206), (0.0265, 0.2085), (0.0265, 0.2115), (0.0245, 0.214),
-          (0.0245, 0.2195), (0.0265, 0.2215), (0.0265, 0.2245), (0.0245, 0.227), (0.0245, 0.2325), (0.0265, 0.2345),
-          (0.0265, 0.2375), (0.0245, 0.24), (0.0245, 0.2555)]
+  dy = 0.047
+  head = [(0.022, 0.198 + dy), (0.0245, 0.2 + dy), (0.0245, 0.206 + dy), (0.0265, 0.2085 + dy), (0.0265, 0.2115 + dy), (0.0245, 0.214 + dy),
+          (0.0245, 0.2195 + dy), (0.0265, 0.2215 + dy), (0.0265, 0.2245 + dy), (0.0245, 0.227 + dy), (0.0245, 0.2555 + dy)]
   T.add(rev(head, 12), 0x2b2c30, 'metal', at=(0, 0, zc), rot=AY)
-  T.add(ring_solid([(0.0228, 0.2545), (0.0298, 0.2545), (0.0298, 0.2645), (0.0288, 0.2658), (0.0228, 0.2658)], 12),
+  T.add(ring_solid([(0.0228, 0.2545 + dy), (0.0298, 0.2545 + dy), (0.0298, 0.2645 + dy), (0.0288, 0.2658 + dy), (0.0228, 0.2658 + dy)], 12),
         CHROME, 'chrome', wear=0, at=(0, 0, zc), rot=AY)
-  T.add(rev([(0.0228, 0.2645), (0.0203, 0.2602)], 12), CHROME, 'chrome', wear=0, at=(0, 0, zc), rot=AY)
-  lens_disc(L, (0, 0.2625, zc), 0.02, 0.004, 12)
-  return T, L, (0, 0.2633, zc)
+  T.add(rev([(0.0228, 0.2645 + dy), (0.0203, 0.2602 + dy)], 12), CHROME, 'chrome', wear=0, at=(0, 0, zc), rot=AY)
+  lens_disc(L, (0, 0.2625 + dy, zc), 0.02, 0.004, 12)
+  return T, L, (0, 0.2633 + dy, zc)
 
 
 def shotgun_torch():
@@ -645,8 +655,10 @@ def launcher_torch():
   T.add(rev([(0.0168, 0.2905), (0.0295, 0.336)], 20), CHROME, 'chrome', wear=0, at=at, rot=AY)
   T.add(ring_solid([(0.0285, 0.3335), (0.0335, 0.3335), (0.0335, 0.3385), (0.0285, 0.3385)], 20), CHROME, 'chrome', wear=0, at=at, rot=AY)
   T.add(ring_solid([(0.0225, 0.294), (0.0262, 0.294), (0.0262, 0.304), (0.0225, 0.304)], 18), BRASS, 'brass', at=at, rot=AY)
-  lens_disc(L, (0, 0.2935 + dy, zh), 0.016, 0.005, 18)
-  return T, L, (0, 0.2943 + dy, zh)
+  # the lens closes the horn's mouth, flush with the chrome rim, so the beam starts at the front of the lamp and not down in
+  # its throat (it used to sit 0.04 m inside the flare, where the horn's own walls cut across the beam)
+  lens_disc(L, (0, 0.3365 + dy, zh), 0.0265, 0.005, 20)
+  return T, L, (0, 0.3373 + dy, zh)
 
 
 def coil_neck(pts, r=0.0072, dr=0.001, ds=0.0112, seg=5):
@@ -683,11 +695,11 @@ def vinyl_torch():
   # the socket, a brass ferrule and the coiled neck
   T.add(zrev([(0.0095, 0.0), (0.0095, 0.008, 0.001), (0.0075, 0.009), (0.0075, 0.0145)], 10), CHROME, 'chrome', at=(cx, cy, 0.0825))
   T.add(ring_solid([(0.0068, 0.0), (0.0098, 0.0), (0.0098, 0.007), (0.0068, 0.007)], 10), BRASS, 'brass', at=(cx, cy, 0.0905))
-  neck = [(cx, cy, 0.095), (cx, -0.108, 0.14), (-0.1355, -0.092, 0.19), (-0.133, -0.05, 0.228), (-0.127, 0.02, 0.246),
-          (-0.12, 0.1, 0.24), (-0.117, 0.18, 0.226), (-0.115, 0.25, 0.2085), (-0.115, 0.276, 0.2085)]
+  neck = [(cx, cy, 0.095), (cx, -0.108, 0.135), (-0.1355, -0.092, 0.175), (-0.133, -0.05, 0.2), (-0.127, 0.02, 0.212),
+          (-0.12, 0.1, 0.208), (-0.117, 0.18, 0.195), (-0.115, 0.25, 0.18), (-0.115, 0.276, 0.18)]
   T.add(coil_neck(neck), 0x9a9ea4, 'metal')
   # the lamp head: chrome bullet with a rubber and a brass ring, a chrome bezel, the lens recessed in it
-  hx, hz, dy = -0.115, 0.2085, 0.026
+  hx, hz, dy = -0.115, 0.18, 0.026
   at = (hx, dy, hz)  # the head is drawn about y = 0 + 0.24 and moved forward as a whole
   T.add(ring_solid([(0.0072, 0.244), (0.0125, 0.244), (0.0125, 0.252), (0.0072, 0.252)], 10), BRASS, 'brass', at=at, rot=AY)
   T.add(rev([(0, 0.2465), (0.0175, 0.249, 0.004), (0.02, 0.258), (0.02, 0.2975)], 14), CHROME, 'chrome', at=at, rot=AY)
@@ -699,23 +711,24 @@ def vinyl_torch():
 
 
 def pistol_attach_hand():
-  """Naebun's left hand and forearm gripping the pistol's torch module at the moment it clicks onto the rail (the pose the
-  attach rig in models.js moves in and out). Same skin, sleeve, cuff and watch as the other left hands. The fingers cup
-  the housing from below and curl up its right flank, the palm and wrist sit to the left, the thumb lies on the left flank."""
+  """Naebun's left hand and forearm gripping the pistol's torch module at the moment it clicks onto the slide (the pose the
+  attach rig in models.js moves in and out). Same skin, sleeve, cuff and watch as the other left hands. The fingers cup the
+  housing from above and curl down its right flank, the palm and wrist sit to the left, the thumb lies on the left flank."""
   H = Part('attachHand', smooth=80)
-  c0 = V((0, 0.118, -0.0545))
-  Hp, Hq, rf = 0.032, 0.025, 0.0112
-  p, q, n3 = V((1, 0, 0)), V((0, 0, 1)), V((0, 1, 0))
+  c0 = V((0, 0.118, PT_ZC))
+  Hp, Hq, rf = PT_HW, PT_HH, 0.0112
+  p, q, n3 = V((1, 0, 0)), V((0, 0, -1)), V((0, 1, 0))
   wrap_fingers(H, c0, p, q, n3, Hp, Hq, [0.036, 0.012, -0.012, -0.036], rf)
   tz = [(2 * rf * 1.3, 2 * rf * 1.2), (2 * rf * 1.12, 2 * rf * 1.08), (2 * rf, 2 * rf * 0.98), (2 * rf * 0.86, 2 * rf * 0.86)]
-  finger_path(H, [(-0.07, 0.062, -0.07), (-0.05, 0.09, -0.054), (-0.0435, 0.128, -0.0515), (-0.0425, 0.158, -0.0515)], tz,
+  fl = lambda z: PT_ZC - (z + 0.0545)  # a height from the under-slung layout, mirrored about the housing's axis
+  finger_path(H, [(-0.07, 0.062, fl(-0.07)), (-0.05, 0.09, fl(-0.054)), (-0.0435, 0.128, fl(-0.0515)), (-0.0425, 0.158, fl(-0.0515))], tz,
               (0, 0, 1), bevel=0.008)
-  # the back of the hand, low on the left of the housing and narrowing to the wrist
+  # the back of the hand, high on the left of the housing and narrowing to the wrist
   w0, ph = 0.062, 0.115
-  zc = c0.z - 0.02
+  zc = c0.z + 0.02
   s = [(V((c0.x - (Hp - 0.006), c0.y, zc)), w0, ph, 0.028),
-       (V((c0.x - (Hp + 0.036), c0.y, zc - 0.004)), w0 * 0.84, ph * 0.8, 0.026),
-       (V((c0.x - (Hp + 0.078), c0.y - 0.004, zc - 0.012)), 0.06, 0.062, 0.022)]
+       (V((c0.x - (Hp + 0.036), c0.y, zc + 0.002)), w0 * 0.84, ph * 0.8, 0.026),
+       (V((c0.x - (Hp + 0.078), c0.y - 0.004, zc - 0.004)), 0.06, 0.062, 0.022)]
   H.add(loft(s, n=1, up=n3, bevel=0.012, bsteps=1), SKIN, 'skin')
   forearm(H, s[2][0], (-0.62, -0.5, -0.6), (0, 0, 1), watch=True)
   return H

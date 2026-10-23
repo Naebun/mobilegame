@@ -4110,7 +4110,7 @@ export function makeWeaponModel(id, { hands = true, torch } = {}) {
   return g;
 }
 
-// The attach rig for the pistol's torch: Naebun's left hand brings the loose torch module to the rail, clicks it on and
+// The attach rig for the pistol's torch: Naebun's left hand brings the loose torch module to the top of the slide, clicks it on and
 // withdraws. The group is in the pistol viewmodel's frame (add it to the same root as makeWeaponModel('pistol')).
 // setPose(k), k 0..1: at 0 everything is out of frame at the lower left; the hand carries the torch in, seats it
 // (a push and a click) by k = seatK, where the loose torch is exactly the pistol's mounted one, then lets go and
@@ -4121,9 +4121,9 @@ const ATTACH_HOLD_K = 0.68;
 // Keyframes of the hand and torch as an offset from the seated pose (the pistol frame, game axes: x right, y up, z
 // towards the player) and a rotation about the module's middle: [k, x, y, z, rx, ry, rz]. Each leg eases in its own way.
 const ATTACH_KEYS = [
-  [0, -0.5, -0.55, 0.14, 0.3, 0.3, -0.55],  // out of frame, lower left
-  [0.36, -0.07, -0.085, 0.0, 0.1, 0.12, -0.2], // under the rail, a hand's width to the left
-  [0.54, 0, 0.005, 0, 0, 0, 0],              // pushed up past the seat: the click comes from here
+  [0, -0.55, -0.78, 0.14, 0.3, 0.3, -0.55],  // out of frame, lower left
+  [0.36, -0.07, 0.075, 0.0, 0.1, 0.12, -0.2], // above the slide, a hand's width to the left
+  [0.54, 0, -0.006, 0, 0, 0, 0],             // pushed down past the seat: the click comes from here
   [ATTACH_SEAT_K, 0, 0, 0, 0, 0, 0],
 ];
 const ATTACH_OUT = ATTACH_KEYS[0];

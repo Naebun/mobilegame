@@ -2587,13 +2587,13 @@ function animateViewmodel(dt) {
     wroot.position.set(baseX + bobX, (R.wcam.aspect < 1 ? -0.205 : -0.24) + bobY - dip * 0.22 - sw * 0.4, -0.62 + p.kick * 0.08);
     wroot.rotation.set(0.03 + p.kick * 0.22 + dip * 0.7, 0.07 + dip * -0.25, dip * 0.2);
     if (S.attach) {
-      // while the torch is fitted the pistol comes up and rolls a little, so the rail faces the player
+      // while the torch is fitted the pistol comes up and rolls a little, so its top (where the module clips on) faces the left hand
       const lift = Math.sin(clamp(S.attach.k, 0, 1) * Math.PI);
       wroot.position.z += 0.05 * lift;
       wroot.position.y += 0.035 * lift;
       wroot.position.x -= 0.03 * lift;
       wroot.rotation.x += 0.12 * lift;
-      wroot.rotation.z += -0.3 * lift;
+      wroot.rotation.z += 0.3 * lift;
     }
   }
   // the shotgun's pump (and the left hand on it) slides back and forward in the gap between shots
