@@ -18,6 +18,7 @@ import * as screens from './screens.js';
 import * as M from './models.js';
 import * as store from './save.js';
 import { createArsenalPlay } from './arsenal-play.js';
+import { createPerf } from './perf.js';
 import { WEAPONS, WEAPON_ORDER, ENEMY_DEFS, PLAYER, LEVELS, DEATH_LINES, DRINKS, DRINK_ORDER } from './data.js';
 
 const TAU = Math.PI * 2;
@@ -48,8 +49,9 @@ function detectMobile() {
 let mobileBrowser = detectMobile();
 const inputMode = () => S.settings.input || (mobileBrowser ? 'mobile' : 'pc');
 // Quality: ?q=low|medium|high forces a tier (used by tests); otherwise start from the saved tier (default high)
-// and step down automatically if the device is clearly struggling. ?perf shows a frame-rate overlay.
-const Q = { tier: 'high', fixed: false, ema: 1 / 60, frames: 0, last: 0, perf: query.has('perf'), fps: 60 };
+// and step down automatically if the device is clearly struggling. ?perf (or the P key) shows the readout in src/perf.js.
+const Q = { tier: 'high', fixed: false, ema: 1 / 60, frames: 0, last: 0, fps: 60 };
+let PERF = null; // the performance readout; null (one check per frame, nothing else) until switched on
 // Debug mode is a testing aid for Naebun only. It must never feed back into balance: enemies, weapons' base stats,
 // areas and everything in data.js are tuned for normal mode alone.
 const DEBUG_MULT = { fire: 2, damage: 2, health: 2 };
@@ -393,6 +395,34 @@ function initRender(view) {
   R = { renderer, scene, camera, hemi, fill, fillBase: 0, spot, tbeam, torchCfg: DEFAULT_TORCH, attachRig, wscene, wcam, wroot, models, flashes, impacts, explosions: [], flashT: 0, muzzleT: 0, pipeline, fx, look: null, drinkVms, beam, beamParts: [beamCore, beamMid, beamGlow], fov: 85, baseFov: 85, naebun };
   applyAtmosphere();
   resize(view);
+  initPerf();
+}
+
+// The performance readout: ?perf in the URL, or the P key, switches it on (and off). Nothing exists until then.
+function setPerf(on) {
+  if (on && !PERF && R) {
+    PERF = createPerf({
+      renderer: R.renderer,
+      scenes: () => [R.scene, R.wscene],
+      info: () => {
+        const area = world.areaAt(S.player.x, S.player.z);
+        return { tier: R.pipeline.tier, fixed: Q.fixed, pixelRatio: R.pipeline.pixelRatio, level: S.level, area: area ? area.id : '' };
+      },
+    });
+    if (PERF) window.__perf = PERF; // the latest numbers, for tests and for reading off a connected phone
+  } else if (!on && PERF) {
+    PERF.destroy();
+    PERF = null;
+    delete window.__perf;
+  }
+}
+
+function initPerf() {
+  if (typeof window === 'undefined') return;
+  window.addEventListener('keydown', (e) => {
+    if (e.key.toLowerCase() === 'p' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) setPerf(!PERF);
+  });
+  if (query.has('perf')) setPerf(true);
 }
 
 // The torch beam: an open cone from the lens, drawn additively and brightest at its edges-on silhouette fade, so it reads as
@@ -2691,22 +2721,11 @@ function drawVignette(ctx, view) {
   ctx.fillRect(0, 0, view.w, view.h);
 }
 
-function drawPerf(ctx, view) {
-  const info = R.renderer.info;
-  ctx.font = '600 11px ui-monospace, Menlo, monospace';
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'top';
-  ctx.fillStyle = 'rgba(0,0,0,0.55)';
-  ctx.fillRect(4, view.safe.top + 70, 214, 30);
-  ctx.fillStyle = '#9dff9d';
-  ctx.fillText(`${Q.fps.toFixed(0)} fps  ${(Q.ema * 1000).toFixed(1)} ms  ${R.pipeline.tier}${Q.fixed ? ' (fixed)' : ''}`, 8, view.safe.top + 74);
-  ctx.fillText(`calls ${info.render.calls}  tris ${(info.render.triangles / 1000).toFixed(0)}k  ratio ${R.pipeline.pixelRatio}`, 8, view.safe.top + 88);
-}
-
 export function render(ctx, view, alpha) {
   const dtv = 1 / 60;
   ctx.clearRect(0, 0, view.w, view.h);
   if (!R) return;
+  if (PERF) PERF.begin(performance.now());
   if (S.pendingLoad) S.loadReady = true; // this frame shows the new screen; the world swaps on the next update
   placeCamera();
   animateWorld();
@@ -2757,7 +2776,7 @@ export function render(ctx, view, alpha) {
     default:
       hud.drawPlayHud(ctx, view, buildHudState());
   }
-  if (Q.perf) drawPerf(ctx, view);
+  if (PERF) PERF.end(performance.now(), view);
 }
 
 // ---- tests ----
