@@ -159,6 +159,28 @@ export const WEAPON_IDS = ['pistol', 'shotgun', 'smg', 'launcher'];
 }
 ```
 
+Level 2 additions (all in `src/models.js`, exercised by `scripts/harness/models-check.mjs`; view with
+`scripts/harness/models-l2.html`):
+
+- `makeRobot('shielded')`: Shielded Fizzbang, melee. Radius 0.7, height 2.1, headY 1.7. Poses `idle walk windup swing hurt
+  dead` (`aim` and `shoot` map to `windup` and `swing`). The door is a child group named `shield`, in front of the body
+  (about 1.3 m wide, 1.7 m tall, centre 0.9 m in front of the axis); the back and sides are bare. `robot.shieldHit()`
+  recoils and flashes the door for 0.12 s: safe to call every frame, `update(dt)` runs it down (a wall-clock back-stop
+  covers callers that never update). `swing` shoves the door forward, damage on the `swing` state as for the others.
+- `makeRobot('tourguide')`: the boss, Bampot camp, so it shoots from `muzzle` (the bullhorn mouth). Radius 0.9, height
+  3.0, headY 2.45. Poses `idle walk hurt dead aim shoot` plus `slam` (`windup` plays the first 30 percent of it): the
+  lantern pole goes back over the shoulder, then through the vertical and down; the blow lands at k = 0.45 with the
+  lantern about 2.3 m ahead of the body at 1.6 m high, and the apex reaches about 3.4 m, so a ceiling lower than that
+  is clipped for a moment. `robot.enrage()` turns eyes, lantern and bullhorn glow hot red (idempotent, `robot.enraged`).
+  Named parts: `pole`, `lantern`, `hat`.
+- Weapon `vinyl` (`WEAPON_IDS`): a turntable deck with a tilted platter. `makeWeaponModel('vinyl')` has a `muzzle` at the
+  front gate, a child group `record`, and `userData.update(t)` (t in seconds) that spins the record; the other weapons
+  have no per-frame hook. `makeWeaponPickup('vinyl')` forwards the same `userData.update(t)`. It is wider than the
+  others (deck 0.28 m): the launcher's `baseX 0.12` suits it better than 0.15.
+- `makeProjectile('disc')`: a record of radius 0.3 with a notched HDR label, glowing rim and a pip, tilted 0.45 rad towards
+  the player inside a group, so spinning the whole group about y wobbles it and spinning the `spin` child turns it
+  cleanly. A pink glow disc is part of the model; scale the group to size the disc.
+
 Look of the robots (they are enemies of a dark-comedy Edinburgh game, so they should be funny and menacing, built
 from simple primitives: boxes, cylinders, spheres, cones):
 

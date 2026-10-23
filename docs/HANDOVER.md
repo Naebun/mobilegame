@@ -4,8 +4,8 @@ Written so the chat can be cleared and work resumed from a cold start. Read this
 `README.md`. The status section is the part most likely to be stale, so check it against `git log` first.
 
 ## Standing rules from the owner
-- **Level 1 only.** Never build a later level without explicit permission. Features are built and tested on level 1.
-- **The five approved enemy ideas are recorded in `ROADMAP.md` and are not built.** Approval is not a go-ahead to build.
+- **Levels 1 and 2 exist.** Level 2 was built with explicit permission (branch `level-2`, not merged). Never build level 3 or later without explicit permission.
+- **Of the five approved enemy ideas in `ROADMAP.md`, only the Shielded Fizzbang is built (level 2).** Approval is not a go-ahead to build the rest.
 - **Never balance against debug mode.** Debug is 2x fire rate, 2x damage, 2x health. Debug runs do not write the best
   score.
 - **Nothing goes to `main` until the owner says so.** Squash-merge by PR when asked. (Last go-ahead: "Merge all", PR #4.)
@@ -22,6 +22,13 @@ comedy, light Scottish voice. Six linear areas, pre-placed sleeping robots that 
 open when an area is clear, four floor-pickup weapons, a Bouncer boss. Drinks are the power-ups, each with a
 first-person drinking animation. Three.js r160 is vendored, plain ES modules, no backend. Full-game plan (about two
 hours, 8 to 10 levels, iOS from the last four years) is in `docs/full-game-plan.md`.
+
+## Level 2 (branch `level-2`)
+Read `docs/level-2.md`. In short: `buildWorld({ level })` takes a definition from `src/levels/`; `vaults-decor.js` dresses
+level 2 through hooks in `world.js`; level 1's dressing is still inline in `world.js` behind `COW`. `game3d.js` has
+`loadLevel` and a deferred swap (the world is rebuilt after a frame showing the new screen has drawn). New tests:
+`level-check.mjs`, `combat-check.mjs`, `game-views.mjs` (screenshots in the real pipeline), `world-views.mjs`. Open: a human
+playtest of level 2 (difficulty, the dark, touch), a phone frame-rate check, and merging when the owner says so.
 
 ## Branches
 Everything is merged to `main` (PR #4, squash, with the owner's go-ahead: "Merge all"). That PR carried the robot
@@ -96,3 +103,12 @@ modules, which changes that rule. Raise it with the owner before starting.
 1. When to start Blender texture work, and whether image files may enter the repo. (Models are done for the drinks;
    say if the robots, weapons or Freddie should move to Blender too.)
 2. Playtest feedback on difficulty and look.
+
+## Landscape (branch `level-2`)
+Added on the owner's request, replacing the earlier "portrait only" decision. `hud.layout(view)` has a landscape branch
+(boxes in the lower corners, SWAP and RELOAD beside them, side insets from the notch); `screens.js` puts words left and
+buttons in a right column (`frame()`, `landscape()`), with a four-column controls page; `baseFov()` in `game3d.js` narrows
+the vertical field of view as the screen widens (85 degrees in portrait, about 58 at 2.16:1) and `weaponX()` moves the
+viewmodel out to the right. Tested by `ui-check` (12 view sizes, side insets), the smoke test (rotate to 844 x 390 and
+back) and screenshots from `scripts/harness/screen-views.mjs`. Not tested: a real phone rotating, iOS reporting a stale
+size after rotation (the engine re-measures at 0, 120 and 450 ms to cover it), real thumb reach on the landscape boxes.

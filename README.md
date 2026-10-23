@@ -6,15 +6,21 @@ modules, no build step for development, no backend.
 
 ## The game
 
-Level 1 is the Cowgate: a real brick-and-stone basement club, played as one linear route through six areas
+Two levels. After level 1, NEXT LEVEL plays a voicemail from Cheryl (Freddie's agent) and starts level 2. Freddie begins
+each level with the pistol only and full health; there are no saves. Add `?level=2` to the URL to start a new game on
+level 2 (a development shortcut).
+
+**Level 1 is the Cowgate:** a real brick-and-stone basement club, played as one linear route through six areas
 (stairwell, cloakroom, dance floor, bar, VIP corridor, backstage). Every robot is placed in the level in advance and
 wakes when it notices Freddie; a robot that dies stays dead. Clear every robot in an area and the door out unlocks.
 Beat the Bouncer at the end and walk out to finish the level.
 
 - **Enemies:** "Dr Fizzbang" robots only fight in melee. "Bampot and Nephew" robots throw bottles. The Bouncer is a big
-  melee brute.
+  melee brute. Level 2 adds the Shielded Fizzbang (a vending-machine door stops most frontal shots; go round the back,
+  use the launcher, or get the shotgun in close) and the Tour Guide boss.
 - **Weapons:** found on the floor, each different. Bass Pistol (accurate, starting weapon), Subwoofer Shotgun
-  (pellets and knockback), Tweeter SMG (fast, spread grows), Reverb Launcher (explosive).
+  (pellets and knockback), Tweeter SMG (fast, spread grows), Reverb Launcher (explosive), and in level 2 the Vinyl Disc
+  (a record that bounces off walls and stops in the first robot it hits).
 - **Ammo:** unlimited, but each clip is limited. Reloading is automatic when the clip empties, or press RELOAD.
 - **Headshots** do double damage. There is no aim assist.
 - **Drinks:** the power-ups. Walk onto one and Freddie drinks it, with a first-person animation. Dram heals, Orange
@@ -22,11 +28,15 @@ Beat the Bouncer at the end and walk out to finish the level.
   camera goes third person, Freddie spins and a big laser wipes out the robots around him. It never works in a boss
   room. Numbers are in `DRINKS` in `src/data.js`; the design is in `docs/drinks.md`.
 
+**Level 2 is the Vaults:** the arched stone cellars under South Bridge and Mary King's Close, six areas (Blair Street
+Steps, the Long Vault, the Cask Cellar, the Close, the Plague Cellar, the Last Tour). It is nearly dark: wall torches and
+braziers light pools, and Freddie's own torch does the rest. Design notes and numbers are in `docs/level-2.md`.
+
 ## Controls
 
 Two grey boxes on screen. **Left box:** drag to move. **Right box:** drag to aim; while a thumb is down in it,
 the weapon fires on its own. **Anywhere else on the screen:** drag to aim only, with no firing (a second
-aiming thumb, or a lighter way to look round). **RELOAD** sits under the right box and **SWAP** (next weapon) under the left box.
+aiming thumb, or a lighter way to look round). **RELOAD** sits under the right box and **SWAP** (next weapon) under the left box. In landscape the boxes sit in the lower corners, clear of the notch, with SWAP and RELOAD beside them and the whole middle of the screen free for the aiming drag.
 On a desktop: WASD to move, arrow keys to look, space to fire, R to reload, Q to swap.
 
 ## Flow
@@ -46,7 +56,8 @@ balanced for normal mode only.
 | `src/engine.js` | Loop, canvas sizing, multi-touch input, safe-area insets |
 | `src/game3d.js` | State machine, player, weapons and clips, robot AI, projectiles, areas and doors, renderer |
 | `src/data.js` | Weapons, enemies, level text and jokes. Tune the game here |
-| `src/world.js` | The level: procedural PBR brick, stone and timber, baked AO and light pools, collision, line of sight, path finding |
+| `src/world.js` | Builds a level from a definition: procedural PBR brick, stone and timber, baked AO and light pools, collision, line of sight, path finding. Level 1's dressing lives here |
+| `src/levels/` | Level definitions (map, areas, styles, atmosphere, spawn and pickup letters): `cowgate.js`, `vaults.js`. `vaults-decor.js` dresses level 2 |
 | `src/models.js` | Robots, weapon models, pickups, drink pickups and viewmodels, Freddie, projectiles |
 | `src/gfx.js`, `src/gfx-env.js`, `src/fx.js` | Render pipeline and quality tiers (HDR, bloom, grade), environment lighting, particles and dust |
 | `src/hud.js`, `src/screens.js` | The 2D layer: control boxes, HUD, title, controls, intro, death and completion screens |
@@ -80,8 +91,11 @@ Publish that file as a Claude Artifact. It is one self-contained file, so the se
 
 ```
 npm run smoke -- ./shots     # headless Chromium with software WebGL and synthetic multi-touch; screenshots to ./shots
-npm run sim                  # headless bot plays the real game logic: is the level winnable, how much damage
-node scripts/harness/world-check.mjs     # level geometry, collision, rays, flow field (thousands of assertions)
+npm run sim                  # headless bot plays the real game logic: is the level winnable, how much damage (--level 2 for the Vaults)
+node scripts/harness/world-check.mjs     # level 1 geometry, collision, rays, flow field (thousands of assertions)
+node scripts/harness/level-check.mjs     # every level: areas, spawns, pickups, doors one at a time, budgets, NaN-free geometry
+node scripts/harness/combat-check.mjs    # level 2 rules in the real game logic: shield, disc bounce, Tour Guide volley, slam, enrage
+node scripts/harness/world-views.mjs 2 ./shots "name:x,z,yaw"   # screenshots of a level from tile positions (viewer harness, not the game pipeline)
 node scripts/harness/models-check.mjs    # every robot pose, every model
 node scripts/harness/ui-check.mjs        # HUD and screens at extreme inputs and view sizes
 node scripts/harness/drinks-check.mjs    # every drink, Last Orders rules, pickups

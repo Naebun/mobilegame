@@ -1,7 +1,7 @@
 // Headless playtest bot for the first-person level. Runs the real game logic (src/game3d.js) at 60 Hz in Node,
 // with no rendering, driven by a bot that navigates, aims, strafes and picks weapons.
 //
-//   node scripts/sim3d.mjs [--runs 30] [--skill sloppy|casual|good|both] [--trace SEED]
+//   node scripts/sim3d.mjs [--runs 30] [--skill sloppy|casual|good|both] [--trace SEED] [--level 1|2]
 //
 // NORMAL MODE ONLY: balance is never tuned against debug mode. The bot is a proxy for a person, not a replacement:
 // it answers "is the level winnable, and roughly how hard is each area", not "is it fun".
@@ -11,6 +11,7 @@ const args = Object.fromEntries(process.argv.slice(2).reduce((a, v, i, all) => (
 const RUNS = Number(args.runs || 30);
 const SKILLS = args.skill === 'both' || !args.skill ? ['sloppy', 'casual', 'good'] : [args.skill];
 const TRACE = args.trace === undefined ? null : Number(args.trace);
+const LEVEL = Number(args.level || 1);
 const VIEW = { w: 390, h: 844, dpr: 1, safe: { top: 0, bottom: 0 } };
 const DT = 1 / 60;
 const LIMIT = 900; // seconds of game time before a run counts as stuck
@@ -40,7 +41,7 @@ function runOnce(seed, skillName) {
   const sk = SKILL[skillName];
 
   game.init(VIEW);
-  game.testHook('play');
+  game.testHook('level', LEVEL);
   const S = game.getState();
   const W = game.getWorld();
   if (S.debugMode) throw new Error('simulator must run in normal mode');
@@ -146,6 +147,12 @@ function runOnce(seed, skillName) {
       if (p.owned.smg) want = 'smg';
       if (d < 7 && p.owned.shotgun) want = 'shotgun';
       if (p.owned.launcher && (target.boss || (d > 5 && awake.length >= 3))) want = 'launcher';
+      // a shield eats frontal shots: blast it, or fling a disc (it bounces), or at least get the shotgun in close
+      if (target.def.shield) {
+        if (p.owned.launcher && d > 3.5) want = 'launcher';
+        else if (p.owned.vinyl) want = 'vinyl';
+        else if (p.owned.shotgun && d < 3.5) want = 'shotgun';
+      }
       if (p.weapon !== want && p.ammo[want] > 0) { input.keys.add('q'); swapT = 0.35; } else input.keys.delete('q');
     } else input.keys.delete('q');
 

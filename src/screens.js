@@ -9,7 +9,7 @@ import { outlined, fit, wrapLines, paragraph, weaponIcon, panel, corners, circle
 const MAGENTA = '#ff2e93';
 const CYAN = '#22d3ee';
 const AMBER = '#fbbf24';
-const ZERO_SAFE = { top: 0, bottom: 0 };
+const ZERO_SAFE = { top: 0, bottom: 0, left: 0, right: 0 };
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const num = (v, d = 0) => (Number.isFinite(v) ? v : d);
@@ -29,9 +29,28 @@ export const DEATH_LINES_3D = [
   'That bottle was only meant to be recycled.',
 ];
 
+const landscape = (view) => view.w > view.h * 1.05;
+
+// Where words and buttons go. Portrait: one centred column. Landscape: words in a left block, buttons stacked on the
+// right, both clear of the notch.
+function frame(view) {
+  if (!landscape(view)) return { land: false, cx: view.w / 2, w: view.w, bx: view.w / 2, bw: Math.min(view.w - 48, 300) };
+  const sl = num(safe(view).left);
+  const sr = num(safe(view).right);
+  const W = view.w - sl - sr;
+  const x0 = sl + 16;
+  const x1 = sl + W * 0.6;
+  return { land: true, cx: (x0 + x1) / 2, w: x1 - x0, x0, x1, bx: sl + W * 0.8, bw: Math.min(300, W * 0.32) };
+}
+
 // Title block geometry, shared by buttons() and drawTitle() so short screens never stack buttons on the tagline.
 function titleGeom(view) {
   const top = num(safe(view).top);
+  if (landscape(view)) {
+    const size = clamp(view.h * 0.12, 34, 50);
+    const cy = top + view.h * 0.27;
+    return { size, cy, bottom: cy + size * 2 + 14 + 24 + 12 };
+  }
   const short = view.h < 560;
   const size = short ? 46 : 52;
   const cy = top + view.h * (short ? 0.14 : 0.15) + 22;
@@ -45,9 +64,41 @@ export function buttons(mode, view, state) {
   const t = num(st.t);
   const sb = num(safe(view).bottom);
   const list = [];
-  const w = Math.min(view.w - 48, 300);
-  const x = (view.w - w) / 2;
+  const F = frame(view);
+  const w = F.bw;
+  const x = F.bx - w / 2;
   const add = (id, label, y, primary = true, h = 52, accent = null) => list.push({ id, label, x, y, w, h, primary, accent });
+  if (F.land) {
+    // landscape: a stack in the right-hand column, centred on the screen (the controls page uses a bottom row instead)
+    const specs = [];
+    if (mode === 'title') specs.push(['new', 'NEW GAME', true, 52, null], ['debug', `DEBUG MODE: ${st.debugMode ? 'ON' : 'OFF'}`, false, 40, st.debugMode ? AMBER : null]);
+    else if (mode === 'dead' && t > 0.9) specs.push(['retry', 'RETRY LEVEL', true, 52, null], ['menu', 'MAIN MENU', false, 44, null]);
+    else if (mode === 'complete' && t > 1) {
+      if (st.hasNext) specs.push(['next', 'NEXT LEVEL', true, 52, null]);
+      specs.push(['again', 'PLAY AGAIN', !st.hasNext, 44, null], ['menu', 'MAIN MENU', false, 40, null]);
+    } else if (mode === 'voicemail' && t > 0.8) specs.push(['continue', 'CONTINUE', true, 52, null]);
+    else if (mode === 'controls') {
+      const sl = num(safe(view).left);
+      const sr = num(safe(view).right);
+      const W = view.w - sl - sr;
+      const sw = Math.min(260, W * 0.36);
+      const bw2 = Math.min(140, W * 0.2);
+      const x0 = sl + (W - (sw + 12 + bw2)) / 2;
+      const y = view.h - sb - 14 - 44;
+      list.push({ id: 'start', label: 'START GAME', x: x0, y, w: sw, h: 44, primary: true, accent: null });
+      list.push({ id: 'back', label: 'BACK', x: x0 + sw + 12, y, w: bw2, h: 44, primary: false, accent: null });
+      return list;
+    }
+    const gap = 14;
+    const extra = mode === 'title' && st.debugMode ? 44 : 0; // the two-line note under the debug button
+    const total = specs.reduce((a, q) => a + q[3], 0) + gap * (specs.length - 1) + extra;
+    let y = Math.max(num(safe(view).top) + 14, (view.h - sb - total) / 2);
+    for (const [id, label, primary, h, accent] of specs) {
+      add(id, label, y, primary, h, accent);
+      y += h + gap;
+    }
+    return list;
+  }
   if (mode === 'title') {
     const y = Math.max(view.h * 0.46, titleGeom(view).bottom);
     add('new', 'NEW GAME', y);
@@ -66,8 +117,17 @@ export function buttons(mode, view, state) {
     add('retry', 'RETRY LEVEL', view.h * 0.6);
     add('menu', 'MAIN MENU', view.h * 0.6 + 64, false, 44);
   } else if (mode === 'complete' && t > 1) {
-    add('again', 'PLAY AGAIN', view.h * 0.7);
-    add('menu', 'MAIN MENU', view.h * 0.7 + 64, false, 44);
+    if (st.hasNext) {
+      const y = Math.min(view.h * 0.7, view.h - sb - 164); // three buttons: keep them on short screens
+      add('next', 'NEXT LEVEL', y);
+      add('again', 'PLAY AGAIN', y + 62, false, 44);
+      add('menu', 'MAIN MENU', y + 114, false, 40);
+    } else {
+      add('again', 'PLAY AGAIN', view.h * 0.7);
+      add('menu', 'MAIN MENU', view.h * 0.7 + 64, false, 44);
+    }
+  } else if (mode === 'voicemail' && t > 0.8) {
+    add('continue', 'CONTINUE', view.h - sb - 96);
   }
   return list;
 }
@@ -115,14 +175,15 @@ function dim(ctx, view, a, colour = '4,2,8') {
 export function drawTitle(ctx, view, state) {
   const st = state || {};
   const t = num(st.t);
-  const cx = view.w / 2;
+  const F = frame(view);
+  const cx = F.cx;
   const { cy, size: big } = titleGeom(view);
   dim(ctx, view, 0.55);
   ctx.globalAlpha = 0.92;
   drawSkyline(ctx, view.w, view.h);
   ctx.globalAlpha = 1;
 
-  const f = fit(ctx, "FREDDIE'S", view.w - 40, big, 800, 28);
+  const f = fit(ctx, "FREDDIE'S", F.w - 40, big, 800, 28);
   heavy(ctx, "FREDDIE'S", cx, cy, f.size, MAGENTA);
   // the neon sign stutters now and then
   const flick = Math.floor(t * 14) % 41 === 0 || Math.floor(t * 14) % 41 === 2 ? 0.55 : 1;
@@ -133,7 +194,7 @@ export function drawTitle(ctx, view, state) {
   outlined(ctx, 'Edinburgh. 2am. Everyone is dead.', cx, y1, 15, '#c9c2e0', 'center', 500);
 
   // "Level 1: the Cowgate" with the best score on the same line, so short screens do not collide
-  const lvl = 'Level 1: the Cowgate';
+  const lvl = st.levelName ? `Level ${Math.floor(num(st.levelNumber, 1))}: ${str(st.levelName).toLowerCase().replace(/(^| )\w/g, (c) => c.toUpperCase())}` : 'Level 1: the Cowgate';
   const best = num(st.best) > 0 ? `BEST ${Math.floor(num(st.best))}` : '';
   ctx.font = '700 13px system-ui, -apple-system, sans-serif';
   const lw = ctx.measureText(lvl).width;
@@ -147,10 +208,10 @@ export function drawTitle(ctx, view, state) {
   drawButtons(ctx, list);
   if (st.debugMode) {
     const d = list[1];
-    outlined(ctx, '2x fire rate, 2x damage, 2x health', cx, d.y + d.h + 18, 12, AMBER, 'center', 600);
-    outlined(ctx, 'Scores are not recorded', cx, d.y + d.h + 36, 12, 'rgba(251,191,36,0.75)', 'center', 500);
+    outlined(ctx, '2x fire rate, 2x damage, 2x health', d.x + d.w / 2, d.y + d.h + 18, 12, AMBER, 'center', 600);
+    outlined(ctx, 'Scores are not recorded', d.x + d.w / 2, d.y + d.h + 36, 12, 'rgba(251,191,36,0.75)', 'center', 500);
   }
-  outlined(ctx, 'Left thumb moves. Right thumb aims and fires. Drag anywhere else to aim.', cx, view.h - num(safe(view).bottom) - 16, 12, 'rgba(255,255,255,0.6)', 'center', 500);
+  outlined(ctx, 'Left thumb moves. Right thumb aims and fires. Drag anywhere else to aim.', view.w / 2, view.h - num(safe(view).bottom) - 16, 12, 'rgba(255,255,255,0.6)', 'center', 500);
 }
 
 // ---- controls ----
@@ -356,14 +417,75 @@ function swapDiagram(ctx, cx, cy, w, t) {
 const CELLS = [
   { kind: 'move', sub: 'LEFT THUMB', head: 'MOVE', cap: 'Drag in the box to walk. Up is forwards.' },
   { kind: 'look', sub: 'RIGHT THUMB', head: 'AIM AND FIRE', cap: 'Hold to fire. Drag to aim. Dragging anywhere outside the boxes aims too, without firing. No aim assist.' },
-  { kind: 'swap', sub: 'UNDER THE LEFT BOX', head: 'SWAP', cap: 'Walk over weapons to pick them up. SWAP cycles them.' },
-  { kind: 'reload', sub: 'UNDER THE RIGHT BOX', head: 'RELOAD', cap: 'Reloads on its own when the clip is empty. Tap RELOAD to do it early. Ammo is unlimited, clips are not.' },
+  { kind: 'swap', sub: 'UNDER THE LEFT BOX', subW: 'BESIDE THE LEFT BOX', head: 'SWAP', cap: 'Walk over weapons to pick them up. SWAP cycles them.' },
+  { kind: 'reload', sub: 'UNDER THE RIGHT BOX', subW: 'BESIDE THE RIGHT BOX', head: 'RELOAD', cap: 'Reloads on its own when the clip is empty. Tap RELOAD to do it early. Ammo is unlimited, clips are not.' },
 ];
 const TIP = 'Clear every robot in an area to unlock the next door.';
+// Keyboard play on a computer (the same keys as readControls in game3d.js).
+const KEYS = 'PC:  WASD move   ARROWS aim   SPACE fire   R reload   Q swap';
+
+// The tip strip with the keyboard line under it, in one rounded box. h is the whole box height.
+function tipStrip(ctx, x, y, w, h, cx, keys = true) {
+  rrect(ctx, x, y, w, h, 10);
+  ctx.fillStyle = 'rgba(255,46,147,0.14)';
+  ctx.fill();
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = 'rgba(255,46,147,0.6)';
+  ctx.stroke();
+  const tf = fit(ctx, TIP, w - 24, 13, 700, 9);
+  outlined(ctx, tf.str, cx, keys ? y + h * 0.3 : y + h / 2 + 0.5, tf.size, '#ffe0ef', 'center', 700, 'rgba(4,2,8,0)');
+  if (!keys) return;
+  const kf = fit(ctx, KEYS, w - 24, 12, 700, 8);
+  outlined(ctx, kf.str, cx, y + h * 0.72, kf.size, '#a5f3fc', 'center', 700, 'rgba(4,2,8,0)');
+}
+
+// Landscape: the four cells in one row, the tip strip and the two buttons along the bottom.
+function drawControlsWide(ctx, view, st) {
+  const t = num(st.t);
+  const top = num(safe(view).top);
+  const sl = num(safe(view).left);
+  const sr = num(safe(view).right);
+  const W = view.w - sl - sr;
+  const cx = sl + W / 2;
+  dim(ctx, view, 0.8);
+  const titleY = top + 24;
+  heavy(ctx, 'CONTROLS', cx, titleY, 24, MAGENTA);
+  const list = buttons('controls', view, st);
+  const tipH = 56; // the tip and the keyboard line
+  const tipY = list[0].y - 10 - (tipH - 6);
+  const pad = 16;
+  const gap = 10;
+  const cw = (W - pad * 2 - gap * 3) / 4;
+  const capSize = cw < 175 ? 11.5 : 12.5;
+  const capLh = capSize + 3.5;
+  const capLines = Math.max(...CELLS.map((c) => wrapLines(ctx, c.cap, cw - 6, capSize, 500, 8).length));
+  const areaTop = titleY + 20;
+  const avail = tipY - 8 - areaTop;
+  const textH = 16 + 19 + capLines * capLh + 8;
+  const ds = clamp(avail - textH - 8, 50, Math.min(cw * 0.6, 130));
+  const lead = clamp((avail - textH - ds - 8) / 2, 0, 70); // centre the row when there is room (an iPad)
+  const dcy = areaTop + 4 + lead + ds / 2;
+  CELLS.forEach((c, i) => {
+    const ccx = sl + pad + cw / 2 + i * (cw + gap);
+    if (c.kind === 'move') moveDiagram(ctx, ccx, dcy, ds, t);
+    else if (c.kind === 'look') lookDiagram(ctx, ccx, dcy, ds, t);
+    else if (c.kind === 'swap') swapDiagram(ctx, ccx, dcy, Math.min(cw - 24, 104), t);
+    else reloadDiagram(ctx, ccx, dcy, Math.min(cw - 24, 104), t);
+    let ty = areaTop + 4 + lead + ds + 12;
+    outlined(ctx, c.subW || c.sub, ccx, ty, 10.5, '#9fb3c8', 'center', 600);
+    ty += 16;
+    const hf = fit(ctx, c.head, cw - 6, 17, 800, 11);
+    outlined(ctx, hf.str, ccx, ty, hf.size, c.kind === 'look' ? CYAN : '#ffffff', 'center', 800);
+    paragraph(ctx, c.cap, ccx, ty + 19, cw - 6, capSize, '#d6d0ea', 'center', 500, capLh);
+  });
+  tipStrip(ctx, sl + pad, tipY, W - pad * 2, tipH - 6, cx);
+  drawButtons(ctx, list);
+}
 
 export function drawControls(ctx, view, state) {
   const st = state || {};
   const t = num(st.t);
+  if (landscape(view)) return drawControlsWide(ctx, view, st);
   const cx = view.w / 2;
   const top = num(safe(view).top);
   dim(ctx, view, 0.8);
@@ -379,7 +501,8 @@ export function drawControls(ctx, view, state) {
   const capLines = (c) => wrapLines(ctx, c.cap, cw - 6, capSize, 500, 6).length;
   const cap1 = Math.max(capLines(CELLS[0]), capLines(CELLS[1])) * capLh;
   const cap2 = Math.max(capLines(CELLS[2]), capLines(CELLS[3])) * capLh;
-  const tipH = view.h < 560 ? 30 : 34;
+  const withKeys = view.h >= 620; // a short portrait screen has no room for the keyboard line
+  const tipH = (view.h < 560 ? 30 : 34) + (withKeys ? 24 : 0);
   const headH = 11 + 20 + 4;
   const avail = startY - 10 - tipH - (titleY + 18);
   const diagH2 = view.h < 560 ? 50 : 56;
@@ -415,14 +538,7 @@ export function drawControls(ctx, view, state) {
 
   // tip strip, just above the buttons
   const ty = startY - 10 - tipH + 4;
-  rrect(ctx, 16, ty, view.w - 32, tipH - 6, 10);
-  ctx.fillStyle = 'rgba(255,46,147,0.14)';
-  ctx.fill();
-  ctx.lineWidth = 1.5;
-  ctx.strokeStyle = 'rgba(255,46,147,0.6)';
-  ctx.stroke();
-  const tf = fit(ctx, TIP, view.w - 56, 13, 700, 9);
-  outlined(ctx, tf.str, cx, ty + (tipH - 6) / 2 + 0.5, tf.size, '#ffe0ef', 'center', 700, 'rgba(4,2,8,0)');
+  tipStrip(ctx, 16, ty, view.w - 32, tipH - 6, cx, withKeys);
   drawButtons(ctx, list);
 }
 
@@ -442,24 +558,61 @@ export function drawIntro(ctx, view, state) {
   const lv = st.level || {};
   const cx = view.w / 2;
   const top = num(safe(view).top);
-  const y0 = Math.max(view.h * 0.3, top + 80);
+  const compact = landscape(view) || view.h < 480; // a short screen: tighter stack, same words
+  const textW = Math.min(view.w - 64, 560);
+  const y0 = compact ? top + Math.max(26, view.h * 0.1) : Math.max(view.h * 0.3, top + 80);
   dim(ctx, view, 0.62);
   const a = clamp(t / 0.4, 0, 1);
   ctx.globalAlpha = a;
   const slide = (1 - a) * 12;
   outlined(ctx, `LEVEL ${Math.floor(num(lv.number, 1))}`, cx, y0 + slide, 14, '#9fb3c8', 'center', 600);
-  const f = fit(ctx, str(lv.name), view.w - 40, 38, 800, 18);
-  heavy(ctx, f.str, cx, y0 + 44 + slide, f.size, MAGENTA);
-  let y = y0 + 88;
+  const f = fit(ctx, str(lv.name), view.w - 40, compact ? 34 : 38, 800, 18);
+  heavy(ctx, f.str, cx, y0 + (compact ? 36 : 44) + slide, f.size, MAGENTA);
+  let y = y0 + (compact ? 72 : 88);
   const clock = clockText(lv.clock);
   if (clock) {
-    outlined(ctx, clock, cx, y, 24, CYAN, 'center', 700);
-    y += 44;
+    outlined(ctx, clock, cx, y, compact ? 22 : 24, CYAN, 'center', 700);
+    y += compact ? 32 : 44;
   }
-  if (lv.sub) y += paragraph(ctx, str(lv.sub), cx, y, view.w - 64, 16, '#e5e0f5', 'center', 600);
-  if (lv.line) paragraph(ctx, str(lv.line), cx, y + 10, view.w - 64, 15, '#b8c6d6', 'center', 500);
-  if (t > 0.7 && Math.floor(t * 1.6) % 2 === 0) outlined(ctx, 'TAP TO START', cx, Math.max(view.h * 0.72, y + 70), 18, '#ffffff', 'center', 700);
+  if (lv.sub) y += paragraph(ctx, str(lv.sub), cx, y, textW, 16, '#e5e0f5', 'center', 600);
+  if (lv.line) paragraph(ctx, str(lv.line), cx, y + 10, textW, 15, '#b8c6d6', 'center', 500);
+  const tapY = compact ? Math.min(view.h - num(safe(view).bottom) - 22, y + 70) : Math.max(view.h * 0.72, y + 70);
+  if (t > 0.7 && Math.floor(t * 1.6) % 2 === 0) outlined(ctx, 'TAP TO START', cx, tapY, 18, '#ffffff', 'center', 700);
   ctx.globalAlpha = 1;
+}
+
+// ---- voicemail ----
+
+// A voicemail from Cheryl, shown between levels: dark card, a caller strip, her lines one after another.
+export function drawVoicemail(ctx, view, state) {
+  const st = state || {};
+  const t = num(st.t);
+  const mail = st.mail || {};
+  const lines = Array.isArray(mail.lines) ? mail.lines : [];
+  const F = frame(view);
+  const cx = F.cx;
+  const top = num(safe(view).top);
+  dim(ctx, view, 0.86);
+  const a = clamp(t / 0.5, 0, 1);
+  ctx.globalAlpha = a;
+  const y0 = F.land ? top + 30 : Math.max(view.h * 0.16, top + 60);
+  outlined(ctx, 'NEW VOICEMAIL', cx, y0, 13, CYAN, 'center', 700);
+  const pulse = 0.5 + 0.5 * Math.sin(t * 5);
+  circle(ctx, cx - 78, y0 + 34, 5 + pulse * 1.5);
+  ctx.fillStyle = '#ff5a7a';
+  ctx.fill();
+  outlined(ctx, str(mail.from).toUpperCase() || 'UNKNOWN CALLER', cx + 8, y0 + 34, 17, '#ffffff', 'center', 800);
+  outlined(ctx, `0:${pad2(Math.min(59, 12 + lines.length * 4))}`, cx, y0 + 60, 12, '#9fb3c8', 'center', 600);
+  let y = y0 + (F.land ? 88 : 104);
+  const w = (F.land ? F.w : view.w) - 56;
+  lines.forEach((ln, i) => {
+    const la = clamp((t - 0.7 - i * 1.1) / 0.5, 0, 1);
+    if (la <= 0) return;
+    ctx.globalAlpha = a * la;
+    y += paragraph(ctx, `"${str(ln)}"`, cx, y + (1 - la) * 6, w, F.land ? 15 : 16, i % 2 ? '#e5e0f5' : '#ffffff', 'center', 500, 22) + 14;
+  });
+  ctx.globalAlpha = 1;
+  drawButtons(ctx, buttons('voicemail', view, st), t, 0.8);
 }
 
 // ---- dead ----
@@ -467,18 +620,19 @@ export function drawIntro(ctx, view, state) {
 export function drawDead(ctx, view, state) {
   const st = state || {};
   const t = num(st.t);
-  const cx = view.w / 2;
+  const F = frame(view);
+  const cx = F.cx;
   const top = num(safe(view).top);
   dim(ctx, view, 0.66 * clamp(t / 0.5, 0, 1), '14,2,8');
   const a = clamp((t - 0.1) / 0.4, 0, 1);
   ctx.globalAlpha = a;
-  const y0 = Math.max(view.h * 0.2, top + 70);
-  const f = fit(ctx, 'THE SET IS OVER', view.w - 40, 34, 800, 20);
+  const y0 = F.land ? top + Math.max(46, view.h * 0.14) : Math.max(view.h * 0.2, top + 70);
+  const f = fit(ctx, 'THE SET IS OVER', F.w - 40, 34, 800, 20);
   heavy(ctx, f.str, cx, y0 + (1 - a) * -10, f.size, MAGENTA);
   if (st.levelName) outlined(ctx, str(st.levelName), cx, y0 + 36, 14, '#9fb3c8', 'center', 600);
   let y = y0 + 70;
-  if (st.line) y += paragraph(ctx, str(st.line), cx, y, view.w - 64, 16, '#e5e0f5', 'center', 500, 22);
-  y = Math.max(view.h * 0.46, y + 18);
+  if (st.line) y += paragraph(ctx, str(st.line), cx, y, F.w - 48, 16, '#e5e0f5', 'center', 500, 22);
+  y = Math.max(F.land ? 0 : view.h * 0.46, y + 18);
   outlined(ctx, `Score ${Math.floor(num(st.score))}`, cx, y, 20, '#ffffff', 'center', 700);
   if (st.debugMode) outlined(ctx, 'DEBUG RUN: not recorded', cx, y + 28, 14, AMBER, 'center', 600);
   else outlined(ctx, st.newBest ? 'NEW BEST' : `Best ${Math.floor(num(st.best))}`, cx, y + 28, 14, st.newBest ? CYAN : '#c9c2e0', 'center', 600);
@@ -498,7 +652,8 @@ function fmtTime(sec) {
 export function drawComplete(ctx, view, state) {
   const st = state || {};
   const t = num(st.t);
-  const cx = view.w / 2;
+  const F = frame(view);
+  const cx = F.cx;
   const top = num(safe(view).top);
   dim(ctx, view, 0.5);
   dim(ctx, view, 0.14, '255,170,90');
@@ -521,26 +676,26 @@ export function drawComplete(ctx, view, state) {
 
   const a = clamp(t / 0.5, 0, 1);
   ctx.globalAlpha = a;
-  const y0 = Math.max(view.h * 0.2, top + 70);
-  const f = fit(ctx, 'CLEARED.', view.w - 40, 54, 800, 28);
+  const y0 = F.land ? top + Math.max(44, view.h * 0.13) : Math.max(view.h * 0.2, top + 70);
+  const f = fit(ctx, str(st.title) || 'CLEARED.', F.w - 40, F.land ? 46 : 54, 800, 28);
   heavy(ctx, f.str, cx, y0 - (1 - a) * 12, f.size, AMBER);
-  let y = y0 + 44;
-  y += paragraph(ctx, 'The Cowgate is quiet. Mostly.', cx, y, view.w - 64, 18, '#ffffff', 'center', 600);
-  y += paragraph(ctx, 'Freddie gets paid in exposure.', cx, y + 4, view.w - 64, 15, '#e5e0f5', 'center', 500);
+  let y = y0 + (F.land ? 38 : 44);
+  y += paragraph(ctx, str(st.line) || 'The Cowgate is quiet. Mostly.', cx, y, F.w - 48, 18, '#ffffff', 'center', 600);
+  y += paragraph(ctx, str(st.sub) || 'Freddie gets paid in exposure.', cx, y + 4, F.w - 48, 15, '#e5e0f5', 'center', 500);
 
   // stats row
   const kills = Math.floor(num(st.kills));
   const total = Math.floor(num(st.totalEnemies));
   const ease = 1 - (1 - clamp((t - 0.3) / 0.9, 0, 1)) ** 3;
-  const sy = Math.max(view.h * 0.42, y + 28);
-  const cw = (view.w - 32) / 3;
+  const sy = Math.max(F.land ? 0 : view.h * 0.42, y + 28);
+  const cw = (F.w - (F.land ? 0 : 32)) / 3;
   const cells = [
     ['ROBOTS', total > 0 ? `${kills} / ${total}` : String(kills)],
     ['TIME', fmtTime(st.timeSec)],
     ['SCORE', String(Math.round(num(st.score) * ease))],
   ];
   for (let i = 0; i < 3; i++) {
-    const x = 16 + cw * (i + 0.5);
+    const x = (F.land ? F.x0 : 16) + cw * (i + 0.5);
     outlined(ctx, cells[i][0], x, sy, 11, '#9fb3c8', 'center', 600);
     const vf = fit(ctx, cells[i][1], cw - 8, 24, 800, 12);
     outlined(ctx, vf.str, x, sy + 26, vf.size, '#ffffff', 'center', 800);

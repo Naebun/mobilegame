@@ -13,7 +13,9 @@ const ok = (cond, msg) => {
 const STATES = ['idle', 'walk', 'windup', 'swing', 'aim', 'shoot', 'hurt', 'dead'];
 const TS = [0, 0.3, 5];
 const KS = [0, 0.5, 1, -1, 2];
-const MAX_HEIGHT = { fizzbang: 2.2, bampot: 2.1, bouncer: 3.4 };
+const MAX_HEIGHT = { fizzbang: 2.2, bampot: 2.1, bouncer: 3.4, shielded: 2.3, tourguide: 3.2 };
+const EXTRA_STATES = { tourguide: ['slam'] }; // poses only some kinds have
+const MAX_TRIS = { shielded: 14000, tourguide: 20000 }; // level 2 budgets: the others are about 10k to 15k
 const MAX_MESHES = 16;
 
 function stats(o) {
@@ -47,11 +49,11 @@ function finiteTransforms(o, label) {
   ok(bad === 0, `${label}: non-finite transform`);
 }
 
-ok(JSON.stringify(M.WEAPON_IDS) === '["pistol","shotgun","smg","launcher"]', 'WEAPON_IDS');
+ok(JSON.stringify(M.WEAPON_IDS) === '["pistol","shotgun","smg","launcher","vinyl"]', 'WEAPON_IDS');
 ok(JSON.stringify(M.DRINK_IDS) === '["dram","orange","heavy","energy","lastorders"]', 'DRINK_IDS');
 
 const t0 = Date.now();
-for (const kind of ['fizzbang', 'bampot', 'bouncer']) {
+for (const kind of ['fizzbang', 'bampot', 'bouncer', 'shielded', 'tourguide']) {
   for (let variant = 0; variant < 3; variant++) {
     const r = M.makeRobot(kind);
     const label = `${kind}#${variant}`;
@@ -68,7 +70,8 @@ for (const kind of ['fizzbang', 'bampot', 'bouncer']) {
     ok(Math.abs(bb.max.y - r.height) < 0.15, `${label}: top ${bb.max.y.toFixed(2)} vs height ${r.height}`);
     ok(bb.min.y > -0.02 && bb.min.y < 0.03, `${label}: feet at ${bb.min.y.toFixed(3)}`);
     ok(bb.max.x - bb.min.x < r.radius * 4.2, `${label}: too wide ${(bb.max.x - bb.min.x).toFixed(2)}`);
-    for (const s of STATES) {
+    if (MAX_TRIS[kind]) ok(st.tris <= MAX_TRIS[kind], `${label}: ${st.tris} triangles (budget ${MAX_TRIS[kind]})`);
+    for (const s of [...STATES, ...(EXTRA_STATES[kind] || [])]) {
       for (const t of TS) {
         for (const k of KS) {
           try { r.setPose(s, t, k); } catch (e) { ok(false, `${label} ${s} t=${t} k=${k}: ${e.message}`); }
@@ -103,6 +106,116 @@ rs[0].flash(false);
 ok(body0.material.type === 'MeshStandardMaterial', 'flash restores');
 ok(rs[0].muzzle && rs[0].muzzle.name === 'muzzle', 'bampot muzzle');
 
+// ---- Level 2 robots: the Shielded Fizzbang and the Tour Guide ----
+{
+  const world = (o) => o.getWorldPosition(new THREE.Vector3());
+  const meshBox = (root) => {
+    const bb = new THREE.Box3();
+    let top = root;
+    while (top.parent) top = top.parent;
+    top.updateMatrixWorld(true);
+    root.traverse((c) => { if (c.isMesh && c.userData.base) bb.expandByObject(c); });
+    return bb;
+  };
+
+  // Shielded: radius, height and headY as specified, the door covers the front and leaves the back bare
+  const sh = M.makeRobot('shielded');
+  ok(Math.abs(sh.radius - 0.7) < 0.1 && Math.abs(sh.height - 2.1) < 0.1 && Math.abs(sh.headY - 1.7) < 0.1, `shielded numbers ${sh.radius} ${sh.height} ${sh.headY}`);
+  ok(typeof sh.shieldHit === 'function', 'shielded: shieldHit');
+  const shield = sh.group.getObjectByName('shield');
+  ok(!!shield, 'shielded: shield group');
+  sh.setPose('idle', 0, 0);
+  const sb = meshBox(shield);
+  sh.group.updateMatrixWorld(true);
+  ok(sb.max.x - sb.min.x > 1.2 && sb.max.x - sb.min.x < 1.45, `shield width ${(sb.max.x - sb.min.x).toFixed(2)}`);
+  ok(sb.max.y - sb.min.y > 1.6 && sb.max.y - sb.min.y < 1.85, `shield height ${(sb.max.y - sb.min.y).toFixed(2)}`);
+  ok(sb.min.y > 0.05 && sb.min.y < 0.4 && sb.max.y > 1.75, `shield spans ${sb.min.y.toFixed(2)}..${sb.max.y.toFixed(2)}`);
+  ok(sb.max.z < -0.7 && sb.min.z > -1.2, `shield sits in front of the body: z ${sb.min.z.toFixed(2)}..${sb.max.z.toFixed(2)}`);
+  ok(sh.eyes.every((e) => world(e).y > sb.max.y - 0.02), 'shielded: eyes show above the door');
+  const bodyBox = meshBox(sh.group); // whole robot, to check nothing but the door and arm is out in front
+  ok(bodyBox.max.z > 0.5, 'shielded: back pipes stick out behind');
+  const shieldZ = (r) => { r.group.updateMatrixWorld(true); return world(r.group.getObjectByName('shield')).z; };
+  const z0 = shieldZ(sh);
+  sh.setPose('windup', 0.5, 1);
+  ok(shieldZ(sh) > z0 + 0.15, `windup pulls the door back (${shieldZ(sh).toFixed(2)} vs ${z0.toFixed(2)})`);
+  sh.setPose('swing', 0.2, 0.35);
+  ok(shieldZ(sh) < z0 - 0.1, `swing shoves the door forward (${shieldZ(sh).toFixed(2)} vs ${z0.toFixed(2)})`);
+  sh.setPose('idle', 0, 0);
+  sh.shieldHit();
+  sh.setPose('idle', 0, 0);
+  ok(shieldZ(sh) > z0 + 0.04, 'shieldHit recoils the door');
+  const glowOn = () => { let on = false; sh.group.traverse((c) => { if (c.isMesh && !c.userData.base && c.visible && c.material.opacity > 0.05) on = true; }); return on; };
+  ok(glowOn(), 'shieldHit flashes');
+  sh.update(0.2);
+  sh.setPose('idle', 0, 0);
+  ok(Math.abs(shieldZ(sh) - z0) < 1e-6 && !glowOn(), 'the recoil is over after 0.2 s');
+  for (let i = 0; i < 120; i++) { // hit every frame: safe, finite
+    sh.shieldHit();
+    sh.update(1 / 60);
+    sh.setPose(i % 2 ? 'walk' : 'swing', i / 60, (i % 20) / 20);
+    finiteTransforms(sh.group, `shielded hit spam ${i}`);
+  }
+  sh.update(0.5);
+  sh.setPose('dead', 1, 1);
+  ok(meshBox(sh.group.getObjectByName('shield')).max.y < 0.4, 'a dead shielded robot has dropped the door flat');
+  sh.setPose('idle', 0, 0);
+  sh.flash(true);
+  let allWhite = true;
+  sh.group.traverse((c) => { if (c.isMesh && c.userData.base && c.material.type !== 'MeshBasicMaterial') allWhite = false; });
+  ok(allWhite, 'flash covers the door too');
+  sh.flash(false);
+
+  // Tour Guide
+  const tg = M.makeRobot('tourguide');
+  ok(Math.abs(tg.radius - 0.9) < 0.1 && Math.abs(tg.height - 3.0) < 0.15 && Math.abs(tg.headY - 2.45) < 0.15, `tourguide numbers ${tg.radius} ${tg.height} ${tg.headY}`);
+  ok(tg.muzzle && tg.muzzle.name === 'muzzle', 'tourguide: muzzle');
+  ok(typeof tg.enrage === 'function', 'tourguide: enrage');
+  const at = (r, state, t, k) => { r.setPose(state, t, k); r.group.updateMatrixWorld(true); };
+  at(tg, 'idle', 1, 0);
+  ok(world(tg.muzzle).y < 1.9, `tourguide muzzle at rest ${world(tg.muzzle).y.toFixed(2)}`);
+  at(tg, 'aim', 1, 1);
+  const mz = world(tg.muzzle);
+  ok(mz.z < -1.2 && mz.y > 1.0 && mz.y < 2.3, `tourguide aims forward: muzzle ${mz.toArray().map((v) => v.toFixed(2))}`);
+  at(tg, 'shoot', 0.1, 0.3);
+  ok(world(tg.muzzle).z < -0.9, 'tourguide muzzle while shooting');
+  const lantern = tg.group.getObjectByName('lantern');
+  ok(!!lantern && !!tg.group.getObjectByName('pole') && !!tg.group.getObjectByName('hat'), 'tourguide: named parts');
+  let raised = 0;
+  for (let k = 0; k <= 0.45; k += 0.01) {
+    at(tg, 'slam', k, k);
+    raised = Math.max(raised, world(lantern).y);
+  }
+  at(tg, 'slam', 0.45, 0.45);
+  const hit = world(lantern);
+  ok(raised > 2.9, `slam raises the lantern high before the blow (${raised.toFixed(2)})`);
+  ok(hit.z < -1.2 && hit.y < 1.8, `slam has landed ahead and low at k=0.45: ${hit.toArray().map((v) => v.toFixed(2))}`);
+  at(tg, 'slam', 1, 0);
+  let sweep = 0;
+  let maxY = 0;
+  let prev = null;
+  for (let k = 0; k <= 1.0001; k += 0.02) { // the lantern is a continuous path: no teleporting between frames
+    at(tg, 'slam', k, k);
+    const w = world(lantern);
+    maxY = Math.max(maxY, w.y);
+    if (prev) sweep = Math.max(sweep, w.distanceTo(prev));
+    prev = w;
+  }
+  ok(sweep < 1.3, `slam moves the lantern smoothly (largest step ${sweep.toFixed(2)} m per 0.02 of k)`);
+  ok(maxY < 3.9, `slam apex ${maxY.toFixed(2)} m`);
+  at(tg, 'idle', 1, 0);
+  const calm = tg.eyes[0].material.color.clone();
+  tg.enrage();
+  tg.enrage();
+  for (let i = 0; i < 60; i++) tg.update(1 / 60);
+  const hot = tg.eyes[0].material.color;
+  ok(hot.r > hot.b * 2 && calm.b > calm.r * 0.5, 'enrage turns the eyes from white to hot red');
+  ok(hot.toArray().every((v) => Number.isFinite(v) && v < 40) && tg.enraged === true, 'enrage stays finite and is idempotent');
+  for (const s of ['idle', 'walk', 'slam', 'aim', 'shoot', 'hurt', 'dead']) {
+    at(tg, s, 1, 0.5);
+    finiteTransforms(tg.group, `tourguide enraged ${s}`);
+  }
+}
+
 for (const id of M.WEAPON_IDS) {
   const w = M.makeWeaponModel(id);
   const mz = w.getObjectByName('muzzle');
@@ -113,6 +226,29 @@ for (const id of M.WEAPON_IDS) {
   ok(mz.position.z < -0.3 && mz.position.z > bb.min.z - 0.05, `${id}: muzzle z ${mz.position.z}`);
   ok(bb.min.z > -0.7, `${id}: extends to ${bb.min.z.toFixed(2)}`);
   if (id === 'shotgun') ok(!!w.getObjectByName('pump'), 'shotgun pump');
+  if (id === 'vinyl') {
+    // the record: a named group that spins when userData.update(t) is called, with an HDR label
+    const rec = w.getObjectByName('record');
+    ok(!!rec && typeof w.userData.update === 'function', 'vinyl: record and userData.update');
+    w.userData.update(0);
+    const r0 = rec.rotation.y;
+    w.userData.update(0.5);
+    ok(Number.isFinite(rec.rotation.y) && Math.abs(rec.rotation.y - r0) > 0.3, 'vinyl: update(t) spins the record');
+    for (const t of [NaN, undefined, -3, 1e6]) { w.userData.update(t); ok(Number.isFinite(rec.rotation.y), `vinyl: update(${t})`); }
+    const label = rec.getObjectByName('label');
+    ok(!!label && label.geometry.attributes.color.array.some((v) => v > 2), 'vinyl: HDR label');
+    w.userData.update(0);
+    w.updateMatrixWorld(true);
+    const rb = new THREE.Box3().setFromObject(rec);
+    ok(rb.max.x - rb.min.x > 0.21 && rb.max.x - rb.min.x < 0.26, `vinyl: record diameter ${(rb.max.x - rb.min.x).toFixed(2)}`);
+    const wb = new THREE.Box3().setFromObject(w);
+    ok(wb.max.x - wb.min.x < 0.36 && wb.max.y < 0.35 && wb.min.y > -0.3, `vinyl viewmodel bounds x ${(wb.max.x - wb.min.x).toFixed(2)} y ${wb.min.y.toFixed(2)}..${wb.max.y.toFixed(2)}`);
+    const pk = M.makeWeaponPickup('vinyl');
+    ok(typeof pk.userData.update === 'function', 'vinyl pickup: update hook');
+    const before = pk.getObjectByName('record').rotation.y;
+    pk.userData.update(1);
+    ok(pk.getObjectByName('record').rotation.y !== before, 'vinyl pickup: record spins');
+  }
   const st = stats(w);
   const p = M.makeWeaponPickup(id);
   const pb = new THREE.Box3().setFromObject(p);
@@ -199,11 +335,29 @@ for (const id of M.DRINK_IDS) {
   console.log(`freddie: height ${f.height} meshes ${st.meshes} tris ${st.tris} muzzle (spin) ${mp.toArray().map((v) => v.toFixed(2))}`);
 }
 
-for (const kind of ['bottle', 'rocket']) {
+for (const kind of ['bottle', 'rocket', 'disc']) {
   const p = M.makeProjectile(kind);
   ok(stats(p).meshes > 0, `projectile ${kind}`);
   finiteTransforms(p, `projectile ${kind}`);
   if (kind === 'bottle') ok(!!p.getObjectByName('spin'), 'bottle spin child');
+  if (kind === 'disc') {
+    const spin = p.getObjectByName('spin');
+    ok(!!spin, 'disc spin child');
+    p.updateMatrixWorld(true);
+    const db = new THREE.Box3().setFromObject(spin);
+    const dia = Math.max(db.max.x - db.min.x, db.max.z - db.min.z);
+    ok(dia > 0.55 && dia < 0.7, `disc diameter ${dia.toFixed(2)}`);
+    let hdr = false;
+    spin.traverse((c) => { if (c.isMesh && c.geometry.attributes.color && c.geometry.attributes.color.array.some((v) => v > 2)) hdr = true; });
+    ok(hdr, 'disc: HDR label');
+    for (const a of [0, 1, 2.5, 100]) { p.rotation.y = a; spin.rotation.y = a; finiteTransforms(p, `disc spin ${a}`); }
+    p.rotation.y = 0;
+    spin.rotation.y = 0;
+    // asymmetric: the bounding box of the bright label is not symmetric about the disc centre (the notch and the pip)
+    let lbl = null;
+    spin.traverse((c) => { if (c.isMesh && c.geometry.attributes.color && !c.geometry.attributes.surf) lbl = c; });
+    ok(lbl !== null, 'disc: label mesh');
+  }
 }
 const mf = M.makeMuzzleFlash();
 ok(stats(mf).meshes > 0, 'muzzle flash');

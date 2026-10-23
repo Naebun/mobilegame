@@ -16,11 +16,12 @@ import {
 import * as hud from './hud.js';
 import * as screens from './screens.js';
 import * as M from './models.js';
-import { WEAPONS, WEAPON_ORDER, ENEMY_DEFS, PLAYER, LEVEL, AREA_HINTS, DEATH_LINES, DRINKS, DRINK_ORDER } from './data.js';
+import { WEAPONS, WEAPON_ORDER, ENEMY_DEFS, PLAYER, LEVELS, DEATH_LINES, DRINKS, DRINK_ORDER } from './data.js';
 
 const TAU = Math.PI * 2;
 const HURT_DUR = 0.38; // matches the hurt animation length in models.js
-const BEST_KEY = 'mobilegame.fps.best';
+const BEST_KEY = 'mobilegame.fps.best'; // level 1; later levels append their number
+const bestKey = (n) => (n > 1 ? `${BEST_KEY}.${n}` : BEST_KEY);
 const DEBUG_KEY = 'mobilegame.debugMode';
 const QUALITY_KEY = 'mobilegame.quality';
 const FX_QUALITY = { high: 1, medium: 0.7, low: 0.4 };
@@ -35,7 +36,11 @@ const DEBUG_MULT = { fire: 2, damage: 2, health: 2 };
 const NORMAL_MULT = { fire: 1, damage: 1, health: 1 };
 
 const S = {
-  mode: 'title', // title | controls | intro | play | dead | complete
+  mode: 'title', // title | controls | voicemail | intro | play | dead | complete
+  level: 1, // the level being played (or about to be)
+  mailT: 0,
+  pendingLoad: false,
+  loadReady: false,
   t: 0,
   runT: 0,
   introT: 0,
@@ -119,18 +124,84 @@ const inRect = (x, y, r) => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y +
 
 export function init(view) {
   S.view = view;
-  S.best = Number(read(BEST_KEY)) || 0;
+  S.level = startLevel();
+  S.best = Number(read(bestKey(S.level))) || 0;
   S.debugMode = read(DEBUG_KEY) === true;
   const forced = query.get('q');
   const saved = read(QUALITY_KEY);
   Q.fixed = !!TIERS[forced];
   Q.tier = TIERS[forced] ? forced : (TIERS[saved] ? saved : 'high');
-  world = buildWorld({ quality: Q.tier });
-  for (const d of world.doors) initialOpen[d.id] = d.open;
+  world = buildWorld({ quality: Q.tier, level: S.level });
+  rememberDoors();
   flow = world.createFlowField();
   if (typeof document !== 'undefined' && document.getElementById('gl')) initRender(view);
   resetLevel();
   S.mode = 'title';
+}
+
+// ?level=2 starts a new game on that level (a development shortcut; the game itself goes 1 then 2).
+function startLevel() {
+  const n = Number(query.get('level'));
+  return n >= 1 && n <= LEVELS.length ? Math.floor(n) : 1;
+}
+
+function rememberDoors() {
+  for (const k of Object.keys(initialOpen)) delete initialOpen[k];
+  for (const d of world.doors) initialOpen[d.id] = d.open;
+}
+
+const levelInfo = () => LEVELS[S.level - 1];
+
+// Swap the world for another level. The scene keeps its lights; only the level group, fog, ambient and looks change.
+function loadLevel(n) {
+  S.level = n;
+  S.best = Number(read(bestKey(n))) || 0;
+  if (world && world.level === n) return;
+  const old = world;
+  world = buildWorld({ quality: Q.tier, level: n });
+  rememberDoors();
+  flow = world.createFlowField();
+  if (R) {
+    R.scene.remove(old.group);
+    old.group.traverse((o) => {
+      if (!o.isMesh) return;
+      o.geometry.dispose();
+      for (const m of [].concat(o.material)) m.dispose();
+    });
+    applyAtmosphere();
+    R.scene.add(world.group);
+  }
+}
+
+// Fog, ambient, grade and the camera torch all come from the level.
+function applyAtmosphere() {
+  const { scene, hemi, torch } = R;
+  scene.background = new THREE.Color(world.fog.colour);
+  scene.fog = new THREE.Fog(world.fog.colour, world.fog.near, world.fog.far);
+  hemi.color.set(world.ambient.sky);
+  hemi.groundColor.set(world.ambient.ground);
+  hemi.intensity = world.ambient.intensity;
+  const t = world.torch || {};
+  torch.color.set(t.colour ?? 0xfff0dd);
+  torch.intensity = t.intensity ?? 1.2;
+  torch.distance = t.range ?? 15;
+  torch.decay = t.decay ?? 1.6;
+  const wl = world.look || {};
+  R.look = { ...DEFAULT_LOOK, ...wl, grade: { ...DEFAULT_LOOK.grade, ...(wl.grade || {}) } };
+}
+
+// Vertical field of view. Portrait keeps 85; in landscape the same number would give a fish-eye, so it narrows to hold the
+// horizontal view near 100 degrees. An iPad's squarer screen lands in between.
+export function baseFov(aspect) {
+  if (aspect <= 1) return 85;
+  return clamp((2 * Math.atan(Math.tan((50 * Math.PI) / 180) / aspect) * 180) / Math.PI, 50, 85);
+}
+
+// How far right of centre the weapon sits: in portrait it is nearly central, in landscape it moves out to the right
+// so it stays at the edge of a much wider picture.
+function weaponX(aspect) {
+  const halfW = Math.tan((35 * Math.PI) / 180) * aspect * 0.62; // half the visible width at the weapon's distance
+  return clamp(halfW * 0.4, 0.15, 0.4);
 }
 
 export function resize(view) {
@@ -138,6 +209,9 @@ export function resize(view) {
   if (!R) return;
   R.pipeline.resize(view);
   R.camera.aspect = view.w / view.h;
+  R.baseFov = baseFov(R.camera.aspect);
+  R.fov = R.baseFov;
+  R.camera.fov = R.baseFov;
   R.camera.updateProjectionMatrix();
   R.wcam.aspect = view.w / view.h;
   R.wcam.updateProjectionMatrix();
@@ -156,13 +230,12 @@ function initRender(view) {
   renderer.setClearColor(COLOURS.bg, 1);
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(world.fog.colour);
-  scene.fog = new THREE.Fog(world.fog.colour, world.fog.near, world.fog.far);
-  scene.add(new THREE.HemisphereLight(world.ambient.sky, world.ambient.ground, world.ambient.intensity));
+  const hemi = new THREE.HemisphereLight(0xffffff, 0x000000, 1);
+  scene.add(hemi);
   scene.add(world.group);
   const camera = new THREE.PerspectiveCamera(85, view.w / view.h, 0.05, 80);
   camera.rotation.order = 'YXZ';
-  const torch = new THREE.PointLight(0xfff0dd, 1.2, 15, 1.6);
+  const torch = new THREE.PointLight(0xfff0dd, 1.2, 15, 1.6); // colour, strength and reach come from the level
   camera.add(torch);
   scene.add(camera);
 
@@ -234,12 +307,11 @@ function initRender(view) {
     impacts.push({ obj: o, t: 0 });
   }
 
-  const wl = world.look || {};
-  const look = { ...DEFAULT_LOOK, ...wl, grade: { ...DEFAULT_LOOK.grade, ...(wl.grade || {}) } };
   const pipeline = createPipeline(renderer, view, Q.tier);
   const fx = createFx(scene);
   fx.setQuality(FX_QUALITY[Q.tier]);
-  R = { renderer, scene, camera, torch, wscene, wcam, wroot, models, flashes, impacts, explosions: [], flashT: 0, muzzleT: 0, pipeline, fx, look, drinkVms, beam, beamParts: [beamCore, beamMid, beamGlow], fov: 85, freddie };
+  R = { renderer, scene, camera, hemi, torch, wscene, wcam, wroot, models, flashes, impacts, explosions: [], flashT: 0, muzzleT: 0, pipeline, fx, look: null, drinkVms, beam, beamParts: [beamCore, beamMid, beamGlow], fov: 85, baseFov: 85, freddie };
+  applyAtmosphere();
   resize(view);
 }
 
@@ -321,18 +393,41 @@ function resetLevel() {
   flow.update(S.player.x, S.player.z);
 }
 
+// Building a level takes a moment, so in the browser the swap waits until a frame showing the new screen has been drawn.
+function requestLevel(n) {
+  if (!R) { loadLevel(n); resetLevel(); return; }
+  S.level = n;
+  S.pendingLoad = true;
+  S.loadReady = false;
+}
+
 function toTitle() {
   S.mode = 'title';
-  resetLevel();
+  if (world.level !== startLevel()) requestLevel(startLevel());
+  else resetLevel();
   audio.setMood(0.1, false);
 }
 
 function beginRun() {
   audio.unlock();
+  loadLevel(S.level);
   resetLevel();
   S.mode = 'intro';
   S.introT = 0;
-  audio.setLevel(0);
+  audio.setLevel(S.level - 1);
+}
+
+// Level complete, NEXT LEVEL: load the next level behind a voicemail card (or straight to its intro if it has none).
+function nextLevel() {
+  requestLevel(S.level + 1);
+  audio.setLevel(S.level - 1);
+  if (levelInfo().voicemail) {
+    S.mode = 'voicemail';
+    S.mailT = 0;
+  } else {
+    S.mode = 'intro';
+    S.introT = 0;
+  }
 }
 
 // ---- enemies ----
@@ -347,7 +442,7 @@ function spawnEnemy(area, sp) {
     kind: sp.kind, def, robot, x: sp.x, z: sp.z, yaw: sp.yaw, hp: def.hp, maxHp: def.hp, r: robot.radius, h: robot.height,
     headY: robot.headY, areaId: area.id, state: 'idle', stateT: 0, animT: rand(0, 5), cool: rand(0.3, 1),
     wakeDelay: -1, checkT: rand(0, 0.2), kx: 0, kz: 0, hurtT: 0, flashT: 0, deadT: 0, dead: false,
-    strafe: Math.random() < 0.5 ? 1 : -1, acted: false, boss: sp.kind === 'bouncer',
+    strafe: Math.random() < 0.5 ? 1 : -1, acted: false, boss: !!def.boss, shieldT: 0, slamCool: 0, speedMult: 1, enraged: false,
   });
 }
 
@@ -372,11 +467,36 @@ function alertNear(x, z, range) {
   }
 }
 
-function damageEnemy(e, amount, head, fromX, fromZ, knock) {
+// How much of a hit a shielded robot lets through: 1 from the sides and behind, less from the front. `opts.pierce` is
+// for explosions; `opts.dist` and `opts.shieldBreak` let a point-blank shotgun blast shove the shield aside.
+function shieldFactor(e, fromX, fromZ, opts) {
+  const sh = e.def.shield;
+  if (!sh || opts.pierce) return 1;
+  const tx = fromX - e.x;
+  const tz = fromZ - e.z;
+  const l = Math.hypot(tx, tz) || 1;
+  const cos = (-Math.sin(e.yaw) * tx - Math.cos(e.yaw) * tz) / l;
+  if (cos < Math.cos(sh.arc)) return 1;
+  return opts.shieldBreak && opts.dist < opts.shieldBreak ? sh.closeMult : sh.mult;
+}
+
+function damageEnemy(e, amount, head, fromX, fromZ, knock, opts = {}) {
   if (e.dead) return;
+  const through = shieldFactor(e, fromX, fromZ, opts);
+  if (through < 1) {
+    amount *= through;
+    knock *= 0.25;
+    if (e.shieldT <= 0) {
+      e.shieldT = 0.12; // one clang per burst, not one per pellet
+      audio.clang();
+    }
+    if (e.robot.shieldHit) e.robot.shieldHit();
+  } else {
+    e.flashT = 0.08;
+    e.hurtT = HURT_DUR;
+  }
   e.hp -= amount;
-  e.flashT = 0.08;
-  e.hurtT = HURT_DUR;
+  if (e.def.enrage && !e.enraged && e.hp > 0 && e.hp <= e.maxHp * e.def.enrage.at) enrage(e);
   if (e.state === 'idle') {
     wake(e, 0);
     wakeArea(e.areaId, e);
@@ -392,6 +512,15 @@ function damageEnemy(e, amount, head, fromX, fromZ, knock) {
   S.hitMarker = 1;
   S.headshot = head;
   if (e.hp <= 0) killEnemy(e);
+}
+
+// The Tour Guide loses patience at half health: faster, bigger volleys.
+function enrage(e) {
+  e.enraged = true;
+  e.speedMult = e.def.enrage.speed;
+  if (e.robot.enrage) e.robot.enrage();
+  S.banner = { title: e.def.name, sub: `"${e.def.enrage.line}"`, t: 3, max: 3 };
+  audio.riser();
 }
 
 function killEnemy(e) {
@@ -415,6 +544,8 @@ function updateEnemy(e, dt) {
   e.animT += dt;
   if (e.robot.update) e.robot.update(dt);
   e.cool = Math.max(0, e.cool - dt);
+  e.slamCool = Math.max(0, e.slamCool - dt);
+  e.shieldT = Math.max(0, e.shieldT - dt);
   e.hurtT = Math.max(0, e.hurtT - dt);
   if (e.flashT > 0) {
     e.flashT -= dt;
@@ -492,7 +623,7 @@ function updateEnemy(e, dt) {
         dirz = (dx / d) * e.strafe;
         if (Math.sin(S.t * 0.7 + e.animT) > 0.95) e.strafe = -e.strafe;
       }
-      const sp = def.speed * dt * ((d < def.keepMin || los) ? 0.8 : 1);
+      const sp = def.speed * e.speedMult * dt * ((d < def.keepMin || los) ? 0.8 : 1);
       if (dirx || dirz) {
         const mv = world.moveCircle(e.x, e.z, dirx * sp, dirz * sp, e.r);
         e.x = mv.x;
@@ -501,9 +632,28 @@ function updateEnemy(e, dt) {
       }
       e.robot.setPose(moving ? 'walk' : 'idle', e.animT, 0);
       if (e.hurtT > 0) e.robot.setPose('hurt', HURT_DUR - e.hurtT, 1 - e.hurtT / HURT_DUR);
-      if (los && d < def.range && e.cool <= 0 && e.stateT > 0.4) {
+      if (def.slam && d < def.slam.reach && e.slamCool <= 0 && e.stateT > 0.3) {
+        e.state = 'slam';
+        e.stateT = 0;
+        e.acted = false;
+      } else if (los && d < def.range && e.cool <= 0 && e.stateT > 0.4) {
         e.state = 'aim';
         e.stateT = 0;
+      }
+    } else if (e.state === 'slam') {
+      // the boss swings its pole at anyone who crowds it; dodge by stepping out of reach during the wind-up
+      const sl = def.slam;
+      face = toPlayer;
+      e.robot.setPose('slam', e.stateT, clamp(e.stateT / (sl.windup + sl.swing), 0, 1));
+      if (!e.acted && e.stateT >= sl.windup + sl.swing * 0.45) {
+        e.acted = true;
+        if (d < sl.reach + 0.7) hurtPlayer(sl.damage, e.x, e.z, true);
+      }
+      if (e.stateT >= sl.windup + sl.swing) {
+        e.state = 'chase';
+        e.stateT = 0;
+        e.slamCool = sl.cooldown;
+        e.cool = Math.max(e.cool, 0.6);
       }
     } else if (e.state === 'aim') {
       face = toPlayer;
@@ -518,12 +668,15 @@ function updateEnemy(e, dt) {
       e.robot.setPose('shoot', e.stateT, clamp(e.stateT / def.shoot, 0, 1));
       if (!e.acted) {
         e.acted = true;
-        fireBottle(e);
+        const en = e.enraged ? def.enrage : def;
+        const n = en.volley || 1;
+        for (let i = 0; i < n; i++) fireBottle(e, (i - (n - 1) / 2) * (en.volleySpread || 0));
       }
       if (e.stateT >= def.shoot) {
         e.state = 'chase';
         e.stateT = 0;
-        e.cool = rand(def.shotInterval[0], def.shotInterval[1]);
+        const iv = (e.enraged && def.enrage.shotInterval) || def.shotInterval;
+        e.cool = rand(iv[0], iv[1]);
       }
     }
   } else {
@@ -538,7 +691,7 @@ function updateEnemy(e, dt) {
       }
       face = Math.atan2(-dirx, -dirz);
       if (d > def.reach * 0.8) {
-        const mv = world.moveCircle(e.x, e.z, dirx * def.speed * dt, dirz * def.speed * dt, e.r);
+        const mv = world.moveCircle(e.x, e.z, dirx * def.speed * e.speedMult * dt, dirz * def.speed * e.speedMult * dt, e.r);
         e.x = mv.x;
         e.z = mv.z;
         moving = true;
@@ -572,7 +725,8 @@ function updateEnemy(e, dt) {
     }
   }
 
-  e.yaw += clamp(wrap(face - e.yaw), -7 * dt, 7 * dt);
+  const turn = (def.turn || 7) * dt;
+  e.yaw += clamp(wrap(face - e.yaw), -turn, turn);
 }
 
 function separateEnemies() {
@@ -602,11 +756,16 @@ function separateEnemies() {
   }
 }
 
-function fireBottle(e) {
+function fireBottle(e, off = 0) {
   const p = S.player;
-  const dx = p.x - e.x;
-  const dz = p.z - e.z;
+  let dx = p.x - e.x;
+  let dz = p.z - e.z;
   const d = Math.hypot(dx, dz) || 1;
+  if (off) { // fan the volley out sideways around the line to Freddie
+    const c = Math.cos(off);
+    const sn = Math.sin(off);
+    [dx, dz] = [dx * c - dz * sn, dx * sn + dz * c];
+  }
   let sx = e.x + (dx / d) * 0.7;
   let sz = e.z + (dz / d) * 0.7;
   let sy = 1.3;
@@ -661,7 +820,7 @@ function die() {
   if (!S.debugMode && S.score > S.best) {
     S.best = S.score;
     S.newBest = true;
-    write(BEST_KEY, S.best);
+    write(bestKey(S.level), S.best);
   }
   audio.gameOver();
 }
@@ -674,7 +833,7 @@ function completeLevel() {
   if (!S.debugMode && S.score > S.best) {
     S.best = S.score;
     S.newBest = true;
-    write(BEST_KEY, S.best);
+    write(bestKey(S.level), S.best);
   }
   audio.dawn();
 }
@@ -882,7 +1041,7 @@ function fire() {
     const hit = castRay(p.x, EYE, p.z, d, w.range, false);
     if (hit.enemy) {
       const head = hit.head;
-      damageEnemy(hit.enemy, w.damage * m.damage * (head ? 2 : 1), head, p.x, p.z, w.knock / w.pellets * (w.pellets > 1 ? 2 : 1));
+      damageEnemy(hit.enemy, w.damage * m.damage * (head ? 2 : 1), head, p.x, p.z, w.knock / w.pellets * (w.pellets > 1 ? 2 : 1), { dist: hit.t, shieldBreak: w.shieldBreak });
       spark(hit.x, hit.y, hit.z);
       fxHit(hit, d, true, w.pellets);
     } else if (hit.t < w.range - 0.01) {
@@ -895,7 +1054,7 @@ function fire() {
 function launchRocket(w) {
   const p = S.player;
   const f = forward3(p.yaw, p.pitch);
-  const mesh = makeProjectile('rocket');
+  const mesh = makeProjectile(w.bounces !== undefined ? 'disc' : 'rocket');
   const sx = p.x + f.x * 0.7 + Math.cos(p.yaw) * 0.25;
   const sy = EYE - 0.2 + f.y * 0.7;
   const sz = p.z + f.z * 0.7 - Math.sin(p.yaw) * 0.25;
@@ -905,8 +1064,50 @@ function launchRocket(w) {
   if (R) R.scene.add(mesh);
   S.projectiles.push({
     owner: 'player', mesh, x: sx, y: sy, z: sz, vx: f.x * w.speed, vy: f.y * w.speed, vz: f.z * w.speed,
-    life: 4, weapon: w, dir: f,
+    life: w.life || 4, weapon: w, dir: f, bounces: w.bounces,
   });
+}
+
+// Which way a wall faces where a disc struck it, worked out by probing the tiles just ahead on each axis.
+function bounceOff(pr, hx, hz) {
+  const sx = Math.sign(pr.vx) * 0.12;
+  const sz = Math.sign(pr.vz) * 0.12;
+  const bx = world.blocksShotAt(hx + sx, hz);
+  const bz = world.blocksShotAt(hx, hz + sz);
+  if (bx && !bz) pr.vx = -pr.vx;
+  else if (bz && !bx) pr.vz = -pr.vz;
+  else { pr.vx = -pr.vx; pr.vz = -pr.vz; }
+}
+
+// One step of a vinyl disc: it damages the first robot it reaches (and stops), and rebounds off walls, floor and ceiling.
+function stepDisc(pr, d, step) {
+  const m = mult();
+  const hit = castRay(pr.x, pr.y, pr.z, d, step + 0.2, false);
+  if (hit.t >= step + 0.2) return false; // clear air this frame
+  if (hit.enemy) {
+    const w = pr.weapon;
+    damageEnemy(hit.enemy, w.damage * m.damage * (hit.head ? 2 : 1), hit.head, pr.x, pr.z, w.knock, {});
+    spark(hit.x, hit.y, hit.z);
+    fxHit(hit, d, true, 1);
+    pr.life = -1;
+    return true;
+  }
+  if (hit.t > step + 0.1) return false;
+  if (pr.bounces <= 0) {
+    spark(hit.x - d.x * 0.05, hit.y - d.y * 0.05, hit.z - d.z * 0.05);
+    pr.life = -1;
+    return true;
+  }
+  pr.bounces--;
+  if (hit.y <= 0.02 || hit.y >= WALL_H - 0.02) pr.vy = -pr.vy;
+  else bounceOff(pr, hit.x, hit.z);
+  pr.x = hit.x - d.x * 0.1;
+  pr.y = clamp(hit.y, 0.1, WALL_H - 0.1);
+  pr.z = hit.z - d.z * 0.1;
+  spark(hit.x, hit.y, hit.z);
+  fxHit(hit, d, false, 4);
+  audio.ricochet();
+  return true; // moved already this frame
 }
 
 function explode(pr, x, y, z) {
@@ -929,7 +1130,7 @@ function explode(pr, x, y, z) {
     const d = Math.hypot(e.x - x, e.z - z) - e.r;
     if (d > w.splashRadius || y > e.h + w.splashRadius) continue;
     const fall = 1 - clamp(d / w.splashRadius, 0, 1) * 0.65;
-    damageEnemy(e, w.splashDamage * fall * m.damage, false, x, z, w.knock);
+    damageEnemy(e, w.splashDamage * fall * m.damage, false, x, z, w.knock, { pierce: true });
   }
   alertNear(x, z, 22);
 }
@@ -986,7 +1187,10 @@ function updateProjectiles(dt) {
     pr.life -= dt;
     const step = Math.hypot(pr.vx, pr.vy, pr.vz) * dt;
     const d = { x: pr.vx * dt / step, y: pr.vy * dt / step, z: pr.vz * dt / step };
-    if (pr.owner === 'player') {
+    if (pr.owner === 'player' && pr.bounces !== undefined) {
+      if (stepDisc(pr, d, step)) { pr.mesh.position.set(pr.x, pr.y, pr.z); continue; }
+      pr.mesh.rotation.y += dt * 24;
+    } else if (pr.owner === 'player') {
       const hit = castRay(pr.x, pr.y, pr.z, d, step + 0.2, false);
       if (hit.t < step + 0.2 && (hit.enemy || hit.t <= step + 0.1)) {
         explode(pr, hit.x, hit.y, hit.z);
@@ -1049,7 +1253,7 @@ function updatePickups(dt) {
     pk.phase += dt;
     pk.mesh.position.y = 0.05 + Math.sin(pk.phase * 2.2) * 0.06;
     pk.mesh.rotation.y += dt * 1.4;
-    if (pk.mesh.userData.update) pk.mesh.userData.update(S.t);
+    if (pk.mesh.userData && pk.mesh.userData.update) pk.mesh.userData.update(S.t);
     if (Math.hypot(pk.def.x - p.x, pk.def.z - p.z) > 1.2) continue;
     if (pk.def.kind === 'drink') {
       if (S.drink) continue; // one drink at a time
@@ -1223,7 +1427,7 @@ function updateAreas() {
     S.currentArea = a;
     if (a && !a.announced) {
       a.announced = true;
-      if (!S.banner) S.banner = { title: here.name, sub: AREA_HINTS[here.id] || here.objective, t: 2.8, max: 2.8 };
+      if (!S.banner) S.banner = { title: here.name, sub: levelInfo().hints[here.id] || here.objective, t: 2.8, max: 2.8 };
     }
   }
   S.allClear = S.areas.every((a) => a.cleared);
@@ -1234,14 +1438,16 @@ function updateAreas() {
 
 function stateFor(mode) {
   switch (mode) {
-    case 'title': return { t: S.t, debugMode: S.debugMode, best: S.best };
+    case 'title': return { t: S.t, debugMode: S.debugMode, best: S.best, levelNumber: LEVELS[startLevel() - 1].number, levelName: LEVELS[startLevel() - 1].name };
     case 'controls': return { t: S.t };
-    case 'dead': return { t: S.deadT, line: S.deadLine, score: S.score, best: S.best, newBest: S.newBest, debugMode: S.debugMode, levelName: LEVEL.name };
+    case 'dead': return { t: S.deadT, line: S.deadLine, score: S.score, best: S.best, newBest: S.newBest, debugMode: S.debugMode, levelName: levelInfo().name };
     case 'complete':
       return {
         t: S.completeT, score: S.score, best: S.best, newBest: S.newBest, timeSec: S.runT, kills: S.kills,
-        totalEnemies: S.totalEnemies, debugMode: S.debugMode,
+        totalEnemies: S.totalEnemies, debugMode: S.debugMode, hasNext: S.level < LEVELS.length,
+        title: levelInfo().doneTitle, line: levelInfo().doneLine, sub: levelInfo().doneSub,
       };
+    case 'voicemail': return { t: S.mailT, mail: levelInfo().voicemail, level: levelInfo() };
     default: return { t: S.t };
   }
 }
@@ -1256,7 +1462,9 @@ function handlePresses(input, view) {
     switch (b.id) {
       case 'new': S.mode = 'controls'; break;
       case 'back': S.mode = 'title'; break;
-      case 'start': beginRun(); break;
+      case 'start': S.level = startLevel(); beginRun(); break;
+      case 'next': nextLevel(); break;
+      case 'continue': S.mode = 'intro'; S.introT = 0; break;
       case 'debug':
         S.debugMode = !S.debugMode;
         write(DEBUG_KEY, S.debugMode);
@@ -1277,6 +1485,11 @@ export function update(dt, input, view) {
   S.view = view;
   S.t += dt;
   audio.tick();
+  if (S.pendingLoad && S.loadReady) {
+    S.pendingLoad = false;
+    loadLevel(S.level);
+    resetLevel();
+  }
   world.update(dt, S.t);
   if (S.banner && (S.banner.t -= dt) <= 0) S.banner = null;
   if (S.toast && (S.toast.t -= dt) <= 0) S.toast = null;
@@ -1296,6 +1509,11 @@ export function update(dt, input, view) {
       }
       handlePresses(input, view);
       audio.setMood(S.mode === 'title' || S.mode === 'controls' ? 0.1 : 0.4, S.mode === 'dead');
+      break;
+    case 'voicemail':
+      S.mailT += dt;
+      handlePresses(input, view);
+      audio.setMood(0.1, false);
       break;
     case 'intro':
       S.introT += dt;
@@ -1416,7 +1634,7 @@ function placeCamera() {
   const p = S.player;
   if (S.mode === 'title' || S.mode === 'controls') {
     // slow drift through the dance floor as a backdrop for the menus
-    const a = world.areas.find((x) => x.id === 'dancefloor') || world.areas[0];
+    const a = world.areas.find((x) => x.id === levelInfo().titleArea) || world.areas[0];
     const cx = ((a.rect.c0 + a.rect.c1 + 1) / 2) * 2;
     const cz = ((a.rect.r0 + a.rect.r1 + 1) / 2) * 2;
     camera.position.set(cx + Math.sin(S.t * 0.15) * 3, 2.2, cz + Math.cos(S.t * 0.15) * 3);
@@ -1438,7 +1656,7 @@ function placeCamera() {
   let yaw = p.yaw;
   let pitch = p.pitch + (Math.random() - 0.5) * sh * 0.2;
   roll += (Math.random() - 0.5) * sh * 0.2;
-  let fov = 85;
+  let fov = R.baseFov;
 
   // Last Orders: ease out to a third-person camera behind and above Freddie, looking at him
   const k = S.camK;
@@ -1461,7 +1679,7 @@ function placeCamera() {
     yaw += wrap(tpYaw - yaw) * e;
     pitch += (tpPitch - pitch) * e;
     roll *= 1 - e;
-    fov += (72 - fov) * e;
+    fov += (R.baseFov * (72 / 85) - fov) * e;
   }
   if (Math.abs(R.fov - fov) > 0.02) {
     R.fov = fov;
@@ -1518,13 +1736,14 @@ function animateViewmodel(dt) {
   const drinking = S.drink && R.drinkVms[S.drink.id];
   for (const id of WEAPON_ORDER) models[id].visible = !drinking && !S.laser && id === p.weapon && (S.mode === 'play' || S.mode === 'intro');
   for (const id of Object.keys(R.drinkVms)) R.drinkVms[id].group.visible = !!drinking && S.drink.id === id;
+  if (models.vinyl && models.vinyl.visible && models.vinyl.userData.update) models.vinyl.userData.update(S.t); // the record turns
   const w = WEAPONS[p.weapon];
   const bobX = Math.cos(p.bobT * 0.5) * 0.012 * p.moveMag;
   const bobY = Math.abs(Math.sin(p.bobT * 0.5)) * 0.014 * p.moveMag;
   const reloading = p.reloadT > 0 ? 1 - p.reloadT / (p.reloadTotal || w.reload) : 0;
   const dip = Math.sin(reloading * Math.PI);
   const sw = p.switchT / 0.25;
-  const baseX = p.weapon === 'launcher' ? 0.12 : 0.15;
+  const baseX = weaponX(R.wcam.aspect) - (p.weapon === 'launcher' || p.weapon === 'vinyl' ? 0.03 : 0);
   wroot.scale.setScalar(0.68);
   if (drinking) {
     // the drink animation owns the pose; the root stays at the usual resting spot
@@ -1595,6 +1814,7 @@ export function render(ctx, view, alpha) {
   const dtv = 1 / 60;
   ctx.clearRect(0, 0, view.w, view.h);
   if (!R) return;
+  if (S.pendingLoad) S.loadReady = true; // this frame shows the new screen; the world swaps on the next update
   placeCamera();
   animateWorld();
   animateViewmodel(dtv);
@@ -1617,13 +1837,19 @@ export function render(ctx, view, alpha) {
     case 'controls':
       screens.drawControls(ctx, view, stateFor('controls'));
       break;
-    case 'intro':
-      screens.drawIntro(ctx, view, { t: S.introT, level: LEVEL });
+    case 'voicemail':
+      screens.drawVoicemail(ctx, view, stateFor('voicemail'));
       break;
-    case 'dead':
-      hud.drawPlayHud(ctx, view, buildHudState());
+    case 'intro':
+      screens.drawIntro(ctx, view, { t: S.introT, level: levelInfo() });
+      break;
+    case 'dead': {
+      const hs = buildHudState();
+      if (view.w > view.h * 1.05) hs.cinematic = 1; // landscape: the control boxes would sit under the buttons
+      hud.drawPlayHud(ctx, view, hs);
       screens.drawDead(ctx, view, stateFor('dead'));
       break;
+    }
     case 'complete':
       screens.drawComplete(ctx, view, stateFor('complete'));
       break;
@@ -1644,6 +1870,7 @@ export function testHook(cmd, arg) {
   switch (cmd) {
     case 'buttons': return screens.buttons(S.mode, v, stateFor(S.mode));
     case 'play': resetLevel(); S.mode = 'play'; return undefined;
+    case 'level': loadLevel(arg); resetLevel(); S.mode = 'play'; return undefined;
     case 'title': toTitle(); return undefined;
     case 'teleport': S.player.x = arg.x; S.player.z = arg.z; if (arg.yaw !== undefined) S.player.yaw = arg.yaw; return undefined;
     case 'killArea':
@@ -1654,12 +1881,26 @@ export function testHook(cmd, arg) {
       return undefined;
     case 'layout': return layoutFor(v);
     case 'hurt': hurtPlayer(arg, S.player.x, S.player.z + 5, false); return undefined;
+    case 'screen': // jump to a menu screen, for screenshots: title | controls | intro | voicemail | dead | complete
+      if (arg === 'title') toTitle();
+      else if (arg === 'controls') S.mode = 'controls';
+      else if (arg === 'intro') beginRun();
+      else if (arg === 'voicemail') { S.level = 2; S.mode = 'voicemail'; S.mailT = 0; }
+      else if (arg === 'dead') { resetLevel(); S.mode = 'play'; die(); }
+      else if (arg === 'complete') { resetLevel(); S.mode = 'play'; completeLevel(); }
+      return undefined;
     case 'drink': startDrink(arg); return undefined;
+    case 'hitEnemy': { // headless combat checks: damage enemy arg.i as if shot from (arg.fx, arg.fz); returns the hp it lost
+      const e = S.enemies[arg.i];
+      const hp0 = e.hp;
+      damageEnemy(e, arg.amount, !!arg.head, arg.fx, arg.fz, arg.knock || 0, arg.opts || {});
+      return hp0 - e.hp;
+    }
     case 'stats': {
       const w = WEAPONS[S.player.weapon];
       return {
         fireInterval: w.interval / mult().fire, damageMult: mult().damage, maxHealth: S.player.maxHealth, weapon: w.id, clip: S.player.ammo[w.id],
-        reloading: S.player.reloadT > 0, buffs: { ...S.buffs }, drinking: S.drink ? S.drink.id : null, laser: !!S.laser, yaw: S.player.yaw, third: S.camK > 0.5, camK: S.camK, health: S.player.health,
+        reloading: S.player.reloadT > 0, fov: R ? R.camera.fov : null, aspect: R ? R.camera.aspect : null, buffs: { ...S.buffs }, drinking: S.drink ? S.drink.id : null, laser: !!S.laser, yaw: S.player.yaw, third: S.camK > 0.5, camK: S.camK, health: S.player.health,
       };
     }
     default: return undefined;

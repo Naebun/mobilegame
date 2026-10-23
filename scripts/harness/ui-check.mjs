@@ -2,7 +2,7 @@
 // Run: node scripts/harness/ui-check.mjs
 import assert from 'node:assert/strict';
 import { layout, drawPlayHud } from '../../src/hud.js';
-import { buttons, drawTitle, drawControls, drawIntro, drawDead, drawComplete } from '../../src/screens.js';
+import { buttons, drawTitle, drawControls, drawIntro, drawDead, drawComplete, drawVoicemail } from '../../src/screens.js';
 
 let calls = 0;
 function fakeCtx() {
@@ -28,6 +28,13 @@ const views = [
   { w: 430, h: 932, dpr: 3, safe: { top: 47, bottom: 34 } },
   { w: 600, h: 1200, dpr: 1, safe: { top: 0, bottom: 0 } },
   { w: 360, h: 640, dpr: 1 }, // safe missing altogether
+  // landscape: phones with the notch on a side, a small old phone, an iPad, a desktop window
+  { w: 844, h: 390, dpr: 3, safe: { top: 0, bottom: 21, left: 47, right: 47 } },
+  { w: 932, h: 430, dpr: 3, safe: { top: 0, bottom: 21, left: 59, right: 59 } },
+  { w: 667, h: 375, dpr: 2, safe: { top: 0, bottom: 0, left: 0, right: 0 } },
+  { w: 568, h: 320, dpr: 2 },
+  { w: 1180, h: 820, dpr: 2, safe: { top: 24, bottom: 20, left: 0, right: 0 } },
+  { w: 1366, h: 768, dpr: 1 },
 ];
 
 const long = 'WWWWWWWWWW '.repeat(60);
@@ -72,19 +79,29 @@ for (const v of views) {
   }
   const bottom = v.h - ((v.safe && v.safe.bottom) || 0);
   assert.ok(L.reloadBtn.y + L.reloadBtn.h <= bottom, 'buttons run into the bottom safe area');
+  const sl = (v.safe && v.safe.left) || 0;
+  const sr = (v.safe && v.safe.right) || 0;
+  assert.ok(L.moveBox.x >= sl && L.lookBox.x + L.lookBox.w <= v.w - sr, `control boxes run into a side safe area at ${v.w}x${v.h}`);
+  if (v.w > v.h * 1.05) {
+    assert.ok(L.moveBox.y > v.h * 0.4, 'landscape boxes sit in the lower half');
+    assert.ok(L.swapBtn.x >= L.moveBox.x + L.moveBox.w && L.reloadBtn.x + L.reloadBtn.w <= L.lookBox.x, 'landscape SWAP and RELOAD sit between the boxes');
+  }
   assert.ok(layout(v) === L, 'layout should be cached for identical input');
 
   const ctx = fakeCtx();
   for (const h of hudStates) drawPlayHud(ctx, v, h);
 
-  const bstates = [undefined, null, {}, { t: -1 }, { t: 0.5 }, { t: 5, debugMode: true }, { t: huge }, { t: NaN }];
-  for (const mode of ['title', 'controls', 'dead', 'complete', 'bogus']) {
+  // every menu button stays on screen, clear of the side insets, and nothing overlaps, in both orientations
+  const bstates = [undefined, null, {}, { t: -1 }, { t: 0.5 }, { t: 5, debugMode: true }, { t: huge }, { t: NaN }, { t: 3, hasNext: true }];
+  for (const mode of ['title', 'controls', 'dead', 'complete', 'voicemail', 'bogus']) {
     for (const s of bstates) {
       const list = buttons(mode, v, s);
       assert.ok(Array.isArray(list));
       for (const b of list) {
         assert.ok(b.id && b.label, 'button needs id and label');
         assert.ok(inside(b, v), `button ${b.id} (${mode}) outside ${v.w}x${v.h}`);
+        assert.ok(b.x >= sl && b.x + b.w <= v.w - sr, `button ${b.id} (${mode}) in a side inset at ${v.w}x${v.h}`);
+        assert.ok(b.y + b.h <= v.h - ((v.safe && v.safe.bottom) || 0) + 0.5, `button ${b.id} (${mode}) in the bottom inset at ${v.w}x${v.h}`);
       }
       for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) assert.ok(!overlap(list[i], list[j]), `buttons overlap in ${mode}`);
     }
@@ -95,6 +112,9 @@ for (const v of views) {
   assert.deepEqual(buttons('dead', v, { t: 0.91 }).map((b) => b.id), ['retry', 'menu']);
   assert.deepEqual(buttons('complete', v, { t: 1 }).map((b) => b.id), []);
   assert.deepEqual(buttons('complete', v, { t: 1.01 }).map((b) => b.id), ['again', 'menu']);
+  assert.deepEqual(buttons('complete', v, { t: 1.01, hasNext: true }).map((b) => b.id), ['next', 'again', 'menu']);
+  assert.deepEqual(buttons('voicemail', v, { t: 0.8 }).map((b) => b.id), []);
+  assert.deepEqual(buttons('voicemail', v, { t: 0.81 }).map((b) => b.id), ['continue']);
   assert.equal(buttons('title', v, { debugMode: true })[1].label, 'DEBUG MODE: ON');
   assert.equal(buttons('title', v, { debugMode: false })[1].label, 'DEBUG MODE: OFF');
 
@@ -105,7 +125,11 @@ for (const v of views) {
     drawIntro(ctx, v, s);
     drawDead(ctx, v, s);
     drawComplete(ctx, v, s);
+    drawVoicemail(ctx, v, s);
   }
+  drawVoicemail(ctx, v, { t: 4, mail: { from: long, lines: [long, '', null, 'Do not shake anything.', long, long, long] } });
+  drawVoicemail(ctx, v, { t: 0.2, mail: { from: 'CHERYL (AGENT)', lines: 'not an array' } });
+  drawComplete(ctx, v, { t: 3, hasNext: true, title: long, line: long, sub: long, score: 5, kills: 2, totalEnemies: 2 });
   const lv = { number: 1, name: long, sub: long, line: long, clock: [30, 90] };
   drawIntro(ctx, v, { t: 2, level: lv });
   drawIntro(ctx, v, { t: 2, level: { number: huge, name: '', clock: null } });
