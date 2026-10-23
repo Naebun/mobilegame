@@ -145,9 +145,10 @@ the recoil and the swap. The four pickup guns arrive with a torch fitted; the pi
 without a fitted torch `S.attach` runs `makeTorchAttach()` (a left hand carries the module to the pistol, a click at `k` 0.6,
 the hand withdraws) and the pistol cannot fire until it ends; the fitted state is saved. F toggles the torch on a computer.
 Models are in `scripts/blender/weapons.py` (five torches, the attach hand; `preview.py` views `lside`, `liso`, `lfront`);
-tests are in `models-check`, `combat-check` and the smoke test (`torch-fitting`). Known, not fixed: the pistol torch is
-mostly hidden from the first-person camera (you see a cyan glint and the beam); the shotgun's beam starts inside the horn
-flare; the vinyl gooseneck arches about 0.25 m above the deck. Not seen: a real phone.
+tests are in `models-check`, `combat-check` and the smoke test (`torch-fitting`). Playtest-prep fixes (all seen in software-rendered screenshots only): the pistol's torch module now clips on the
+top of the slide, where the camera sees it (it was under the slide and hidden); the launcher's lens is at the mouth of its own
+mini horn (it sat 0.04 m down the throat); the vinyl gooseneck peaks 0.034 m lower. The earlier note that the shotgun's beam starts inside its horn flare was not acted on: the shotgun's lens is a plain tube light
+beside the barrel (the horn lamp that had the problem is the launcher's). Not seen: a real phone.
 
 ## Blender assets (weapons, hands, props)
 Drinks, weapons (with their torches) plus Naebun's hands, and 27 level props are modelled in Blender and generated into data modules
@@ -170,9 +171,19 @@ use the new weapons, so they need teaching before these go into a level. Level 3
 ## The owner's test devices
 An iPhone 16 Pro and a MacBook Air M4. Both are much faster than the plan's floor (an A15, so an iPhone 14), which means a
 smooth frame rate on either says nothing about an older phone: keep the pixel ratio cap, the light count and the triangle
-budget as they are, and use the `?perf` readout (see `docs/playtest.md` once the playtest branch is merged) to look at
+budget as they are, and use the `?perf` readout (see `docs/playtest.md`) to look at
 frame time, not just whether it feels smooth. The iPhone's display is 120 Hz in Safari (30 or 60 in Low Power Mode), so
 nothing may assume 60 frames a second; the loop is fixed-step and reads taps from events, but test it. The Mac is PC mode
 with a trackpad: two-finger scroll sends wheel events that keep coming as the scroll coasts, so the wheel swap only counts
 an event after a quiet gap of 180 ms (`engine.js`); the right button (alt-fire) is a two-finger click or a control-click.
 Not tested on either: real pointer lock in Safari, trackpad swap, the iPhone safe areas with Safari's bottom tab bar.
+
+## Playtest kit (performance readout, guide)
+`?perf` (or the P key on a computer) shows `src/perf.js`: a DOM panel, top left under the health bar, with frame rate (rolling
+four-second average and the 1 percent low), frame time, JS time of the render call, tier, pixel ratio, drawing size, triangles,
+draw calls, lights, viewport and orientation, level and area. Tap it to copy a one-line summary (clipboard API, then a
+selection copy, then a box to long-press). `window.__perf` carries the same numbers while it is on. Off, it costs one null check
+per frame. `scripts/harness/perf-check.mjs` tests it in both orientations. The guide for whoever holds the phone is
+`docs/playtest.md`. No adaptive quality was added: `trackFrame` in `game3d.js` already steps the tier down when frames stay under
+about 25 fps, and it remembers the lower tier in local storage, which a playtest should know about (the guide says how to pin a
+tier with `?q=`).

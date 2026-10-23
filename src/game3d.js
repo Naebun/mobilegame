@@ -18,6 +18,7 @@ import * as screens from './screens.js';
 import * as M from './models.js';
 import * as store from './save.js';
 import { createArsenalPlay } from './arsenal-play.js';
+import { createPerf } from './perf.js';
 import { WEAPONS, WEAPON_ORDER, ENEMY_DEFS, PLAYER, LEVELS, DEATH_LINES, DRINKS, DRINK_ORDER } from './data.js';
 
 const TAU = Math.PI * 2;
@@ -48,8 +49,9 @@ function detectMobile() {
 let mobileBrowser = detectMobile();
 const inputMode = () => S.settings.input || (mobileBrowser ? 'mobile' : 'pc');
 // Quality: ?q=low|medium|high forces a tier (used by tests); otherwise start from the saved tier (default high)
-// and step down automatically if the device is clearly struggling. ?perf shows a frame-rate overlay.
-const Q = { tier: 'high', fixed: false, ema: 1 / 60, frames: 0, last: 0, perf: query.has('perf'), fps: 60 };
+// and step down automatically if the device is clearly struggling. ?perf (or the P key) shows the readout in src/perf.js.
+const Q = { tier: 'high', fixed: false, ema: 1 / 60, frames: 0, last: 0, fps: 60 };
+let PERF = null; // the performance readout; null (one check per frame, nothing else) until switched on
 // Debug mode is a testing aid for Naebun only. It must never feed back into balance: enemies, weapons' base stats,
 // areas and everything in data.js are tuned for normal mode alone.
 const DEBUG_MULT = { fire: 2, damage: 2, health: 2 };
@@ -393,6 +395,34 @@ function initRender(view) {
   R = { renderer, scene, camera, hemi, fill, fillBase: 0, spot, tbeam, torchCfg: DEFAULT_TORCH, attachRig, wscene, wcam, wroot, models, flashes, impacts, explosions: [], flashT: 0, muzzleT: 0, pipeline, fx, look: null, drinkVms, beam, beamParts: [beamCore, beamMid, beamGlow], fov: 85, baseFov: 85, naebun };
   applyAtmosphere();
   resize(view);
+  initPerf();
+}
+
+// The performance readout: ?perf in the URL, or the P key, switches it on (and off). Nothing exists until then.
+function setPerf(on) {
+  if (on && !PERF && R) {
+    PERF = createPerf({
+      renderer: R.renderer,
+      scenes: () => [R.scene, R.wscene],
+      info: () => {
+        const area = world.areaAt(S.player.x, S.player.z);
+        return { tier: R.pipeline.tier, fixed: Q.fixed, pixelRatio: R.pipeline.pixelRatio, level: S.level, area: area ? area.id : '' };
+      },
+    });
+    if (PERF) window.__perf = PERF; // the latest numbers, for tests and for reading off a connected phone
+  } else if (!on && PERF) {
+    PERF.destroy();
+    PERF = null;
+    delete window.__perf;
+  }
+}
+
+function initPerf() {
+  if (typeof window === 'undefined') return;
+  window.addEventListener('keydown', (e) => {
+    if (e.key.toLowerCase() === 'p' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) setPerf(!PERF);
+  });
+  if (query.has('perf')) setPerf(true);
 }
 
 // The torch beam: an open cone from the lens, drawn additively and brightest at its edges-on silhouette fade, so it reads as
@@ -1244,7 +1274,7 @@ function updateLongshot(e, dt) {
     if (along > 0 && along < wall && lateral < def.shot.halfWidth + 0.2) reach = Math.min(reach, (along - 1.2) / cp);
     const len = Math.max(0.5, reach - 0.96); // the beam starts at the muzzle, 0.96 m along the barrel
     const k = clamp(e.stateT / total, 0, 1);
-    e.robot.setLaser(len, e.aimPitch, e.locked, k);
+    e.robot.setLaser(len, e.aimPitch, e.locked, k, laserNear(e, pv, len));
     e.robot.setPose('aim', e.stateT, k);
     if (e.stateT >= total) {
       fireSnipe(e, pv, wall, cp);
@@ -1258,7 +1288,7 @@ function updateLongshot(e, dt) {
 
   // recover: the shot has gone; the tracer lingers a moment
   e.tracerT -= dt;
-  if (e.tracerT > 0) e.robot.setLaser(e.tracerLen, e.aimPitch, true, 1);
+  if (e.tracerT > 0) e.robot.setLaser(e.tracerLen, e.aimPitch, true, 1, laserNear(e, pv, e.tracerLen));
   else e.robot.setLaser(0, e.aimPitch);
   e.robot.setPose('shoot', e.stateT, clamp(e.stateT / def.shot.recover, 0, 1));
   if (e.stateT >= def.shot.recover) {
@@ -1272,6 +1302,23 @@ function updateLongshot(e, dt) {
 
 // The shot: a straight line from the rifle's pivot along the locked yaw and pitch. It hurts Naebun if Naebun is within the
 // line's half-width and the line is not stopped by a wall or pillar first. Low cover does not stop it.
+// How clear the camera is of a Longshot's laser, 0 (on top of it) to 1 (5 m or more away). models.js thins and dims the line by
+// it, so a line aimed at the player does not flood the screen. Only the drawing changes: the line itself is the shot line.
+function laserNear(e, pv, len) {
+  const p = S.player;
+  const cp = Math.cos(e.aimPitch);
+  const dx = -Math.sin(e.yaw) * cp;
+  const dy = Math.sin(e.aimPitch);
+  const dz = -Math.cos(e.yaw) * cp;
+  const sx = e.x - Math.sin(e.yaw) * (pv.fwd + 0.96 * cp);
+  const sy = pv.up + dy * 0.96;
+  const sz = e.z - Math.cos(e.yaw) * (pv.fwd + 0.96 * cp);
+  const t = clamp((p.x - sx) * dx + (EYE - sy) * dy + (p.z - sz) * dz, 0, len); // the closest point on the line to the camera
+  const d = Math.hypot(sx + dx * t - p.x, sy + dy * t - EYE, sz + dz * t - p.z);
+  const n = clamp((d - 1.2) / 3.8, 0, 1);
+  return n * n * (3 - 2 * n);
+}
+
 function fireSnipe(e, pv, wall, cp) {
   const p = S.player;
   const def = e.def;
@@ -2557,13 +2604,13 @@ function animateViewmodel(dt) {
     wroot.position.set(baseX + bobX, (R.wcam.aspect < 1 ? -0.205 : -0.24) + bobY - dip * 0.22 - sw * 0.4, -0.62 + p.kick * 0.08);
     wroot.rotation.set(0.03 + p.kick * 0.22 + dip * 0.7, 0.07 + dip * -0.25, dip * 0.2);
     if (S.attach) {
-      // while the torch is fitted the pistol comes up and rolls a little, so the rail faces the player
+      // while the torch is fitted the pistol comes up and rolls a little, so its top (where the module clips on) faces the left hand
       const lift = Math.sin(clamp(S.attach.k, 0, 1) * Math.PI);
       wroot.position.z += 0.05 * lift;
       wroot.position.y += 0.035 * lift;
       wroot.position.x -= 0.03 * lift;
       wroot.rotation.x += 0.12 * lift;
-      wroot.rotation.z += -0.3 * lift;
+      wroot.rotation.z += 0.3 * lift;
     }
   }
   // the shotgun's pump (and the left hand on it) slides back and forward in the gap between shots
@@ -2691,22 +2738,11 @@ function drawVignette(ctx, view) {
   ctx.fillRect(0, 0, view.w, view.h);
 }
 
-function drawPerf(ctx, view) {
-  const info = R.renderer.info;
-  ctx.font = '600 11px ui-monospace, Menlo, monospace';
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'top';
-  ctx.fillStyle = 'rgba(0,0,0,0.55)';
-  ctx.fillRect(4, view.safe.top + 70, 214, 30);
-  ctx.fillStyle = '#9dff9d';
-  ctx.fillText(`${Q.fps.toFixed(0)} fps  ${(Q.ema * 1000).toFixed(1)} ms  ${R.pipeline.tier}${Q.fixed ? ' (fixed)' : ''}`, 8, view.safe.top + 74);
-  ctx.fillText(`calls ${info.render.calls}  tris ${(info.render.triangles / 1000).toFixed(0)}k  ratio ${R.pipeline.pixelRatio}`, 8, view.safe.top + 88);
-}
-
 export function render(ctx, view, alpha) {
   const dtv = 1 / 60;
   ctx.clearRect(0, 0, view.w, view.h);
   if (!R) return;
+  if (PERF) PERF.begin(performance.now());
   if (S.pendingLoad) S.loadReady = true; // this frame shows the new screen; the world swaps on the next update
   placeCamera();
   animateWorld();
@@ -2757,7 +2793,7 @@ export function render(ctx, view, alpha) {
     default:
       hud.drawPlayHud(ctx, view, buildHudState());
   }
-  if (Q.perf) drawPerf(ctx, view);
+  if (PERF) PERF.end(performance.now(), view);
 }
 
 // ---- tests ----

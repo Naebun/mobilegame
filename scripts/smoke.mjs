@@ -92,6 +92,7 @@ try {
   await pressButton('start');
   check(await until("s.mode === 'intro'"), 'START GAME shows the level intro');
   await page.waitForTimeout(1200);
+  await until('s.introT > 0.9', undefined, 90000);
   await shot('intro');
   await tap(195, 400);
   check(await until("s.mode === 'play'"), 'tap skips the intro and play begins');
@@ -218,6 +219,7 @@ try {
   await hook('teleport', exit);
   check(await until("s.mode === 'complete'"), 'reaching the exit after clearing everything completes the level');
   await page.waitForTimeout(2500);
+  await until('s.completeT > 1.2', undefined, 90000); // // the buttons fade in after a second of game time, which software WebGL takes a while to reach
   await shot('complete');
   const next = (await hook('buttons')).map((b) => b.id);
   check(next.includes('next') && next.includes('again') && next.includes('menu'), `level 1 complete offers NEXT LEVEL, PLAY AGAIN and MAIN MENU (${next.join(', ')})`);
@@ -226,10 +228,12 @@ try {
   await pressButton('next');
   check(await until("s.mode === 'voicemail' && s.level === 2"), 'NEXT LEVEL loads level 2 behind a voicemail card');
   await page.waitForTimeout(4200);
+  await until('s.mailT > 1', undefined, 90000);
   await shot('voicemail');
   await pressButton('continue');
   check(await until("s.mode === 'intro'"), 'CONTINUE shows the level 2 intro');
   await page.waitForTimeout(1200);
+  await until('s.introT > 0.9', undefined, 90000);
   await shot('intro-2');
   await tap(195, 400);
   check(await until("s.mode === 'play'"), 'play begins on level 2');
@@ -274,6 +278,7 @@ try {
   await hook('teleport', exit2);
   check(await until("s.mode === 'complete'"), 'reaching the exit completes level 2');
   await page.waitForTimeout(2500);
+  await until('s.completeT > 1.2', undefined, 90000);
   await shot('complete-2');
   const last = (await hook('buttons')).map((b) => b.id);
   check(!last.includes('next') && last.includes('again') && last.includes('menu'), `the last level offers no NEXT LEVEL (${last.join(', ')})`);
@@ -287,11 +292,13 @@ try {
   await until("s.mode === 'controls'");
   await pressButton('start');
   await until("s.mode === 'intro'");
+  await until('s.introT > 0.9'); // a tap skips the intro only after 0.8 s of game time, which a slow software renderer takes a while to reach
   await tap(195, 400);
-  await until("s.mode === 'play'");
+  await until("s.mode === 'play'", undefined, 60000);
   await hook('hurt', 1000);
   check(await until("s.mode === 'dead'"), 'dies at zero health');
   await page.waitForTimeout(2200);
+  await until('s.deadT > 1.2', undefined, 90000);
   await shot('dead');
   await pressButton('retry');
   check(await until("s.mode === 'play'"), 'RETRY restarts the level');

@@ -3,6 +3,7 @@
 // The Fizzbang Shaken, Bampot Longshot, Bampot Nurse and Vending Mimic are built and tested but NOT placed in any level
 // (docs/enemies-next.md). Robots are added to the running game with testHook('spawn'). Normal mode only: balance is never
 // tuned against debug mode.
+import * as THREE from '../../vendor/three.module.min.js';
 import * as game from '../../src/game3d.js';
 import * as audio from '../../src/audio.js';
 import { ENEMY_DEFS, WEAPONS } from '../../src/data.js';
@@ -332,6 +333,76 @@ function findBlock(W, wantFull) {
     return 1000 - s.S.player.health;
   })();
   ok(strafe === def.damage, 'a slow drift while it tracks does not save you: it keeps up and the lock lands on you');
+
+  // the laser as drawn: it thins and dims as it nears the camera, its brightness stays under what blooms to white, and the line
+  // you see is still exactly the line that is shot
+  {
+    const s = fresh();
+    const ls = spawn(s.S, 'longshot', lane.x0, lane.z, -Math.PI / 2, '_t');
+    const r = ls.robot;
+    const draw = (locked, near) => { r.setLaser(18, 0.05, locked, 1, near); return { w: r.laserWidth, peak: r.laserPeak, near: r.laserNear }; };
+    for (const locked of [true, false]) {
+      const far = draw(locked, 1);
+      const mid = draw(locked, 0.5);
+      const top = draw(locked, 0);
+      const tag = locked ? 'locked' : 'tracking';
+      ok(top.w < mid.w && mid.w < far.w && top.w <= far.w * 0.3, `laser ${tag}: the width falls as the camera nears (${far.w.toFixed(3)} > ${mid.w.toFixed(3)} > ${top.w.toFixed(3)} m)`);
+      ok(top.peak < mid.peak && mid.peak < far.peak && top.peak <= far.peak * 0.4, `laser ${tag}: the brightness falls too (${far.peak.toFixed(2)} > ${mid.peak.toFixed(2)} > ${top.peak.toFixed(2)})`);
+      ok(far.peak <= 2.3, `laser ${tag}: full brightness stays at or under HDR 2.3 (${far.peak.toFixed(2)}), the old core was 8`);
+    }
+    for (const bad of [undefined, null, NaN, -5, 9, Infinity]) {
+      const d = draw(true, bad);
+      ok(Number.isFinite(d.w) && Number.isFinite(d.peak) && d.near >= 0 && d.near <= 1, `laser near ${bad}: stays finite and in range`);
+    }
+    // the same line at every `near`: the group does not move, only the widths and colours change
+    const line = (near) => {
+      r.setLaser(18, 0.1, true, 1, near);
+      r.group.updateMatrixWorld(true);
+      const o = new THREE.Vector3();
+      r.muzzle.getWorldPosition(o);
+      const d = new THREE.Vector3(0, 0, -1).transformDirection(r.muzzle.matrixWorld);
+      return { o, d, len: r.laserLen };
+    };
+    const l1 = line(1);
+    const l0 = line(0);
+    ok(l1.o.distanceTo(l0.o) < 1e-9 && l1.d.distanceTo(l0.d) < 1e-9 && l1.len === l0.len, 'laser: its start, direction and length do not depend on how near the camera is');
+
+    // in a real duel: the line you see is the line it fires, and it is thin and dim where it points at the camera
+    const s2 = fresh();
+    const l2 = spawn(s2.S, 'longshot', lane.x0, lane.z, -Math.PI / 2, '_t');
+    place(lane.x0 + 14, lane.z, Math.PI / 2);
+    wake(l2);
+    let peak = 0;
+    let atLock = null;
+    run(8, () => {
+      if (l2.state === 'charge') peak = Math.max(peak, l2.robot.laserPeak);
+      if (l2.locked && !atLock) {
+        l2.robot.group.updateMatrixWorld(true);
+        const o = new THREE.Vector3();
+        l2.robot.muzzle.getWorldPosition(o);
+        const d = new THREE.Vector3(0, 0, -1).transformDirection(l2.robot.muzzle.matrixWorld);
+        // the shot: from the rifle pivot, horizontally along the yaw, rising by tan(aimPitch) per metre (fireSnipe)
+        const pv = l2.robot.pivot;
+        const P = new THREE.Vector3(l2.x - Math.sin(l2.yaw) * pv.fwd, pv.up, l2.z - Math.cos(l2.yaw) * pv.fwd);
+        const sd = new THREE.Vector3(-Math.sin(l2.yaw), Math.tan(l2.aimPitch), -Math.cos(l2.yaw)).normalize();
+        const off = new THREE.Vector3().subVectors(o, P);
+        const perp = off.clone().addScaledVector(sd, -off.dot(sd)).length();
+        atLock = { perp, angle: Math.acos(Math.min(1, d.dot(sd))), near: l2.robot.laserNear, w: l2.robot.laserWidth, len: l2.robot.laserLen };
+      }
+      return !(l2.state === 'recover');
+    });
+    ok(atLock && atLock.perp < 0.03 && atLock.angle < 0.002, `laser: the drawn line is the shot line (${atLock ? (atLock.perp * 1000).toFixed(1) : '-'} mm off it, ${atLock ? (atLock.angle * 1000).toFixed(2) : '-'} mrad apart)`);
+    ok(atLock && atLock.near < 0.25 && atLock.w <= 0.06, `laser: aimed at the camera it is thin and dim (near ${atLock ? atLock.near.toFixed(2) : '-'}, glow ${atLock ? atLock.w.toFixed(3) : '-'} m wide)`);
+    ok(peak <= 2.3, `laser: no frame of a real charge goes over HDR 2.3 (${peak.toFixed(2)})`);
+    // and it is full strength when it points somewhere else: Naebun well to one side of the line
+    const s3 = fresh();
+    const l3 = spawn(s3.S, 'longshot', lane.x0, lane.z, -Math.PI / 2, '_t');
+    place(lane.x0 + 14, lane.z, Math.PI / 2);
+    wake(l3);
+    run(8, () => { if (l3.locked) { s3.S.player.z += 6; return false; } return true; });
+    run(0.1);
+    ok(l3.state === 'charge' && l3.robot.laserOn && l3.robot.laserNear > 0.99, `laser: full strength when Naebun is 6 m off the line (near ${l3.robot.laserNear.toFixed(2)})`);
+  }
 
   // it cannot swing faster than charge.turn
   {
@@ -823,6 +894,26 @@ function findBlock(W, wantFull) {
   const r = M.makeRobot('longshot');
   ok(r.pivot && r.pivot.up === 1.5 && r.pivot.fwd === 0.3 && typeof r.setLaser === 'function', 'Longshot: pivot and laser');
   ok(typeof M.makeRobot('nurse').setBeam === 'function' && typeof M.makeRobot('shaken').setBlast === 'function', 'Nurse: beam; Shaken: blast ring');
+  // the Mimic's lit parts (window, sign, display) are dim while it is dormant, so it does not stand out in a dark level, and come
+  // up as it unfolds
+  {
+    const mm = M.makeRobot('mimic');
+    const lit = (pose, k) => {
+      mm.setPose(pose, 0, k);
+      const out = [];
+      mm.group.traverseVisible((o) => { if (o.isMesh && o.material.isMeshBasicMaterial && o.material.side === THREE.DoubleSide) out.push(Math.max(o.material.color.r, o.material.color.g, o.material.color.b)); });
+      return out;
+    };
+    const dorm = lit('dormant', 0);
+    const peakOf = (a) => Math.max(...a);
+    ok(dorm.length === 3 && peakOf(dorm) <= 0.7, `Mimic dormant: window, sign and display are all dim (peak channel ${peakOf(dorm).toFixed(2)}, the display was 1.6)`);
+    const w0 = dorm[1];
+    const ramp = [0, 0.1, 0.2, 0.3, 0.4, 0.5].map((k) => lit('unfold', k)[1]);
+    ok(ramp.every((v, i) => i === 0 || v >= ramp[i - 1] - 1e-9) && ramp[5] > w0 * 2, `Mimic unfolding: the window comes up (${ramp.map((v) => v.toFixed(2)).join(', ')})`);
+    ok(lit('unfold', 0).every((v, i) => Math.abs(v - dorm[i]) < 1e-9), 'Mimic: unfold k 0 is the dormant light exactly (no pop when it wakes)');
+    ok(peakOf(lit('idle', 0)) > peakOf(dorm) * 2, 'Mimic awake: lit properly');
+    for (const [pose, k] of [['dead', 0.5], ['hurt', 0.2], ['walk', 0.5]]) ok(lit(pose, k).every(Number.isFinite), `Mimic ${pose}: lights are finite`);
+  }
   for (const f of ['rattle', 'hiss', 'fizz', 'snipeCharge', 'lock', 'snipe', 'reviveStart', 'reviveDone', 'unfold']) {
     ok(typeof audio[f] === 'function', `audio.${f} exists`);
     audio[f]();
