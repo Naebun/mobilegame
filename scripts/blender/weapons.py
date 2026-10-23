@@ -696,10 +696,10 @@ def vinyl_torch():
   T.add(zrev([(0.0095, 0.0), (0.0095, 0.008, 0.001), (0.0075, 0.009), (0.0075, 0.0145)], 10), CHROME, 'chrome', at=(cx, cy, 0.0825))
   T.add(ring_solid([(0.0068, 0.0), (0.0098, 0.0), (0.0098, 0.007), (0.0068, 0.007)], 10), BRASS, 'brass', at=(cx, cy, 0.0905))
   neck = [(cx, cy, 0.095), (cx, -0.108, 0.135), (-0.1355, -0.092, 0.175), (-0.133, -0.05, 0.2), (-0.127, 0.02, 0.212),
-          (-0.12, 0.1, 0.208), (-0.117, 0.18, 0.195), (-0.115, 0.25, 0.18), (-0.115, 0.276, 0.18)]
+          (-0.12, 0.1, 0.21), (-0.117, 0.18, 0.206), (-0.115, 0.25, 0.194), (-0.115, 0.276, 0.194)]
   T.add(coil_neck(neck), 0x9a9ea4, 'metal')
   # the lamp head: chrome bullet with a rubber and a brass ring, a chrome bezel, the lens recessed in it
-  hx, hz, dy = -0.115, 0.18, 0.026
+  hx, hz, dy = -0.115, 0.194, 0.026
   at = (hx, dy, hz)  # the head is drawn about y = 0 + 0.24 and moved forward as a whole
   T.add(ring_solid([(0.0072, 0.244), (0.0125, 0.244), (0.0125, 0.252), (0.0072, 0.252)], 10), BRASS, 'brass', at=at, rot=AY)
   T.add(rev([(0, 0.2465), (0.0175, 0.249, 0.004), (0.02, 0.258), (0.02, 0.2975)], 14), CHROME, 'chrome', at=at, rot=AY)
