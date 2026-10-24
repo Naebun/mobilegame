@@ -1,7 +1,7 @@
 # Status and handover
 
 This file is for a fresh chat taking over. Read it first, then `CLAUDE.md` (binding project rules), then `ROADMAP.md` and
-`docs/HANDOVER.md`. Snapshot taken 23 October 2026, about 22:00 UTC. It goes stale fast: check `git log` and
+`docs/HANDOVER.md`. Snapshot taken 24 October 2026, just after PR #9 merged. It goes stale fast: check `git log` and
 `git worktree list` before trusting the "in progress" section.
 
 ## The project in one paragraph
@@ -15,27 +15,17 @@ whose pronouns have not been stated, the owner included.
 
 | Where | What |
 | --- | --- |
-| `main` (`9366288`, PR #8, squash) | Everything up to the Blender weapons, torch, prepared enemies and arsenal. This is what is deployed to the owner's phone |
-| Branch `playtest-textures-placement` (in `/home/user/mobilegame`, pushed) | The **integration branch**. Forked from `main`. Holds my own small commits (below) and all four agents' merged work. Not merged to `main` |
-| Four agent worktrees under `/home/user/mobilegame/.claude/worktrees/` | Now fully merged into the integration branch, so nothing is lost if they go. The branches `worktree-agent-<id>` are local only |
+| `main` (`1a62736`, PR #9, squash) | Everything: the Blender weapons, props and baked textures, the torch, placed enemies and weapons, Hard and Extra Hard, the playtest kit, the darker Vaults. This is what is deployed |
+| Branch `playtest-textures-placement` | Merged in #9. Safe to delete. The four agent worktrees under `.claude/worktrees/` (branches `worktree-agent-<id>`, local only) are also merged and no longer needed |
 
-My own commits on the integration branch (all on top of `main`, all pushed):
+Earlier merges: PR #7 (`98a08cd`, level 2, landscape) and PR #8 (`9366288`, control modes, torch, Blender weapons and props, prepared
+enemies and arsenal).
 
-- Test scripts read `PORT` from the environment, so several can run at once.
-- `docs/level-3.md`, the level 3 design. Planning only.
-- The Vaults are darker outside the torch cone (`src/levels/vaults.js`: lower ambient, baked tint and fill, softer cone edge;
-  `src/game3d.js`: thinner, faster-fading beam haze). Checked in software screenshots only.
-- Mouse wheel swap counts one event per 180 ms quiet gap (`src/engine.js`), for trackpad inertia. Not proved in a browser.
-- `ROADMAP.md` says level 2 is merged; this `STATUS.md`.
+## What the last merge (#9) brought: all four agents' work
 
-Note: the agent branches forked before some of those commits, so they do not contain the darker Vaults, the wheel fix or the
-level 3 doc. Merging them into the integration branch brings everything together.
-
-## Integration state: all four agents' work is merged
-
-The four agents (playtest kit, textures, placement, Hard and Extra Hard) finished and are merged into the integration branch
-`playtest-textures-placement`, in that order, with conflicts resolved by hand (mostly harness scripts, `smoke.mjs`,
-`sim3d.mjs` and the docs). Their worktrees under `.claude/worktrees/` are no longer needed once this branch is on `main`.
+The four agents (playtest kit, textures, placement, Hard and Extra Hard) finished and were merged into
+`playtest-textures-placement` in that order, with conflicts resolved by hand (mostly harness scripts, `smoke.mjs`, `sim3d.mjs`
+and the docs); that branch then went to `main` as #9.
 What each brought:
 
 | Piece | What it added |
@@ -62,7 +52,7 @@ Bot win rates on the merged maps, 30 runs, sloppy / casual / good (a sample, abo
 
 The difficulty table was tuned on the maps before placement, so it may want another pass: the Longshot's shot is 67 on Extra Hard.
 
-Still to do on this branch: the owner has not yet asked for it to go to `main`.
+The branch has been merged to `main` (#9). Next is a real-phone playtest.
 
 ## Agreements with the owner
 
@@ -98,11 +88,9 @@ Still to do on this branch: the owner has not yet asked for it to go to `main`.
 
 ## Waiting on the owner
 
-- Whether to merge the integration branch to `main` (it holds the textures, the placement and Hard and Extra Hard).
 
 - A go-ahead to build level 3, and whether in one pass or area by area.
 - A real-phone playtest of level 2: is the dark too dark after the darkening, does the torch read, frame rate, touch feel.
-- When to merge the integration branch to `main`.
 
 ## Known issues and unverified
 
@@ -151,9 +139,11 @@ Pitfalls found the hard way:
 - Old session detail, if the file still exists:
   `/root/.claude/projects/-home-user-mobilegame/ed3ea337-f0c8-56e8-b8c9-fbd460f4be73.jsonl`.
 
-## Suggested next steps (superseded items are done: the agents are integrated)
+## Suggested next steps
 
-1. Check each worktree (`git -C <path> status`, `git -C <path> log --oneline -5`), finish or re-brief whatever is incomplete.
-2. Integrate as described above, run everything, push the integration branch, report numbers to the owner.
-3. Ask whether to merge to `main` and whether level 3 is a go.
-4. Refresh this file at the end of any substantial piece of work, and update `ROADMAP.md` and `docs/HANDOVER.md` alongside it.
+1. A real-phone playtest of the merged build (iPhone 16 Pro, MacBook Air M4): use `docs/playtest.md` and the `?perf` readout, and
+   send back frame rate, whether the dark is too dark, the torch fitting, touch reach, and how Hard and Extra Hard feel.
+2. Decide the weapon-swap question (forward-only cycle with seven guns in level 2): a swap-back, a weapon wheel, or fewer guns.
+3. Re-tune the difficulty multipliers after the playtest (they were tuned before placement).
+4. Level 3 only on the owner's explicit go-ahead: `docs/level-3.md` is the design.
+5. Refresh this file at the end of any substantial piece of work, and update `ROADMAP.md` and `docs/HANDOVER.md` alongside it.
