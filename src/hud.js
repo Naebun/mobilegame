@@ -25,6 +25,7 @@ let cache = null;
 let cacheW = -1;
 let cacheH = -1;
 let cacheB = -1;
+let cacheT = -1;
 let cacheL = -1;
 let cacheR = -1;
 
@@ -39,8 +40,9 @@ export const sideSafe = (view) => ({ left: num(view.safe && view.safe.left), rig
 
 export function layout(view) {
   const safeBottom = num(view.safe && view.safe.bottom);
+  const safeTop = num(view.safe && view.safe.top);
   const { left: sl, right: sr } = sideSafe(view);
-  if (cache && cacheW === view.w && cacheH === view.h && cacheB === safeBottom && cacheL === sl && cacheR === sr) return cache;
+  if (cache && cacheW === view.w && cacheH === view.h && cacheB === safeBottom && cacheT === safeTop && cacheL === sl && cacheR === sr) return cache;
   let moveBox;
   let lookBox;
   let swapBtn;
@@ -81,14 +83,60 @@ export function layout(view) {
     reloadHit: inflate(reloadBtn, 10),
     swapHit: inflate(swapBtn, 10),
     altHit: inflate(altBtn, 10),
+    strip: stripFor(view, safeTop, sl, sr),
   };
   cacheW = view.w;
   cacheH = view.h;
   cacheB = safeBottom;
+  cacheT = safeTop;
   cacheL = sl;
   cacheR = sr;
   return cache;
 }
+
+// The weapon strip: one cell per weapon on show, tap one to select that weapon. Landscape keeps it in the top right beside the
+// health bar; portrait gives it a full-width row of its own under the health and score lines, because eight cells of a thumb's
+// width do not fit beside the health bar on a 360 px phone. strip(n) gives the n cells (cell: the drawn rectangle; hit: the
+// tap rectangle, a taller slice under and above it, as wide as the cell's share of the row so neighbours never overlap and
+// there is no dead gap between them) and `bottom`, where the row ends. Pure in (view, n): drawing and touch testing share it.
+export const STRIP_MAX = 8;
+const STRIP_GAP = 3;
+const STRIP_CELL = 38; // the drawn width the row aims for (a hit pitch of 41 px; less on a narrow screen, where it shares the row)
+const STRIP_H = 30;
+const STRIP_HIT_H = 44;
+function stripFor(view, safeTop, sl, sr) {
+  const land = isLandscape(view);
+  const right = view.w - 16 - sr;
+  const y = land ? safeTop + 3 : safeTop + 52;
+  // landscape: clear of the health bar and its number (bar width as in drawHealth), which sit on the same row
+  const left = land ? sl + 16 + 24 + clamp(view.w * 0.29, 88, 124) + 7 + 34 + 10 : sl + 16;
+  const memo = [];
+  return (count) => {
+    const n = clamp(Math.floor(num(count)), 0, STRIP_MAX);
+    if (memo[n]) return memo[n];
+    const pitch = Math.min(STRIP_CELL + STRIP_GAP, (right - left + STRIP_GAP) / Math.max(1, n));
+    const cw = pitch - STRIP_GAP;
+    const hitY = Math.max(safeTop, y - 4); // not up into the notch or status bar
+    const cells = [];
+    for (let i = 0; i < n; i++) {
+      const x = right - (n - i) * pitch + STRIP_GAP;
+      cells.push({
+        x, y, w: cw, h: STRIP_H,
+        hit: { x: x - STRIP_GAP / 2, y: hitY, w: pitch, h: Math.min(STRIP_HIT_H, view.h - hitY) },
+      });
+    }
+    memo[n] = { cells, bottom: y + STRIP_H, row: { x: right - n * pitch + STRIP_GAP, y, w: n * pitch - STRIP_GAP, h: STRIP_H } };
+    return memo[n];
+  };
+}
+
+// Which strip cell, if any, a touch at (x, y) is on: an index into the n cells, or -1.
+export function stripCellAt(view, n, x, y) {
+  const cells = layout(view).strip(n).cells;
+  for (let i = 0; i < cells.length; i++) if (inRectXY(cells[i].hit, x, y)) return i;
+  return -1;
+}
+const inRectXY = (r, x, y) => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
 
 // ---- shared text helpers ----
 
@@ -621,18 +669,17 @@ function drawBuffs(ctx, L, buffs) {
   }
 }
 
-function drawWeapons(ctx, view, ws, top) {
-  const n = Math.min(ws.length, 8);
+// The weapon strip (cells from layout(view).strip). On PC each cell carries its key: the slot number in the weapon order, which
+// is fixed (a hidden weapon leaves a gap in the numbers rather than renumbering the rest), so the key always matches the icon.
+function drawWeapons(ctx, view, ws, pc) {
+  const n = Math.min(ws.length, STRIP_MAX);
   if (!n) return;
-  const gap = n > 6 ? 3 : 4;
-  const cw = Math.min(34, (Math.max(60, view.w * (n > 6 ? 0.47 : 0.4)) - gap * (n - 1)) / n);
-  const ch = 26;
-  let x = view.w - 16 - sideSafe(view).right - n * cw - (n - 1) * gap;
-  const y = top + 3;
+  const cells = layout(view).strip(n).cells;
   for (let i = 0; i < n; i++) {
     const w = ws[i] || {};
     const owned = !!w.owned;
     const active = !!w.active;
+    const { x, y, w: cw, h: ch } = cells[i];
     rrect(ctx, x, y, cw, ch, 7);
     ctx.fillStyle = active ? 'rgba(34,211,238,0.28)' : owned ? 'rgba(4,2,8,0.55)' : 'rgba(4,2,8,0.3)';
     ctx.fill();
@@ -640,9 +687,11 @@ function drawWeapons(ctx, view, ws, top) {
     ctx.strokeStyle = active ? CYAN : owned ? 'rgba(255,255,255,0.4)' : 'rgba(255,255,255,0.14)';
     ctx.stroke();
     ctx.globalAlpha = owned ? 1 : 0.28;
-    weaponIcon(ctx, w.id, x + cw / 2, y + ch / 2, Math.min(22, cw - (n > 6 ? 5 : 8)), owned ? (WEAPON_COLOURS[w.id] || '#e5e0f5') : '#c9c2e0');
+    weaponIcon(ctx, w.id, x + cw / 2, y + ch / 2 + (pc ? 2 : 0), Math.min(24, cw - 6), owned ? (WEAPON_COLOURS[w.id] || '#e5e0f5') : '#c9c2e0');
     ctx.globalAlpha = 1;
-    x += cw + gap;
+    if (pc && Number.isFinite(w.slot) && w.slot >= 1 && w.slot <= 9) {
+      outlined(ctx, String(Math.floor(w.slot)), x + 6.5, y + 7, 9.5, owned ? '#ffffff' : 'rgba(255,255,255,0.35)', 'center', 800, 'rgba(4,2,8,0.85)');
+    }
   }
 }
 
@@ -919,6 +968,7 @@ export function drawPlayHud(ctx, view, h) {
   const sf = view.safe || ZERO_SAFE;
   const top = num(sf.top);
   const L = layout(view);
+  const portrait = !isLandscape(view);
   const cx = view.w / 2;
   const cy = view.h / 2;
   const w = h.weapon || null;
@@ -939,14 +989,14 @@ export function drawPlayHud(ctx, view, h) {
   drawHealth(ctx, view, h, top, t);
   outlined(ctx, `SCORE ${Math.floor(clamp(num(h.score), 0, 1e12))}   ${fmtTime(h.timeSec)}${h.difficulty ? `   ${str(h.difficulty).slice(0, 12)}` : ''}`, 18 + sideSafe(view).left, top + 40, 11, 'rgba(255,255,255,0.8)', 'left', 700); // the mode rides on the score line when it is not normal
 
-  // top right: weapon row, then the debug badge
-  if (furniture) drawWeapons(ctx, view, Array.isArray(h.weapons) ? h.weapons : EMPTY, top);
+  // the weapon strip: top right in landscape, a row of its own in portrait; then the debug badge
+  if (furniture) drawWeapons(ctx, view, Array.isArray(h.weapons) ? h.weapons : EMPTY, !!h.compact);
   if (h.debugMode) drawDebugBadge(ctx, view, top + 40);
-  if (furniture && h.upgrades) drawUpgrades(ctx, view, h.upgrades, top + (h.debugMode ? 58 : 36));
+  if (furniture && h.upgrades) drawUpgrades(ctx, view, h.upgrades, portrait ? L.strip(1).bottom + 8 : top + (h.debugMode ? 58 : 40));
 
   // top centre: area, objective, status
   const maxW = view.w - 32 - 2 * Math.max(sideSafe(view).left, sideSafe(view).right);
-  let y = top + 60;
+  let y = portrait ? L.strip(1).bottom + 20 : top + 60; // portrait: below the strip's row
   const area = str(h.areaName);
   if (area) {
     const f = fit(ctx, area, maxW, 11, 800, 8);

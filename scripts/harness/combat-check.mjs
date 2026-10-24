@@ -262,6 +262,364 @@ function setEnemy(S, e, x, z, yaw) { e.x = x; e.z = z; e.yaw = yaw; e.kx = e.kz 
   game.testHook('setting', { input: null });
 }
 
+// ---- choosing a weapon: a tap on the strip, the number keys, the wheel (both ways), Q (the last weapon), SWAP (next) ----
+{
+  const { WEAPON_ORDER } = await import('../../src/data.js');
+  const { wheelGate, WHEEL_GAP_MS } = await import('../../src/engine.js');
+  const { S } = fresh();
+  const SWAP_T = 0.25; // the swap time the game has always charged
+  const quiet = () => { for (const e of S.enemies) { e.dead = true; e.state = 'dead'; e.robot.group.visible = false; } };
+  // a new run (a new player object, so take it afterwards), no robots, the torch fitted
+  const newRun = () => {
+    game.testHook('torch', { attached: true });
+    game.testHook('play');
+    quiet();
+    run(S, 0.4);
+    return S.player;
+  };
+  const keyTap = (key) => { const a = input(); a.keys.add(key); run(S, 3 * DT, a); run(S, 3 * DT); }; // pressed, then let go
+  const tapAt = (x, y) => { // a finger down at (x, y), as the engine delivers it: a press event and a live touch
+    const a = input();
+    a.pressed.push({ x, y });
+    a.touches.set(1, { id: 1, x, y, sx: x, sy: y, role: null });
+    run(S, DT, a);
+    return a;
+  };
+  const centre = (r) => [r.x + r.w / 2, r.y + r.h / 2];
+  const lay = () => game.testHook('layout');
+  const tapButton = (name) => { const b = input(); const [x, y] = centre(lay()[name]); b.pressed.push({ x, y }); run(S, DT, b); };
+  const wheelOnce = (dir) => { game.testHook('mouse', { wheel: dir }); run(S, DT); game.testHook('mouse', null); run(S, 0.3); };
+  const stripIds = () => game.testHook('hud').weapons.map((w) => w.id);
+  const cellsNow = () => lay().strip(stripIds().length).cells;
+  game.testHook('setting', { input: 'pc' });
+
+  let p = newRun();
+  ok(p.weapon === 'pistol' && p.owned.pistol && !p.owned.shotgun, 'a new run starts with the pistol only');
+  ok(p.lastWeapon === undefined, 'and with no last weapon');
+
+  // not owned: nothing happens
+  keyTap('2');
+  ok(p.weapon === 'pistol', 'a number key for a weapon not owned does nothing');
+  keyTap('8');
+  ok(p.weapon === 'pistol', 'and so does a key for a prepared weapon not owned');
+  keyTap('9');
+  ok(p.weapon === 'pistol', 'and a key past the last slot');
+  ok(p.lastWeapon === undefined, 'a refused select leaves no last weapon behind');
+
+  game.testHook('giveWeapons');
+  ok(WEAPON_ORDER.length === 8 && WEAPON_ORDER[0] === 'pistol' && WEAPON_ORDER[3] === 'launcher', 'the slots are WEAPON_ORDER (1 pistol, 2 shotgun, 3 SMG, 4 launcher, 5 vinyl, 6 beam, 7 grenade, 8 airhorn)');
+  // direct select by slot, from anywhere to anywhere, in one press
+  keyTap('4');
+  ok(p.weapon === 'launcher', 'key 4 selects the launcher in one press, skipping the weapons between');
+  run(S, 0.4);
+  keyTap('2');
+  ok(p.weapon === 'shotgun', 'key 2 goes back to the shotgun in one press (no cycling forwards round the lot)');
+  run(S, 0.4);
+  keyTap('5');
+  ok(p.weapon === 'vinyl', 'key 5 selects the vinyl disc');
+  run(S, 0.4);
+  keyTap('8');
+  ok(p.weapon === 'vinyl', 'key 8 (airhorn) still does nothing while the airhorn is not owned');
+  game.testHook('give', ['beam', 'grenade', 'airhorn']);
+  for (const [key, id] of [['6', 'beam'], ['7', 'grenade'], ['8', 'airhorn'], ['1', 'pistol'], ['3', 'smg']]) {
+    run(S, 0.3);
+    keyTap(key);
+    ok(p.weapon === id, `key ${key} selects the ${id}: the beam, the grenade and the airhorn are chosen like any other weapon`);
+  }
+
+  // the key matches the icon: the strip carries each weapon's slot
+  {
+    const h = game.testHook('hud');
+    ok(h.weapons.every((w) => w.slot === WEAPON_ORDER.indexOf(w.id) + 1), 'every cell on the strip carries its slot number (the key that picks it)');
+    ok(h.weapons.length === 8 && h.weapons.map((w) => w.id).join() === WEAPON_ORDER.join(), 'with all eight owned the strip shows eight cells in WEAPON_ORDER');
+  }
+
+  // holding a key is one selection, not a repeat
+  {
+    run(S, 0.3);
+    const hold = input();
+    hold.keys.add('1');
+    run(S, 2 * DT, hold);
+    ok(p.weapon === 'pistol', 'key 1 selects the pistol');
+    p.weapon = 'smg'; // as if something else changed it while the key is still down
+    run(S, 20 * DT, hold);
+    ok(p.weapon === 'smg', 'a key held down selects once (a new press is needed)');
+  }
+
+  // the weapon already in hand: nothing happens (no new swap time, no cancelled reload, no last weapon)
+  {
+    p = newRun();
+    game.testHook('giveWeapons');
+    p.weapon = 'smg';
+    p.switchT = 0;
+    p.ammo.smg = 10;
+    const a = input();
+    a.keys.add('r');
+    run(S, DT, a);
+    run(S, 2 * DT);
+    ok(p.reloadT > 0, 'the SMG is reloading');
+    const r0 = p.reloadT;
+    p.lastWeapon = 'shotgun';
+    keyTap('3');
+    ok(p.weapon === 'smg' && p.switchT === 0 && p.reloadT > 0 && p.reloadT < r0, 'selecting the weapon already in hand does nothing (no swap time, the reload carries on)');
+    ok(p.lastWeapon === 'shotgun', 'and it does not become the last weapon');
+    tapAt(...centre(cellsNow()[2].hit));
+    ok(p.weapon === 'smg' && p.switchT === 0 && p.reloadT > 0, 'nor does a tap on its own cell');
+  }
+
+  // a reload in progress: a direct select does what a cycle swap does, it drops the reload
+  {
+    p = newRun();
+    game.testHook('giveWeapons');
+    const reload = () => { p.weapon = 'smg'; p.switchT = 0; p.ammo.smg = 1; p.reloadT = 0; const a = input(); a.keys.add('r'); run(S, DT, a); run(S, 2 * DT); };
+    reload();
+    ok(p.reloadT > 0, 'reloading');
+    keyTap('2');
+    ok(p.weapon === 'shotgun' && p.reloadT === 0, 'a direct select drops the reload in progress');
+    reload();
+    tapButton('swapBtn');
+    ok(p.weapon !== 'smg' && p.reloadT === 0, 'and the SWAP button drops it too (as it always did)');
+  }
+
+  // the swap time: a chosen weapon cannot fire until the usual swap time has gone
+  {
+    p = newRun();
+    game.testHook('giveWeapons');
+    p.weapon = 'pistol';
+    const shots0 = S.shots;
+    const both = input();
+    both.keys.add(' ');
+    both.keys.add('3');
+    run(S, DT, both);
+    ok(p.weapon === 'smg', 'select and fire in the same frame: the weapon changes');
+    ok(near(p.switchT, SWAP_T, 0.001), `a swap takes the usual ${SWAP_T} s (switchT ${p.switchT.toFixed(3)})`);
+    ok(S.shots === shots0, 'and the gun does not fire in that frame');
+    const held = input();
+    held.keys.add(' ');
+    let firedAt = null;
+    run(S, 0.8, held, (t) => { if (S.shots > shots0) { firedAt = t; return false; } return true; });
+    ok(firedAt !== null && firedAt >= SWAP_T - 2 * DT && firedAt < SWAP_T + 0.15, `the new gun first fires about ${SWAP_T} s after the select (${firedAt === null ? 'never' : firedAt.toFixed(2)} s)`);
+    // every route charges the same swap time
+    for (const route of ['key', 'tap', 'q', 'wheel', 'swap']) {
+      p.weapon = 'pistol'; p.lastWeapon = 'shotgun'; p.switchT = 0; p.reloadT = 0;
+      run(S, 0.4);
+      if (route === 'key') keyTap('2');
+      else if (route === 'tap') tapAt(...centre(cellsNow()[1].hit));
+      else if (route === 'q') keyTap('q');
+      else if (route === 'wheel') { game.testHook('mouse', { wheel: 1 }); run(S, DT); game.testHook('mouse', null); } else tapButton('swapBtn');
+      ok(p.weapon === 'shotgun', `${route}: pistol to shotgun`);
+      // measured a few frames after the change, so allow for them
+      ok(p.switchT > 0 && p.switchT <= SWAP_T, `${route}: the swap costs switchT ${p.switchT.toFixed(3)} (at most ${SWAP_T})`);
+      run(S, 0.4);
+    }
+  }
+
+  // Q: quick-swap to the last weapon, a toggle between two
+  {
+    p = newRun();
+    ok(p.lastWeapon === undefined, 'a new run has no last weapon');
+    game.testHook('giveWeapons');
+    keyTap('q');
+    ok(p.weapon === 'shotgun', 'with no last weapon yet, Q cycles forward as before');
+    run(S, 0.4);
+    keyTap('q');
+    ok(p.weapon === 'pistol', 'and now Q goes back to the pistol (the last one used)');
+    run(S, 0.4);
+    keyTap('q');
+    ok(p.weapon === 'shotgun', 'Q again is a toggle: shotgun');
+    run(S, 0.4);
+    keyTap('4');
+    run(S, 0.4);
+    keyTap('q');
+    ok(p.weapon === 'shotgun', 'after a jump to the launcher (key 4), Q goes back to the shotgun, not the pistol');
+    run(S, 0.4);
+    keyTap('q');
+    ok(p.weapon === 'launcher', 'and flips to the launcher again');
+    // a weapon picked up counts as a change: Q goes back to what was in hand before
+    run(S, 0.4);
+    keyTap('3');
+    run(S, 0.4);
+    game.testHook('give', ['grenade']);
+    run(S, 0.4);
+    keyTap('7');
+    run(S, 0.4);
+    keyTap('q');
+    ok(p.weapon === 'smg', 'Q after a jump to the grenade goes back to the SMG that was in hand');
+    // the tap and the wheel set the last weapon too
+    run(S, 0.4);
+    tapAt(...centre(cellsNow()[3].hit)); // launcher
+    run(S, 0.4);
+    keyTap('q');
+    ok(p.weapon === 'smg', 'a tap on the strip counts as the last weapon too');
+    run(S, 0.4);
+    wheelOnce(1);
+    const afterWheel = p.weapon;
+    keyTap('q');
+    ok(afterWheel !== 'smg' && p.weapon === 'smg', 'and so does a wheel step');
+    // Q during a hands-full state does nothing
+    run(S, 0.4);
+    game.testHook('drink', 'dram');
+    keyTap('q');
+    ok(p.weapon === 'smg', 'Q does nothing while drinking');
+    run(S, 6);
+    // the last weapon only matters if it is still owned
+    p.lastWeapon = 'airhorn';
+    keyTap('q');
+    ok(p.weapon !== 'airhorn' && p.owned[p.weapon], 'a last weapon that is not owned is ignored (Q cycles instead)');
+  }
+
+  // the wheel: down is the next owned weapon, up is the previous, both wrap
+  {
+    p = newRun();
+    game.testHook('giveWeapons');
+    game.testHook('give', ['grenade']); // owned: pistol shotgun smg launcher vinyl grenade (the beam and airhorn are not)
+    game.testHook('setting', { input: 'pc' });
+    wheelOnce(1);
+    ok(p.weapon === 'shotgun', 'wheel down: the next weapon (pistol to shotgun)');
+    wheelOnce(-1);
+    ok(p.weapon === 'pistol', 'wheel up: the previous weapon (back to the pistol)');
+    wheelOnce(-1);
+    ok(p.weapon === 'grenade', 'wheel up from the first wraps to the last owned weapon, skipping the beam and airhorn it does not own');
+    wheelOnce(1);
+    ok(p.weapon === 'pistol', 'wheel down from the last wraps to the first');
+    wheelOnce(2);
+    ok(p.weapon === 'shotgun', 'a bigger delta is still one step');
+    wheelOnce(-3);
+    ok(p.weapon === 'pistol', 'and one step the other way');
+    for (let i = 0; i < 5; i++) wheelOnce(1);
+    ok(p.weapon === 'grenade', 'five steps down: shotgun, smg, launcher, vinyl, grenade');
+    wheelOnce(0);
+    ok(p.weapon === 'grenade', 'a zero wheel does nothing');
+    game.testHook('setting', { input: 'mobile' });
+    wheelOnce(1);
+    ok(p.weapon === 'grenade', 'in mobile mode the wheel does nothing');
+    game.testHook('setting', { input: 'pc' });
+  }
+
+  // the engine's wheel gate: a quiet gap of 180 ms, the direction carried, a flick is one step
+  {
+    ok(WHEEL_GAP_MS === 180, 'the quiet gap is still 180 ms');
+    const g = wheelGate();
+    ok(g(1000, 100) === 1 && g(1000 + WHEEL_GAP_MS + 1, -3) === -1, 'down is +1 and up is -1');
+    const g2 = wheelGate();
+    const flick = [100, 60, 30, 12, 5, 2, 1].map((d, i) => g2(5000 + i * 40, d));
+    ok(flick[0] === 1 && flick.slice(1).every((x) => x === 0), 'a trackpad flick (events every 40 ms as it coasts) is one step');
+    const g3 = wheelGate();
+    ok(g3(0, 1) === 1 && g3(100, 1) === 0 && g3(200, 1) === 0 && g3(300, 1) === 0, 'events keep restarting the gap, so a long coast never counts twice');
+    ok(g3(300 + 181, -1) === -1, 'a new flick after a quiet gap, the other way, is a step the other way');
+    const g4 = wheelGate();
+    ok(g4(10, 0) === 0 && g4(500, 1) === 1, 'a zero deltaY (a sideways swipe) is not a step');
+    ok(wheelGate()(10, 5, false) === 0, 'a wheel with the pointer not locked is not a step');
+  }
+
+  // a tap on the strip: selects an owned weapon, never aims or fires; a thumb in the aim box never selects
+  {
+    p = newRun();
+    game.testHook('setting', { input: 'mobile' });
+    game.testHook('giveWeapons');
+    run(S, 0.4);
+    ok(stripIds().join() === 'pistol,shotgun,smg,launcher,vinyl', 'the strip shows the five ordinary weapons (the prepared three only once owned)');
+    const cells = cellsNow();
+    ok(cells.length === 5, 'five cells');
+    for (const [i, id] of [[3, 'launcher'], [1, 'shotgun'], [4, 'vinyl'], [0, 'pistol'], [2, 'smg']]) {
+      run(S, 0.3);
+      tapAt(...centre(cells[i].hit));
+      ok(p.weapon === id, `a tap on cell ${i + 1} selects the ${id}`);
+      run(S, DT);
+    }
+    // the tap area is taller than the drawn cell
+    run(S, 0.3);
+    tapAt(cells[1].x + cells[1].w / 2, cells[1].y + cells[1].h + 6);
+    ok(p.weapon === 'shotgun', 'a tap a little below the drawn cell still counts (the tap area is taller)');
+    // a prepared weapon shows once owned: the sixth cell is the grenade
+    ok(stripIds().length === 5, 'the grenade is not on the strip until it is owned');
+    game.testHook('give', ['grenade']);
+    run(S, 0.4);
+    ok(stripIds().join() === 'pistol,shotgun,smg,launcher,vinyl,grenade', 'the grenade joins the strip once owned');
+    run(S, 0.3);
+    tapAt(...centre(cellsNow()[5].hit));
+    ok(p.weapon === 'grenade', 'and its cell selects it');
+    // a tap on a cell never aims or fires: the touch has the button role, dragging it does not turn the view
+    run(S, 0.4);
+    p.weapon = 'smg';
+    const yaw0 = p.yaw;
+    const pitch0 = p.pitch;
+    const shots0 = S.shots;
+    const a = tapAt(...centre(cellsNow()[2].hit)); // (the strip has six cells now: its geometry moved)
+    const t = a.touches.get(1);
+    ok(t.role === 'btn', 'a touch that starts on a strip cell is a button touch');
+    for (let i = 0; i < 40; i++) { t.x += 4; t.y += 3; run(S, DT, a); }
+    ok(p.yaw === yaw0 && p.pitch === pitch0, 'dragging from a strip cell does not aim');
+    ok(S.shots === shots0, 'and it does not fire');
+    // a cell whose weapon is not owned swallows the touch and selects nothing
+    run(S, 0.4);
+    p.owned.vinyl = false;
+    p.weapon = 'smg';
+    const b = tapAt(...centre(cellsNow()[4].hit));
+    ok(b.touches.get(1).role === 'btn' && p.weapon === 'smg', 'a cell for a weapon not owned does nothing, and the touch is still a button touch');
+    p.owned.vinyl = true;
+    // a thumb in the aim box fires and aims but never selects
+    run(S, 0.4);
+    p.weapon = 'smg';
+    const lb = lay().lookBox;
+    const c = input();
+    c.pressed.push({ x: lb.x + lb.w / 2, y: lb.y + 8 });
+    c.touches.set(2, { id: 2, x: lb.x + lb.w / 2, y: lb.y + 8, sx: lb.x + lb.w / 2, sy: lb.y + 8, role: null });
+    run(S, 5 * DT, c);
+    ok(c.touches.get(2).role === 'look' && p.weapon === 'smg', 'a thumb in the aim box is the aim touch and selects nothing');
+    const mb = lay().moveBox;
+    const d = input();
+    d.pressed.push({ x: mb.x + mb.w / 2, y: mb.y + 8 });
+    d.touches.set(3, { id: 3, x: mb.x + mb.w / 2, y: mb.y + 8, sx: mb.x + mb.w / 2, sy: mb.y + 8, role: null });
+    run(S, 5 * DT, d);
+    ok(d.touches.get(3).role === 'move' && p.weapon === 'smg', 'a thumb in the move box selects nothing either');
+    // the SWAP button still cycles forward; open space is still a free aim touch
+    run(S, 0.3);
+    p.weapon = 'pistol';
+    tapButton('swapBtn');
+    ok(p.weapon === 'shotgun', 'the SWAP button still cycles forward');
+    run(S, 0.3);
+    const free = tapAt(195, 300);
+    ok(free.touches.get(1).role === 'free' && p.weapon === 'shotgun', 'a tap in open space is still a free aim touch');
+    game.testHook('setting', { input: 'pc' });
+  }
+
+  // hands full: the torch fitting and drinking block every route
+  {
+    game.testHook('torch', { attached: false });
+    game.testHook('play'); // the fitting sequence starts on this dark level
+    quiet();
+    p = S.player;
+    game.testHook('giveWeapons');
+    ok(game.testHook('torch').attach, 'the torch is being fitted');
+    p.weapon = 'pistol';
+    keyTap('3');
+    tapAt(...centre(cellsNow()[3].hit));
+    keyTap('q');
+    game.testHook('mouse', { wheel: 1 });
+    run(S, DT);
+    game.testHook('mouse', null);
+    tapButton('swapBtn');
+    ok(p.weapon === 'pistol', 'while the torch is being fitted, no route changes the weapon (key, tap, Q, wheel, SWAP)');
+    run(S, 6);
+    ok(!game.testHook('torch').attach, 'the fitting finishes');
+    keyTap('3');
+    ok(p.weapon === 'smg', 'and then a key works');
+    run(S, 0.4);
+    game.testHook('drink', 'dram');
+    keyTap('1');
+    tapAt(...centre(cellsNow()[1].hit));
+    keyTap('q');
+    tapButton('swapBtn');
+    ok(p.weapon === 'smg', 'while drinking, no route changes the weapon');
+    run(S, 6);
+    keyTap('1');
+    ok(p.weapon === 'pistol', 'and after the drink a key works again');
+  }
+  game.testHook('mouse', null);
+  game.testHook('setting', { input: null });
+}
+
 // ---- the gun torch: dark levels need it fitted, the pistol keeps it, lit levels do not ----
 {
   const { S } = fresh(); // level 2, the dark one

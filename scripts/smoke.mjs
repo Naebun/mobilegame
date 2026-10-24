@@ -217,6 +217,53 @@ try {
   check(await until('s.player.reloadT > 0', null, 8000), 'the RELOAD button forces a reload before the clip is empty');
   await shot('play-weapon');
 
+  // the weapon strip: a tap on a cell selects that weapon (if owned), never aims or fires, and a thumb in the aim box never selects.
+  // One tap is handled per frame, so each tap waits for its result.
+  {
+    await hook('play');
+    await hook('giveWeapons'); // the five ordinary weapons; the Beam, Grenade and Airhorn are not owned
+    const ids = ['pistol', 'shotgun', 'smg', 'launcher', 'vinyl'];
+    check(JSON.stringify((await hook('hud')).weapons.map((w) => w.id)) === JSON.stringify(ids), 'the strip shows the five ordinary weapons');
+    const cells = (await hook('strip', 5)).cells;
+    check(cells.every((c) => c.hit.h >= 40 && c.hit.w >= 38), `portrait: each strip cell has a tap area of at least 38 x 40 px (${cells[0].hit.w.toFixed(0)} x ${cells[0].hit.h.toFixed(0)})`);
+    for (const i of [3, 0, 4, 1, 2]) {
+      await tap(...center(cells[i].hit));
+      check(await until('s.player.weapon === a', ids[i]), `portrait: a tap on strip cell ${i + 1} selects the ${ids[i]}`);
+    }
+    // a tap a little below the drawn cell still counts
+    await tap(cells[3].x + cells[3].w / 2, cells[3].y + cells[3].h + 6);
+    check(await until("s.player.weapon === 'launcher'"), 'portrait: the tap area reaches below the drawn cell');
+    // a drag that starts on a cell does not aim and does not fire
+    const yawS = (await state()).yaw;
+    const shotsS = (await state()).shots;
+    const runS = await page.evaluate(() => window.__game.getState().runT);
+    const [cx0, cy0] = center(cells[2].hit);
+    await ptr('pointerdown', 5, cx0, cy0);
+    for (let i = 1; i <= 10; i++) await ptr('pointermove', 5, cx0 - i * 8, cy0 + i * 3);
+    check(await until('s.runT > a + 0.6', runS, 60000), 'game time moves on while a finger rests on the strip');
+    const afterS = await state();
+    check(afterS.yaw === yawS && afterS.shots === shotsS, 'portrait: a drag that starts on the strip neither aims nor fires');
+    await ptr('pointerup', 5, cx0 - 80, cy0 + 30);
+    check((await state()).weapon === 'smg', 'and the drag ends up selecting the cell it started on (smg), nothing else');
+    // a thumb held in the aim box fires and aims but never picks a weapon
+    const [lbx, lby] = center((await hook('layout')).lookBox);
+    await ptr('pointerdown', 6, lbx, lby);
+    for (let i = 1; i <= 6; i++) await ptr('pointermove', 6, lbx + i * 5, lby - i * 12);
+    check(await until('s.shots > a', afterS.shots), 'a thumb in the aim box fires');
+    check((await state()).weapon === 'smg', 'and it does not change the weapon');
+    await ptr('pointerup', 6, lbx, lby);
+    // a weapon not owned: its cell does nothing (a new run holds the pistol only; a following tap proves the first was read)
+    await hook('play');
+    const runN = await page.evaluate(() => window.__game.getState().runT);
+    await tap(...center(cells[3].hit));
+    await until('s.runT > a + 0.5', runN, 60000);
+    check((await state()).weapon === 'pistol', 'portrait: a tap on the cell of a weapon not owned does nothing');
+    await hook('giveWeapons');
+    await tap(...center(cells[3].hit));
+    check(await until("s.player.weapon === 'launcher'"), 'and once it is owned the same tap selects it');
+    await shot('play-strip');
+  }
+
   // the launcher: a rocket flies, explodes and hurts a robot; the render path for explosions must not error
   await hook('play');
   await hook('giveWeapons');
@@ -487,6 +534,15 @@ try {
   await hook('giveWeapons');
   await tap(...center(LL.swapBtn));
   check(await until("s.player.weapon !== 'pistol'"), 'landscape: SWAP works from beside the box');
+  {
+    const lc = (await hook('strip', 5)).cells;
+    const lids = ['pistol', 'shotgun', 'smg', 'launcher', 'vinyl'];
+    check(lc.every((c) => c.hit.h >= 40 && c.hit.w >= 40) && lc[0].y < 12, `landscape: the strip sits on the top row with tap areas of at least 40 x 40 px (${lc[0].hit.w.toFixed(0)} x ${lc[0].hit.h.toFixed(0)})`);
+    for (const i of [3, 0, 4]) {
+      await tap(...center(lc[i].hit));
+      check(await until('s.player.weapon === a', lids[i]), `landscape: a tap on strip cell ${i + 1} selects the ${lids[i]}`);
+    }
+  }
   await shot('land-play');
   await hook('hurt', 1000);
   check(await until("s.mode === 'dead'"), 'landscape: dies at zero health');
@@ -571,6 +627,57 @@ try {
   await hook('mouse', null);
   await page.waitForTimeout(1500);
   await shot('mouse-look');
+  // PC weapon keys: 1 to 8 pick the slot in WEAPON_ORDER if owned, Q flips to the last weapon, the wheel steps both ways.
+  // The tests press a real key and let go once the game has seen it (one press is read per frame).
+  {
+    const press = async (key, expr, arg) => {
+      await page.keyboard.down(key);
+      const seen = await until(expr, arg);
+      await page.keyboard.up(key);
+      return seen;
+    };
+    const idle = async (secs = 0.5) => { // let a few frames pass, in game time
+      const r0 = await page.evaluate(() => window.__game.getState().runT);
+      await until('s.runT > a + ' + secs, r0, 60000);
+    };
+    await hook('play');
+    await idle(0.3);
+    await page.keyboard.down('2');
+    await idle();
+    await page.keyboard.up('2');
+    check((await state()).weapon === 'pistol', 'PC: a number key for a weapon not owned does nothing');
+    await hook('giveWeapons');
+    check(await press('4', "s.player.weapon === 'launcher'"), 'PC: key 4 selects the launcher in one press');
+    await idle(0.3);
+    check(await press('2', "s.player.weapon === 'shotgun'"), 'PC: key 2 selects the shotgun (no cycling through the guns between)');
+    await idle(0.3);
+    await page.keyboard.down('8');
+    await idle();
+    await page.keyboard.up('8');
+    check((await state()).weapon === 'shotgun', 'PC: key 8 does nothing while the Airhorn is not owned');
+    await hook('give', ['airhorn']);
+    await idle(0.3);
+    const strip = (await hook('hud')).weapons;
+    check(strip.map((w) => w.slot).join() === '1,2,3,4,5,8', `PC: the strip carries the slot numbers, a gap where the Beam and Grenade are not shown (${strip.map((w) => w.slot).join()})`);
+    check(await press('8', "s.player.weapon === 'airhorn'"), 'PC: key 8 selects the Airhorn once owned');
+    await idle(0.3);
+    check(await press('q', "s.player.weapon === 'shotgun'"), 'PC: Q flips back to the last weapon (the shotgun)');
+    await idle(0.3);
+    check(await press('q', "s.player.weapon === 'airhorn'"), 'PC: Q again flips to the Airhorn (a toggle)');
+    await idle(0.3);
+    check(await press('1', "s.player.weapon === 'pistol'"), 'PC: key 1 selects the pistol');
+    await idle(0.3);
+    check(await press('q', "s.player.weapon === 'airhorn'"), 'PC: Q after a jump goes back to the weapon before it (the Airhorn)');
+    await idle(0.3);
+    await hook('mouse', { wheel: 1 });
+    check(await until("s.player.weapon === 'pistol'"), 'PC: wheel down is the next weapon (the Airhorn wraps round to the pistol)');
+    await idle(0.3);
+    await hook('mouse', { wheel: -1 });
+    check(await until("s.player.weapon === 'airhorn'"), 'PC: wheel up is the previous weapon (back to the Airhorn)');
+    await hook('mouse', null);
+    await idle(1);
+    await shot('pc-strip');
+  }
   // reset: two taps
   await hook('title');
   await pressButton('settings');

@@ -219,6 +219,7 @@ export function layout(view) -> {
   reloadBtn, swapBtn,      // small buttons under lookBox and moveBox respectively
   moveHit, lookHit,        // the boxes inflated by 24px each side: where a touch may START to count
   reloadHit, swapHit,      // the buttons inflated by 10px
+  strip(n),                // later addition: the n weapon-strip cells, { cells: [{ x, y, w, h, hit }], bottom }; tap a cell to select that weapon
 }
 export function drawPlayHud(ctx, view, h)
 ```

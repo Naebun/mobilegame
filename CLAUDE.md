@@ -58,7 +58,11 @@ Two levels so far. Read `README.md` for the layout and `docs/fps-design.md` for 
   else (not in a box or on a button) aims only, no fire. There is no aim assist.
   Ammo is unlimited, clips are not; reload is automatic when empty or via RELOAD. Button taps are read from press
   events, not live touches, so they work at any frame rate. `hud.layout(view)` is the single source of truth for the
-  box and button rectangles.
+  box and button rectangles (the strip cells too).
+  **Weapons are selected directly, never only by cycling** (eight ids in `WEAPON_ORDER`, so cycling alone is a fight-losing chore): on a phone,
+  tap a cell in the strip at the top (its rectangles come from `hud.layout(view).strip(n)`, tap areas about 40 px, owned weapons only);
+  on a computer, keys 1 to 8 are the slot in `WEAPON_ORDER` (printed on the cell), the wheel steps next or previous, Q flips to the last weapon.
+  SWAP still cycles forward. One path (`selectWeapon`) serves every route, so the swap time, the dropped reload and the hands-full block are the same.
 - The Settings page (from the title) switches CONTROLS between PC and MOBILE and sets mouse sensitivity (PC only). In PC mode the
   mouse aims with no button held and the left button fires. Progress is saved by `src/save.js` (cookie plus localStorage); debug runs never write it.
 - Menu buttons come from `screens.buttons(mode, view, state)`, used for both drawing and hit testing.

@@ -1,7 +1,7 @@
 // Headless robustness check for src/hud.js and src/screens.js. A recording fake 2D context stands in for the canvas.
 // Run: node scripts/harness/ui-check.mjs
 import assert from 'node:assert/strict';
-import { layout, drawPlayHud } from '../../src/hud.js';
+import { layout, drawPlayHud, stripCellAt, STRIP_MAX } from '../../src/hud.js';
 import { buttons, drawTitle, drawControls, drawIntro, drawDead, drawComplete, drawVoicemail, drawSettings, drawSetlist, drawDifficulty } from '../../src/screens.js';
 
 let calls = 0;
@@ -64,6 +64,12 @@ const hudStates = [
     weapons: ['pistol', 'shotgun', 'smg', 'launcher', 'vinyl', 'beam', 'grenade', 'airhorn'].map((id, i) => ({ id, name: id, owned: true, active: i === 5 })),
     upgrades: { clip: 2, reload: 1, altfire: 1 }, alt: { cd: 0.4, secs: 1.3, name: 'TWEETER BURST' },
   },
+  // PC mode with the slot numbers on the strip (a hidden weapon leaves a gap in the numbers), and odd slot values
+  {
+    compact: true, weapon: { id: 'launcher', name: 'REVERB LAUNCHER', clip: 3, clipSize: 6, reload: null },
+    weapons: ['pistol', 'shotgun', 'smg', 'launcher', 'vinyl', 'grenade'].map((id) => ({ id, name: id, owned: id !== 'smg', active: id === 'launcher', slot: id === 'grenade' ? 7 : undefined })).map((w, i) => (i === 1 ? { ...w, slot: 2 } : i === 2 ? { ...w, slot: NaN } : i === 3 ? { ...w, slot: 1e9 } : i === 4 ? { ...w, slot: 'x' } : w)),
+  },
+  { compact: true, weapons: Array.from({ length: 9 }, (_, i) => ({ id: 'smg', owned: true, active: i === 0, slot: i + 1 })), upgrades: { clip: 1, reload: 1, altfire: 1 }, debugMode: true },
   {
     weapon: { id: 'smg', name: 'TWEETER SMG', clip: 0, clipSize: 42, reload: 0.3 }, weapons: [{ id: 'smg', owned: true, active: true }, { id: 'beam', owned: true }],
     upgrades: { clip: 1, reload: 0, altfire: 1 }, alt: { cd: 0, secs: 0 }, compact: true, debugMode: true,
@@ -100,6 +106,54 @@ for (const v of views) {
     assert.ok(L.swapBtn.x >= L.moveBox.x + L.moveBox.w && L.reloadBtn.x + L.reloadBtn.w <= L.lookBox.x, 'landscape SWAP and RELOAD sit between the boxes');
   }
   assert.ok(layout(v) === L, 'layout should be cached for identical input');
+
+  // the weapon strip (tap a cell to pick that weapon): every cell and its tap area inside the view and the side insets, a
+  // tap area about 40 px where the screen allows, no cell overlapping another or any control, in both orientations
+  {
+    const land = v.w > v.h * 1.05;
+    const safeTop = (v.safe && v.safe.top) || 0;
+    const ctrl = ['moveBox', 'lookBox', 'reloadBtn', 'swapBtn', 'altBtn', 'moveHit', 'lookHit', 'reloadHit', 'swapHit', 'altHit'];
+    assert.ok(L.strip(3) === L.strip(3), 'the strip is cached per count');
+    assert.deepEqual(L.strip(0).cells, [], 'no weapons, no cells');
+    assert.equal(L.strip(99).cells.length, STRIP_MAX, 'at most eight cells');
+    assert.equal(L.strip(NaN).cells.length, 0);
+    assert.equal(L.strip(-2).cells.length, 0);
+    for (let n = 1; n <= STRIP_MAX; n++) {
+      const st = L.strip(n);
+      assert.equal(st.cells.length, n);
+      let prev = null;
+      for (const c of st.cells) {
+        for (const r of [c, c.hit]) {
+          assert.ok(inside(r, v), `strip cell (n=${n}) outside ${v.w}x${v.h}`);
+          assert.ok(r.x >= sl && r.x + r.w <= v.w - sr, `strip cell (n=${n}) in a side inset at ${v.w}x${v.h}`);
+          assert.ok(r.y >= safeTop, `strip cell (n=${n}) in the top inset at ${v.w}x${v.h}`);
+          for (const k of ['x', 'y', 'w', 'h']) assert.ok(Number.isFinite(r[k]));
+        }
+        assert.ok(c.hit.x <= c.x && c.hit.x + c.hit.w >= c.x + c.w && c.hit.y <= c.y && c.hit.y + c.hit.h >= c.y + c.h, 'the tap area covers the drawn cell');
+        assert.ok(c.hit.h >= 40, `tap area is ${c.hit.h} px tall at ${v.w}x${v.h}`);
+        assert.ok(c.hit.w >= (v.w >= 360 ? 40 : 36), `tap area is ${c.hit.w.toFixed(1)} px wide (n=${n}) at ${v.w}x${v.h}`);
+        assert.ok(c.w >= 30 && c.h >= 26, 'the drawn cell is a readable size');
+        if (prev) {
+          assert.ok(c.x > prev.x + prev.w, 'cells run left to right with a gap');
+          assert.ok(!overlap(c.hit, prev.hit), 'tap areas of neighbouring cells never overlap');
+        }
+        prev = c;
+        for (const k of ctrl) assert.ok(!overlap(c.hit, L[k]), `strip cell (n=${n}) overlaps ${k} at ${v.w}x${v.h}`);
+      }
+      assert.ok(st.bottom > st.cells[0].y && Number.isFinite(st.bottom));
+      // the hit test agrees with the rectangles: a cell's centre is that cell, the middle of the move and aim boxes is nothing
+      st.cells.forEach((c, i) => assert.equal(stripCellAt(v, n, c.x + c.w / 2, c.y + c.h / 2), i));
+      assert.equal(stripCellAt(v, n, L.moveBox.x + L.moveBox.w / 2, L.moveBox.y + L.moveBox.h / 2), -1);
+      assert.equal(stripCellAt(v, n, L.lookBox.x + L.lookBox.w / 2, L.lookBox.y + L.lookBox.h / 2), -1);
+      for (const k of ['reloadBtn', 'swapBtn', 'altBtn']) assert.equal(stripCellAt(v, n, L[k].x + L[k].w / 2, L[k].y + L[k].h / 2), -1, `${k} is not a strip cell`);
+    }
+    // landscape keeps the strip beside the health bar on the top row; portrait gives it a row of its own below the score line
+    const c8 = L.strip(8).cells;
+    if (land) assert.ok(c8[0].y < 12 + safeTop, 'landscape strip sits on the top row');
+    else assert.ok(c8[0].y >= safeTop + 48 && c8[0].x >= sl + 16, 'portrait strip sits below the health and score lines');
+    assert.equal(stripCellAt(v, 8, -5, -5), -1);
+    assert.equal(stripCellAt(v, 8, NaN, NaN), -1);
+  }
 
   const ctx = fakeCtx();
   for (const h of hudStates) drawPlayHud(ctx, v, h);

@@ -4,6 +4,18 @@
 const STEP = 1 / 60;
 const MAX_FRAME = 0.25; // clamp after tab switches / stalls
 
+// The wheel's quiet-gap rule as a function of (time in ms, deltaY, pointer locked): returns +1 or -1 for an event that counts as
+// a step, else 0. Every event, counted or not, restarts the quiet gap. Exported so the headless checks can test it.
+export const WHEEL_GAP_MS = 180;
+export function wheelGate() {
+  let last = -1e9;
+  return (now, deltaY, locked = true) => {
+    const step = locked && now - last > WHEEL_GAP_MS && deltaY ? Math.sign(deltaY) : 0;
+    last = now;
+    return step;
+  };
+}
+
 export function start(canvas, game) {
   const ctx = canvas.getContext('2d');
   const view = { w: 0, h: 0, dpr: 1, safe: { top: 0, bottom: 0, left: 0, right: 0 } };
@@ -68,12 +80,11 @@ export function start(canvas, game) {
     input.mouse.dy += e.movementY || 0;
   });
   // A trackpad flick keeps sending wheel events for a second or more as it coasts, so only an event after a quiet gap
-  // counts; one flick or one wheel notch is one swap.
-  let lastWheel = -1e9;
+  // counts; one flick or one wheel notch is one step. The direction rides in input.mouse.wheel (+1 down, -1 up) and the
+  // game turns it into the next or the previous weapon.
+  const gate = wheelGate();
   canvas.addEventListener('wheel', (e) => {
-    const now = performance.now();
-    if (locked() && now - lastWheel > 180 && e.deltaY) input.mouse.wheel += Math.sign(e.deltaY);
-    lastWheel = now;
+    input.mouse.wheel += gate(performance.now(), e.deltaY, locked());
     e.preventDefault();
   }, { passive: false });
   document.addEventListener('pointerlockchange', () => {

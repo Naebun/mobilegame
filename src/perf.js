@@ -171,7 +171,7 @@ export function createPerf({ renderer, scenes, info }) {
 
   // keep the panel clear of the HUD: top-left, below the health bar, score and objective lines, inside the notch's inset
   function place(view) {
-    const top = (view && view.safe ? view.safe.top : 0) + (window.innerWidth > window.innerHeight ? 58 : 112);
+    const top = (view && view.safe ? view.safe.top : 0) + (window.innerWidth > window.innerHeight ? 58 : 152); // portrait: under the weapon strip's row and the area, objective and status lines
     const left = (view && view.safe ? view.safe.left : 0) + 4;
     el.style.top = `${top}px`;
     el.style.left = `${left}px`;

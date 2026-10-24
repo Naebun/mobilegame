@@ -1640,10 +1640,14 @@ function stickFrom(t, box, dead) {
 }
 
 // Reads the touches: assigns each to the move box, the look box, a button or free aim on first contact, then
-// returns { mx, mz (move, -1..1), yawD, pitchD, firing, reload, swap }. Buttons are read from tap events.
+// returns { mx, mz (move, -1..1), yawD, pitchD, firing, reload, swap, select, quick, step }. Buttons are read from tap events.
+// Weapon choice has four routes: swap (the SWAP button: next weapon), select (a weapon id, from a tap on the strip or a number
+// key), quick (Q: back to the last weapon) and step (the wheel: +1 next, -1 previous).
 function readControls(input, view, dt) {
   const L = layoutFor(view);
-  const out = { mx: 0, mz: 0, yawD: 0, pitchD: 0, firing: false, reload: false, swap: false, torch: false, alt: false };
+  const out = { mx: 0, mz: 0, yawD: 0, pitchD: 0, firing: false, reload: false, swap: false, select: null, quick: false, step: 0, torch: false, alt: false };
+  const strip = stripWeapons();
+  const onStrip = (x, y) => hud.stripCellAt(view, strip.length, x, y);
   const altOn = inputMode() === 'mobile' && ARS.altAvailable(); // the ALT button exists only once the SMG has its pedal
   let moveTaken = false;
   let lookTaken = false;
@@ -1656,10 +1660,14 @@ function readControls(input, view, dt) {
     if (inRect(press.x, press.y, L.reloadHit)) out.reload = true;
     else if (inRect(press.x, press.y, L.swapHit)) out.swap = true;
     else if (altOn && inRect(press.x, press.y, L.altHit)) out.alt = true;
+    else {
+      const c = onStrip(press.x, press.y);
+      if (c >= 0 && S.player.owned[strip[c]]) out.select = strip[c]; // a weapon not owned yet does nothing
+    }
   }
   for (const t of input.touches.values()) {
     if (t.role) continue;
-    if (inRect(t.sx, t.sy, L.reloadHit) || inRect(t.sx, t.sy, L.swapHit) || (altOn && inRect(t.sx, t.sy, L.altHit))) t.role = 'btn';
+    if (inRect(t.sx, t.sy, L.reloadHit) || inRect(t.sx, t.sy, L.swapHit) || (altOn && inRect(t.sx, t.sy, L.altHit)) || onStrip(t.sx, t.sy) >= 0) t.role = 'btn'; // a tap on the strip never aims or fires
     else if (!moveTaken && inRect(t.sx, t.sy, L.moveHit)) { t.role = 'move'; moveTaken = true; }
     else if (!lookTaken && inRect(t.sx, t.sy, L.lookHit)) { t.role = 'look'; lookTaken = true; }
     else if (inRect(t.sx, t.sy, L.moveHit) || inRect(t.sx, t.sy, L.lookHit)) t.role = 'none'; // a box already in use
@@ -1716,7 +1724,7 @@ function readControls(input, view, dt) {
     out.yawD -= mouse.dx * sens;
     out.pitchD -= mouse.dy * sens;
     if (mouse.down) out.firing = true;
-    if (mouse.wheel) out.swap = true;
+    if (mouse.wheel) out.step = Math.sign(mouse.wheel); // the engine carries the direction: down is next, up is previous
     if (mouse.alt) out.alt = true; // the right button: the SMG's alt-fire
   }
   if (S.mouseTest) S.mouseTest = { ...S.mouseTest, dx: 0, dy: 0, wheel: 0, alt: false };
@@ -1726,7 +1734,15 @@ function readControls(input, view, dt) {
   out.pitchD += kp * 1.6 * dt;
   if (k.has(' ')) out.firing = true;
   if (k.has('r') && !S.keyR) out.reload = true;
-  if (k.has('q') && !S.keyQ) out.swap = true;
+  if (k.has('q') && !S.keyQ) out.quick = true;
+  // number keys 1 to 8: the weapon in that slot of WEAPON_ORDER (the number printed on the strip in PC mode)
+  const digits = S.keyDigits || (S.keyDigits = new Set());
+  for (let i = 0; i < WEAPON_ORDER.length && i < 9; i++) {
+    const key = String(i + 1);
+    if (k.has(key) && !digits.has(key) && !out.select && S.player.owned[WEAPON_ORDER[i]]) out.select = WEAPON_ORDER[i];
+  }
+  digits.clear();
+  for (const key of k) if (key.length === 1 && key >= '1' && key <= '9') digits.add(key);
   if (k.has('e') && !S.keyE) out.alt = true;
   S.keyE = k.has('e');
   if (k.has('f') && !S.keyF) out.torch = true;
@@ -1748,16 +1764,34 @@ function startReload() {
   audio.reload(false);
 }
 
-function cycleWeapon() {
+// SWAP and the wheel: step through the owned weapons in WEAPON_ORDER, forwards (dir 1) or back (dir -1).
+function cycleWeapon(dir = 1) {
   const p = S.player;
   const owned = WEAPON_ORDER.filter((id) => p.owned[id]);
   if (owned.length < 2) return;
-  selectWeapon(owned[(owned.indexOf(p.weapon) + 1) % owned.length]);
+  selectWeapon(owned[(owned.indexOf(p.weapon) + (dir < 0 ? -1 : 1) + owned.length) % owned.length]);
 }
 
+// Q: back to the weapon held before this one (a toggle between two), or the next weapon if there is no last one yet.
+function quickSwap() {
+  const p = S.player;
+  if (p.lastWeapon && p.lastWeapon !== p.weapon && p.owned[p.lastWeapon]) selectWeapon(p.lastWeapon);
+  else cycleWeapon();
+}
+
+// The weapons on show in the strip, in order: a prepared weapon appears once Naebun owns it. Drawing (buildHudState) and the
+// touch test (readControls) both use this, so the cell tapped is the cell drawn.
+function stripWeapons() {
+  const p = S.player;
+  return WEAPON_ORDER.filter((id) => !WEAPONS[id].prepared || p.owned[id]);
+}
+
+// Hands, torch and drink have already been checked by the caller. The same code for every route: not owned does nothing,
+// the weapon already in hand does nothing, a reload in progress is cancelled and the swap takes switchT (as the cycle always did).
 function selectWeapon(id) {
   const p = S.player;
-  if (id === p.weapon) return;
+  if (id === p.weapon || !p.owned[id]) return;
+  p.lastWeapon = p.weapon;
   p.weapon = id;
   p.reloadT = 0;
   p.switchT = 0.25;
@@ -1970,7 +2004,11 @@ function updateWeapon(dt, ctl) {
     p.fireT = Math.max(p.fireT, 0.1);
     return;
   }
-  if (ctl.swap) cycleWeapon();
+  // one weapon change per frame: a chosen weapon first, then Q, the wheel, the SWAP button
+  if (ctl.select) selectWeapon(ctl.select);
+  else if (ctl.quick) quickSwap();
+  else if (ctl.step) cycleWeapon(ctl.step);
+  else if (ctl.swap) cycleWeapon();
   if (ctl.reload) startReload();
   if (p.reloadT > 0) {
     p.reloadT -= dt;
@@ -2531,7 +2569,7 @@ function buildHudState() {
   h.hurt = p.hurt;
   h.damageDirs = S.damageDirs;
   h.weapon = { id: w.id, name: w.name, clip: p.ammo[w.id], clipSize: ARS.clipOf(w), reload: p.reloadT > 0 ? 1 - p.reloadT / (p.reloadTotal || w.reload) : null };
-  h.weapons = WEAPON_ORDER.filter((id) => !WEAPONS[id].prepared || p.owned[id]).map((id) => ({ id, name: WEAPONS[id].name, owned: !!p.owned[id], active: id === p.weapon })); // a prepared weapon shows once owned
+  h.weapons = stripWeapons().map((id) => ({ id, name: WEAPONS[id].name, owned: !!p.owned[id], active: id === p.weapon, slot: WEAPON_ORDER.indexOf(id) + 1 })); // slot: the number key (PC)
   ARS.hud(h); // upgrades, the alt-fire button, the beam's meter
   h.hitMarker = S.hitMarker;
   h.headshot = S.headshot;
@@ -2903,6 +2941,7 @@ export function testHook(cmd, arg) {
     case 'arsenal': return ARS; // the arsenal's own functions, for the headless checks
     case 'hud': return buildHudState(); // what the HUD is told, for the headless checks
     case 'layout': return layoutFor(v);
+    case 'strip': return hud.layout(v).strip(arg === undefined ? stripWeapons().length : arg); // the weapon strip cells for n weapons (plain data, for the browser tests)
     case 'hurt': hurtPlayer(arg, S.player.x, S.player.z + 5, false); return undefined;
     case 'screen': // jump to a menu screen, for screenshots: title | controls | intro | voicemail | dead | complete
       if (arg === 'title') toTitle();
