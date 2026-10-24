@@ -3,15 +3,17 @@
 import { chromium } from 'playwright';
 import { spawn } from 'node:child_process';
 import { readdirSync } from 'node:fs';
-const server = spawn('node', ['scripts/serve.mjs', '8093'], { stdio: 'ignore' });
+const PORT = process.env.PORT || '8093';
+const server = spawn('node', ['scripts/serve.mjs', PORT], { stdio: 'ignore' });
 await new Promise((r) => setTimeout(r, 600));
 const base = '/opt/pw-browsers';
 const exe = readdirSync(base).filter((d) => d.startsWith('chromium-')).map((d) => readdirSync(`${base}/${d}`).filter((x) => x.startsWith('chrome-linux')).map((x) => `${base}/${d}/${x}/chrome`)[0])[0];
 const b = await chromium.launch({ executablePath: exe, args: ['--use-angle=swiftshader', '--use-gl=angle', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
-for (const q of ['low', 'medium', 'high']) {
+for (const q of (process.env.TIERS || 'low,medium,high').split(',')) { // EXTRA='&baked=0' turns the baked textures off
   const page = await (await b.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1, hasTouch: true, isMobile: true })).newPage();
-  await page.goto(`http://localhost:8093/?test&q=${q}`);
+  await page.goto(`http://localhost:${PORT}/?test&q=${q}${process.env.EXTRA || ''}`);
   await page.waitForFunction(() => window.__game && window.__game.getState().player, null, { timeout: 60000 });
+  await page.waitForFunction(() => ['applied', 'failed', 'off'].includes(window.__game.testHook('baked').state), null, { timeout: 90000 });
   await page.evaluate(() => window.__game.testHook('play'));
   await page.evaluate(() => {
     const g = window.__game, sp = g.getWorld().areas.find((a) => a.id === 'dancefloor').spawns[0];

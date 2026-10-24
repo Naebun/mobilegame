@@ -67,8 +67,13 @@ export function start(canvas, game) {
     input.mouse.dx += e.movementX || 0;
     input.mouse.dy += e.movementY || 0;
   });
+  // A trackpad flick keeps sending wheel events for a second or more as it coasts, so only an event after a quiet gap
+  // counts; one flick or one wheel notch is one swap.
+  let lastWheel = -1e9;
   canvas.addEventListener('wheel', (e) => {
-    if (locked()) input.mouse.wheel += Math.sign(e.deltaY);
+    const now = performance.now();
+    if (locked() && now - lastWheel > 180 && e.deltaY) input.mouse.wheel += Math.sign(e.deltaY);
+    lastWheel = now;
     e.preventDefault();
   }, { passive: false });
   document.addEventListener('pointerlockchange', () => {

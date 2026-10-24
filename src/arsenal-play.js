@@ -1,6 +1,6 @@
 // The rules of the prepared arsenal (docs/arsenal.md): the Feedback Beam, the Bass-Drop Grenade and the Airhorn, stun, the
-// SMG's alt-fire, the upgrades and the collectible records. Built and tested ahead of the levels that will use them; no level
-// places any of it yet.
+// SMG's alt-fire, the upgrades and the collectible records. Built and tested ahead of the levels that will use them; levels 1
+// and 2 now place it (docs/placement.md).
 //
 // This lives apart from game3d.js on purpose: the game hands in the few things it owns (the state S, the world, ray casting,
 // damage) as a host object and calls the hooks below from `fire`, `updateWeapon`, `updateProjectiles`, `updatePickups`,

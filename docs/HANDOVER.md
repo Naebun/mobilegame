@@ -9,7 +9,7 @@ Written so the chat can be cleared and work resumed from a cold start. Read this
 - **Never balance against debug mode.** Debug is 2x fire rate, 2x damage, 2x health. Debug runs do not write the best
   score.
 - **Nothing goes to `main` until the owner says so.** Squash-merge by PR when asked. (Last go-ahead: "Merge all", PR #4.)
-- **Blender makes the drink models; texture work has not started.** The owner said "don't start that" about textures. Wait to be told.
+- **Blender makes the models and the textures.** Textures were approved (option D then C in `docs/texture-options.md`): baked in Blender, shipped as WebP in `assets/textures/`, which is the only place image files may enter the repo. See the Textures section below.
 - Robots are melee ("Dr Fizzbang") or ranged ("Bampot and Nephew"). Invented names, never real brands.
 - Controls: two grey boxes, left moves, right aims and auto-fires, no aim assist. Unlimited ammo, limited clips.
 - Last Orders (the super drink) never triggers in the boss room, does not stop time, and switches to a third-person
@@ -103,13 +103,11 @@ the procedural `WEAPON_PARTS` in `models.js` stay as the fallback for a weapon m
 `loft` (a section swept along a path: grips, fingers, sleeves), `sweep`/`curve`, more surface types and a per-part
 smoothing angle; `drinks.py` output is unchanged (checked with `cmp`). Previews: `weapons.py --preview smg --view fp`.
 
-Still not decided: how Blender *textures* would reach the game. `world.js` and `models.js` are procedural only (no
-image files, run under plain Node). Baked textures would need either committed image files or more data embedded in
-modules, which changes that rule. Raise it with the owner before starting.
+Textures: decided and built, see the Textures section.
 
 ## Open questions for the owner
-1. When to start Blender texture work, and whether image files may enter the repo. (Models are done for the drinks;
-   say if the robots, weapons or Naebun should move to Blender too.)
+1. Whether the baked textures look right on a phone, and whether plaster, carpet and concrete should be baked too (they are
+   still generated). Say if the robots or Naebun should move to Blender too.
 2. Playtest feedback on difficulty and look.
 
 ## Landscape (branch `level-2`)
@@ -145,9 +143,10 @@ the recoil and the swap. The four pickup guns arrive with a torch fitted; the pi
 without a fitted torch `S.attach` runs `makeTorchAttach()` (a left hand carries the module to the pistol, a click at `k` 0.6,
 the hand withdraws) and the pistol cannot fire until it ends; the fitted state is saved. F toggles the torch on a computer.
 Models are in `scripts/blender/weapons.py` (five torches, the attach hand; `preview.py` views `lside`, `liso`, `lfront`);
-tests are in `models-check`, `combat-check` and the smoke test (`torch-fitting`). Known, not fixed: the pistol torch is
-mostly hidden from the first-person camera (you see a cyan glint and the beam); the shotgun's beam starts inside the horn
-flare; the vinyl gooseneck arches about 0.25 m above the deck. Not seen: a real phone.
+tests are in `models-check`, `combat-check` and the smoke test (`torch-fitting`). Playtest-prep fixes (all seen in software-rendered screenshots only): the pistol's torch module now clips on the
+top of the slide, where the camera sees it (it was under the slide and hidden); the launcher's lens is at the mouth of its own
+mini horn (it sat 0.04 m down the throat); the vinyl gooseneck peaks 0.034 m lower. The earlier note that the shotgun's beam starts inside its horn flare was not acted on: the shotgun's lens is a plain tube light
+beside the barrel (the horn lamp that had the problem is the launcher's). Not seen: a real phone.
 
 ## Blender assets (weapons, hands, props)
 Drinks, weapons (with their torches) plus Naebun's hands, and 27 level props are modelled in Blender and generated into data modules
@@ -156,13 +155,86 @@ edit the output; each is reproducible (run twice and `cmp`). `models.js` decodes
 models; `world.js` places props with `placeProp` and falls back to procedural props (the low tier uses them, to stay inside
 its triangle cap). Details and the prop ranking: `docs/props.md`. Known: level 2 high is close to the 150k triangle limit
 (about 145k); the weapons' left forearms read as plain purple tubes in portrait; the Vaults are dark enough that old and new
-props are hard to tell apart; nothing has been seen on a phone. The textures question is open: `docs/texture-options.md`.
+props are hard to tell apart; nothing has been seen on a phone. Textures: see the Textures section and `docs/textures.md`.
 
-## Prepared objects (built, not placed)
-At the owner's request the roadmap's enemies, weapons, upgrades and collectibles are built and tested ahead of their levels.
-No level map uses any of them. Enemies (Fizzbang Shaken, Bampot Longshot, Bampot Nurse, Vending Mimic): `docs/enemies-next.md`,
+## Prepared objects (built ahead of time, now placed in levels 1 and 2)
+At the owner's request the roadmap's enemies, weapons, upgrades and collectibles were built and tested ahead of their levels,
+and the owner has since said to put them in the two existing levels. What is where, and why, is in `docs/placement.md` (every
+item can be vetoed by name there). Enemies (Fizzbang Shaken, Bampot Longshot, Bampot Nurse, Vending Mimic): `docs/enemies-next.md`,
 `scripts/harness/enemies-check.mjs`. Arsenal (Feedback Beam, Bass-Drop Grenade, Airhorn, the SMG alt-fire, clip and reload
 upgrades, ten collectible records and the SETLIST screen): `docs/arsenal.md`, `scripts/blender/arsenal.py` (writes
 `src/arsenal-meshes.js`), `src/arsenal.js`, `src/arsenal-play.js`, `scripts/harness/arsenal-check.mjs`. Every number is a first
-guess; nothing has been played by a person or heard. The sim bots cannot dodge a laser, run from a Shaken, hunt a Nurse or
-use the new weapons, so they need teaching before these go into a level. Level 3 and later are still not to be built.
+guess; nothing has been played by a person or heard. The sim bots (`scripts/sim3d.mjs`) can now dodge a laser, run from a
+Shaken, hunt a Nurse and use the new weapons in a simple way, and both levels were tuned against them; that is a proxy, not
+a playtest. Level 3 and later are still not to be built.
+
+## The owner's test devices
+An iPhone 16 Pro and a MacBook Air M4. Both are much faster than the plan's floor (an A15, so an iPhone 14), which means a
+smooth frame rate on either says nothing about an older phone: keep the pixel ratio cap, the light count and the triangle
+budget as they are, and use the `?perf` readout (see `docs/playtest.md`) to look at
+frame time, not just whether it feels smooth. The iPhone's display is 120 Hz in Safari (30 or 60 in Low Power Mode), so
+nothing may assume 60 frames a second; the loop is fixed-step and reads taps from events, but test it. The Mac is PC mode
+with a trackpad: two-finger scroll sends wheel events that keep coming as the scroll coasts, so the wheel swap only counts
+an event after a quiet gap of 180 ms (`engine.js`); the right button (alt-fire) is a two-finger click or a control-click.
+Not tested on either: real pointer lock in Safari, trackpad swap, the iPhone safe areas with Safari's bottom tab bar.
+
+## Playtest kit (performance readout, guide)
+`?perf` (or the P key on a computer) shows `src/perf.js`: a DOM panel, top left under the health bar, with frame rate (rolling
+four-second average and the 1 percent low), frame time, JS time of the render call, tier, pixel ratio, drawing size, triangles,
+draw calls, lights, viewport and orientation, level and area. Tap it to copy a one-line summary (clipboard API, then a
+selection copy, then a box to long-press). `window.__perf` carries the same numbers while it is on. Off, it costs one null check
+per frame. `scripts/harness/perf-check.mjs` tests it in both orientations. The guide for whoever holds the phone is
+`docs/playtest.md`. No adaptive quality was added: `trackFrame` in `game3d.js` already steps the tier down when frames stay under
+about 25 fps, and it remembers the lower tier in local storage, which a playtest should know about (the guide says how to pin a
+tier with `?q=`).
+
+## Textures
+Brick, painted brick, stone, flags and boards (and the floor boards, which are the boards darker) are baked in Blender and
+shipped as WebP; carpet, concrete and plaster are still generated. Read `docs/textures.md` for the numbers and the reasoning.
+- **Source art:** `scripts/blender/textures.py` models each surface as real geometry over a seamless tile (bevelled uneven
+  bricks, recessed joints that vary in depth, worn flagstones at different heights, chips), bakes albedo, tangent normal,
+  roughness, occlusion and a mask with Cycles on the CPU at twice the final size, averages down, then adds grain, pits, stains
+  and wood grain in numpy from tileable noise. Output is byte-for-byte reproducible (two full runs compared with `cmp`).
+  About 6 minutes for everything on this container. Never edit the WebP files; change the script and rerun.
+- **Delivery:** `assets/textures/<name>-albedo|normal|rough.webp`, 0.6 MB in all. `src/textures.js` loads them (DOM allowed)
+  and builds `THREE.Texture`s, flagged `userData.baked`. `world.js` stays DOM-free: `buildWorld({ baked })` uses finished
+  textures for the surfaces it is given, and `world.retexture(sets)` swaps them into a built world, disposing the generated
+  textures it replaces (baked ones are shared between levels and never disposed). `game3d.js` starts loading at start-up on
+  medium and high, swaps in when nobody is playing (title, menus, death, level end), and passes the set to every level built
+  afterwards. The low tier, Node and any failed load keep the generated textures. `?baked=0` forces that for comparisons.
+- **Brick tile is 1.8 m by 0.9 m** (the generated one was 0.9 m square): `texture.repeat` carries the difference, and each brick
+  wall face starts a whole number of double courses up the tile (`Mesher.off`), so the same bricks do not stack in a column.
+- **Tests:** `scripts/harness/textures-check.mjs` (Node), the baked checks in `scripts/smoke.mjs`. The smoke test is bound by software frame rate: on a busy machine (load above 15) its 20 s waits expire, so `SMOKE_WAIT=90000` stretches them, and `pressButton` now waits for a delayed button. `EXTRA='&baked=0'` runs it on the generated textures.
+- **Not known:** decode and upload time, GPU memory and frame rate on a phone. See `docs/textures.md`.
+
+## Difficulty (Hard and Extra Hard)
+Built at the owner's request: three modes, all open from the start, picked on a new screen on the NEW GAME path (title, difficulty,
+controls, START GAME), saved so CONTINUE resumes in the same mode, never changed mid-run. Full write-up, the telegraph floor and
+every bot number: `docs/difficulty.md`.
+
+- **Where the table is.** `DIFFICULTY` (damage, health, speed, wind-up per mode), `TELEGRAPH_FLOOR` and `defFor(kind, mode)` are in one
+  block at the end of `src/data.js`. `spawnEnemy` in `game3d.js` calls `defFor`, so a robot's `e.def` already carries the scaled
+  numbers and no attack code changed. Normal returns the base `ENEMY_DEFS` entry itself.
+- **What it touches.** Robot damage (melee, slam, bottles, Longshot shot, Shaken blast on Naebun), hp (so boss bars, the Nurse's 60
+  percent revive and the enrage threshold follow), walk speed (and the Shaken's lunge) and wind-ups (melee windup, Bampot aim, slam,
+  Longshot track and lock, Shaken fuse, Mimic unfold), none below 0.35 s. Not Naebun, not pickups, not stun, not score, not
+  projectile speed, not cooldowns. Debug mode is independent and stacks.
+- **Screens and flow.** `screens.buttons('difficulty', ...)` and `drawDifficulty`; `game3d.js` has the `difficulty` mode, the key
+  handler (1 to 3, Up, Down, Enter, Escape), `setDifficulty`/`startMode` and the `?difficulty=hard|extra` shortcut. The mode shows on
+  CONTINUE, the title's level line, the HUD score line, and the death and completion screens.
+- **Save.** `src/save.js` is version 2: `difficulty` and `best[mode][level]`. Version 1 saves load (their scores are the normal-mode
+  bests), and so do the older `mobilegame.fps.best*` scores. The mode is written when a non-debug run starts.
+- **Tuning.** The owner's first guess was Hard 1.5 / 1.25 / 1.1 / 0.9 and Extra Hard 2 / 1.5 / 1.2 / 0.8. On level 2 the good bot won
+  53 and 13 percent of runs with those, so they are now Hard 1.35 / 1.2 / 1.1 / 0.9 and Extra Hard 1.75 / 1.35 / 1.15 / 0.85.
+  Bot results (30 runs, sloppy / casual / good, win percent), normal then Hard then Extra Hard: level 1 97 / 100 / 100, 80 / 93 / 100,
+  57 / 90 / 100; level 2 83 / 90 / 97, 13 / 70 / 73, 3 / 13 / 17. A 60-run replicate on level 2 gave the good bot 78 (Hard) and 33
+  (Extra Hard). Damage taken roughly doubles on level 1 on Hard. One table cannot fit both levels: it is set from level 2, so level 1
+  Extra Hard is still easy for the good bot. Bots aim far better than a thumb, so people will do worse in every mode.
+- **Sim caveat.** The sim bots are not deterministic across a process: `S.t` (game time since the module loaded, which the ranged
+  robots' strafe uses) is not reset by `init`, so the same seed gives a different run depending on what ran before it. The 30-run
+  numbers are therefore samples, about plus or minus 9 points at 50 percent. `--difficulty` is in `scripts/sim3d.mjs`.
+- **Checks.** `combat-check` (multipliers, floors, every kind, debug stacking), `difficulty-check` (save, flow, keys, debug writes
+  nothing), `ui-check` (the screen at 12 sizes), the smoke test (the flow in a browser).
+- **Open.** A human playtest of both modes. The Longshot's shot is 67 on Extra Hard, which is two thirds of Naebun's health in one hit, and
+  Longshots are now placed (the Cowgate dancefloor, the Plague Cellar), so a playtest should look at that first. The multipliers
+  were tuned before placement and the placement bots, so re-run the three modes on the merged maps.

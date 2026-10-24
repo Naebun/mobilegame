@@ -1,5 +1,5 @@
 // Screenshots the four prepared enemies in the real game (full render pipeline, HUD, torch), added with testHook('spawn'):
-//   OUT=<dir> [ONLY=name,name] [W=390 H=844] [Q=medium] node scripts/harness/enemy-views.mjs
+//   OUT=<dir> [ONLY=name,name] [W=390 H=844] [Q=medium] [TORCH=0] node scripts/harness/enemy-views.mjs
 // Each scene teleports Naebun to a straight stretch of floor, spawns what it needs, puts it in a state and HOLDS it there
 // (an interval keeps the state's timer where it is) so the frame is the same every run. Level 2 is dark; some scenes run on
 // level 1 (lit). None of this is used by any level.
@@ -10,7 +10,7 @@ import { readdirSync } from 'node:fs';
 const OUT = process.env.OUT;
 if (!OUT) { console.error('set OUT=<directory for the screenshots>'); process.exit(2); }
 const only = process.env.ONLY ? process.env.ONLY.split(',') : null;
-const server = spawn('node', ['scripts/serve.mjs', '8095'], { stdio: 'ignore', cwd: process.cwd() });
+const server = spawn('node', ['scripts/serve.mjs', String(process.env.PORT || 8095)], { stdio: 'ignore', cwd: process.cwd() });
 await new Promise((r) => setTimeout(r, 700));
 const base = '/opt/pw-browsers';
 const exe = readdirSync(base).filter((d) => d.startsWith('chromium-')).map((d) => readdirSync(`${base}/${d}`).filter((x) => x.startsWith('chrome-linux')).map((x) => `${base}/${d}/${x}/chrome`)[0])[0];
@@ -19,9 +19,10 @@ const page = await (await b.newContext({ viewport: { width: Number(process.env.W
 const errs = [];
 page.on('pageerror', (e) => errs.push(e.message));
 page.on('console', (m) => m.type() === 'error' && !/favicon|404/.test(m.text()) && errs.push(m.text()));
-await page.goto(`http://localhost:8095/?test&q=${process.env.Q || 'medium'}`);
+await page.goto(`http://localhost:${process.env.PORT || 8095}/?test&q=${process.env.Q || 'medium'}`);
 await page.waitForFunction(() => window.__game && window.__game.getState().player, null, { timeout: 90000 });
 
+await page.evaluate((on) => { window.__torchOn = on; }, process.env.TORCH !== '0');
 // helpers that live in the page
 await page.evaluate(() => {
   const g = window.__game;
@@ -47,7 +48,7 @@ await page.evaluate(() => {
       S.totalEnemies = 0;
       S.pickups.forEach((p) => { p.mesh.visible = false; });
       S.pickups.length = 0;
-      g.testHook('torch', { attached: true, on: true });
+      g.testHook('torch', { attached: true, on: window.__torchOn !== false }); // TORCH=0 leaves it off, to see a robot by its own light
       g.testHook('giveWeapons');
       S.player.health = S.player.maxHealth = 1e6;
       S.banner = null;

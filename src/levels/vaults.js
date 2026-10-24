@@ -5,7 +5,9 @@
 // Legend. Solid: # wall, P stone column, S stacked casks (blocks shots), T stairs. Low cover (blocks walking, not
 // bullets): o barrel, x chest, c stone tomb, n hand cart. 1-6 door tiles (two per door), . floor.
 // Markers that sit on floor: @ start, E exit (four tiles), d fizzbang, w bampot, s shielded fizzbang, g the Tour Guide,
-// G shotgun, M smg, L launcher, V vinyl disc; drinks H dram, O orange, B heavy, N energy, X last orders.
+// k shaken, l longshot, u nurse, m mimic, G shotgun, M smg, L launcher, V vinyl disc, Z grenade, F beam; drinks H dram,
+// O orange, B heavy, N energy, X last orders; upgrades C clip, R reload, A altfire; records q y z a p (one letter each).
+// Why each new thing is where it is: docs/placement.md.
 export const MAP = [
   '############################################',
   '############################################',
@@ -20,10 +22,10 @@ export const MAP = [
   '####.H........cH...H..c..........B.#########',
   '####...............................#########',
   '################55##########################',
-  '##................................##########',
+  '##................F..............p##########',
   '##.H............................B.##########',
   '##...c............................##########',
-  '##......P.....P..o..P.....w.......##########',
+  '##......P.....P..o..P.....l.......##########',
   '##............................o...##########',
   '##....d....c...........c..........##########',
   '##...............X................##########',
@@ -32,30 +34,30 @@ export const MAP = [
   '##........s......c......d....c....##########',
   '##..O.............................##########',
   '##......P.....P.d...P.....P.......##########',
-  '##.........c...................c..##########',
+  '##.Z.......c...................c..##########',
   '##..............................H.##########',
   '######44####################################',
-  '#####.......nn..................n..........#',
+  '#####....R..nn........m.........n..........#',
   '#####...........s.......d...........d......#',
-  '#####....o..w.......o.....N.o.s............#',
+  '#####a...o..w.......o.....N.o.s............#',
   '#####.....d...........w............o.......#',
   '#####.H...........n.....nn....H.........L..#',
   '########################################33##',
-  '##############################.............#',
+  '##############################z............#',
   '##############################..w..........#',
   '##############################.B.SS..d..o.O#',
   '##############################........S....#',
   '##############################........S...o#',
-  '##############################..o..........#',
+  '##############################..o.......k..#',
   '##############################......o...d.H#',
-  '##############################....S....o...#',
+  '##############################.A..S....o...#',
   '##############################.............#',
   '##############################.o.d..s....S.#',
   '##############################.M...o......V#',
   '##############################.............#',
   '########################################22##',
-  '#TTT......#.o........................o.....#',
-  '#TTT...xx.#.......d........................#',
+  '#TTTq.....#.o.................C......o....y#',
+  '#TTT...xx.#.......d...............u........#',
   '#.........1....P.....P.....P.....P.....P.w.#',
   '#.........1..G......................d......#',
   '#...@.....#.......o.........o.............H#',
@@ -75,12 +77,12 @@ export const AREA_DEFS = [
 
 // Ambient tint baked into vertex colours. Much lower than level 1: here the torches do the lighting.
 export const AREA_STYLE = {
-  steps: { tint: [0.3, 0.34, 0.44] },
-  longvault: { tint: [0.2, 0.23, 0.3] },
-  casks: { tint: [0.3, 0.24, 0.2] },
-  close: { tint: [0.26, 0.24, 0.22] },
-  plague: { tint: [0.2, 0.27, 0.27] },
-  tour: { tint: [0.3, 0.22, 0.22] },
+  steps: { tint: [0.17, 0.19, 0.24] },
+  longvault: { tint: [0.11, 0.13, 0.17] },
+  casks: { tint: [0.17, 0.13, 0.11] },
+  close: { tint: [0.14, 0.13, 0.12] },
+  plague: { tint: [0.11, 0.15, 0.15] },
+  tour: { tint: [0.17, 0.12, 0.12] },
 };
 export const WALL_STYLE = {
   steps: { upper: 'stone', ut: [0.9, 0.92, 0.95], dado: 0 },
@@ -93,10 +95,13 @@ export const WALL_STYLE = {
 export const FLOOR_STYLE = { steps: 'flag', longvault: 'flag', casks: 'flag', close: 'flag', plague: 'flag', tour: 'flag' };
 export const FLOOR_TINT = { steps: [0.9, 0.92, 1.0], longvault: [0.8, 0.84, 0.88], casks: [0.86, 0.78, 0.7], close: [0.8, 0.78, 0.72], plague: [0.72, 0.84, 0.8], tour: [0.84, 0.74, 0.7] };
 
-export const KINDS = { d: 'fizzbang', w: 'bampot', s: 'shielded', g: 'tourguide' };
+export const KINDS = { d: 'fizzbang', w: 'bampot', s: 'shielded', g: 'tourguide', k: 'shaken', l: 'longshot', u: 'nurse', m: 'mimic' };
 export const PICKS = {
-  G: ['weapon', 'shotgun'], M: ['weapon', 'smg'], L: ['weapon', 'launcher'], V: ['weapon', 'vinyl'],
+  G: ['weapon', 'shotgun'], M: ['weapon', 'smg'], L: ['weapon', 'launcher'], V: ['weapon', 'vinyl'], Z: ['weapon', 'grenade'], F: ['weapon', 'beam'],
   H: ['drink', 'dram'], O: ['drink', 'orange'], B: ['drink', 'heavy'], N: ['drink', 'energy'], X: ['drink', 'lastorders'],
+  C: ['upgrade', 'clip'], R: ['upgrade', 'reload'], A: ['upgrade', 'altfire'],
+  // records, one letter each (PICKS maps a letter to one item)
+  q: ['record', 'supper'], y: ['record', 'tram'], z: ['record', 'hold'], a: ['record', 'foot'], p: ['record', 'refund'],
 };
 
 export const LEVEL_DEF = {
@@ -119,9 +124,9 @@ export const LEVEL_DEF = {
   startYaw: -Math.PI / 2,
   exitR: 1.5,
   fog: { colour: 0x04060a, near: 2, far: 26 },
-  ambient: { sky: 0x7d8cab, ground: 0x34302f, intensity: 0.4 },
+  ambient: { sky: 0x7d8cab, ground: 0x34302f, intensity: 0.16 },
   look: { exposure: 1.35, bloom: 0.7, vignette: 0.5, grade: { lift: [0.006, 0.012, 0.022], gamma: [0.98, 1.0, 1.02], gain: [1.0, 1.0, 1.04] } },
   dark: true, // nearly black: Naebun has to fit the torch to the pistol and switch it on
-  fill: { colour: 0xb8c4e0, intensity: 0.12, range: 5, decay: 1.6 }, // just enough to see your own feet
-  torch: { colour: 0xfff0d8, intensity: 32, distance: 24, angle: 0.4, penumbra: 0.55, decay: 1.5, beam: 16 },
+  fill: { colour: 0xb8c4e0, intensity: 0.07, range: 5, decay: 1.6 }, // just enough to see your own feet
+  torch: { colour: 0xfff0d8, intensity: 32, distance: 24, angle: 0.4, penumbra: 0.9, decay: 1.5, beam: 16 },
 };

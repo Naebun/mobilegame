@@ -1,8 +1,9 @@
 // Headless checks of the four prepared enemies, run against the real game logic in Node:
 //   node scripts/harness/enemies-check.mjs
-// The Fizzbang Shaken, Bampot Longshot, Bampot Nurse and Vending Mimic are built and tested but NOT placed in any level
+// The Fizzbang Shaken, Bampot Longshot, Bampot Nurse and Vending Mimic: their rules, and where the two levels place them
 // (docs/enemies-next.md). Robots are added to the running game with testHook('spawn'). Normal mode only: balance is never
 // tuned against debug mode.
+import * as THREE from '../../vendor/three.module.min.js';
 import * as game from '../../src/game3d.js';
 import * as audio from '../../src/audio.js';
 import { ENEMY_DEFS, WEAPONS } from '../../src/data.js';
@@ -79,29 +80,128 @@ function findBlock(W, wantFull) {
   return null;
 }
 
-// ---- no level contains them ----
+// ---- where they are placed (docs/placement.md) ----
+// The owner said to put them in the two existing levels. This is the intended placement; changing a map means changing this table.
+const PLACED = {
+  1: { cloakroom: { mimic: 1 }, dancefloor: { longshot: 1, shaken: 1 }, bar: { nurse: 1 } },
+  2: { longvault: { nurse: 1 }, casks: { shaken: 1 }, close: { mimic: 1 }, plague: { longshot: 1 } },
+};
+const ROBOTS = { 1: 21, 2: 27 }; // every robot in the level, the new ones included (19 and 24 before the placement)
 {
-  const reserved = ['k', 'l', 'u', 'm']; // map letters set aside for them in docs/enemies-next.md
+  const letters = { k: 'shaken', l: 'longshot', u: 'nurse', m: 'mimic' }; // the map letters reserved in docs/enemies-next.md
   const prepared = new Set(KINDS);
+  const total = {};
   for (const [n, lv] of Object.entries(LEVEL_DEFS)) {
-    ok(!Object.values(lv.kinds).some((k) => prepared.has(k)), `level ${n}: the KINDS table has none of the four`);
-    ok(!reserved.some((ch) => Object.keys(lv.kinds).includes(ch) || Object.keys(lv.picks).includes(ch)), `level ${n}: the reserved letters are free in KINDS and PICKS`);
-    ok(!lv.map.some((row) => reserved.some((ch) => row.includes(ch))), `level ${n}: no map uses a reserved letter`);
+    ok(Object.entries(letters).every(([ch, kind]) => lv.kinds[ch] === kind), `level ${n}: the KINDS table maps k, l, u and m to the four`);
+    ok(!Object.keys(lv.picks).some((ch) => letters[ch]), `level ${n}: the four letters are not used for pickups`);
+    const want = PLACED[n] || {};
     const w = buildWorld({ level: Number(n), quality: 'low' });
-    const kinds = w.areas.flatMap((a) => a.spawns.map((s) => s.kind));
-    ok(!kinds.some((k) => prepared.has(k)), `level ${n}: no spawn of the four (${kinds.length} spawns)`);
+    for (const a of w.areas) {
+      const here = {};
+      for (const sp of a.spawns) if (prepared.has(sp.kind)) here[sp.kind] = (here[sp.kind] || 0) + 1;
+      const w1 = want[a.id] || {};
+      ok(Object.keys({ ...here, ...w1 }).every((k) => (here[k] || 0) === (w1[k] || 0)), `level ${n} ${a.id}: new robots ${JSON.stringify(here)} (want ${JSON.stringify(w1)})`);
+      for (const kind of Object.keys(here)) total[`${n}:${kind}`] = (total[`${n}:${kind}`] || 0) + here[kind];
+    }
+    for (const ch of Object.keys(letters)) {
+      const onMap = lv.map.reduce((c, row) => c + [...row].filter((x) => x === ch).length, 0);
+      ok(onMap === Object.values(want).reduce((c, h) => c + (h[letters[ch]] || 0), 0), `level ${n}: letter ${ch} appears ${onMap} times on the map, once per ${letters[ch]} placed`);
+    }
+    ok(w.areas[0].spawns.length === 0, `level ${n}: the start room has no robots at all`);
+    const bossArea = w.areas.find((a) => a.spawns.some((sp) => ENEMY_DEFS[sp.kind].boss));
+    ok(bossArea && !bossArea.spawns.some((sp) => prepared.has(sp.kind)), `level ${n}: none of the four in the boss room`);
+    // the running game has them all, asleep, counted, and nothing appears later
+    const g = fresh(Number(n));
+    game.testHook('level', Number(n));
+    ok(g.S.enemies.length === ROBOTS[n] && g.S.totalEnemies === ROBOTS[n], `level ${n} has ${ROBOTS[n]} robots (${g.S.enemies.length})`);
+    ok(g.S.enemies.every((e) => e.state === 'idle'), `level ${n}: every robot starts asleep, the Mimic among them`);
+    const mimics = g.S.enemies.filter((e) => e.kind === 'mimic');
+    ok(mimics.every((m) => m.fixed && m.h === ENEMY_DEFS.mimic.dormant.h), `level ${n}: ${mimics.length} Mimic(s) in the level from the start, disguised`);
+    ok(g.S.areas.every((a) => a.alive === a.def.spawns.length), `level ${n}: every area counts its robots (the Nurse and the Mimic too)`);
   }
-  // the game plays as before: the same number of robots on each level
-  for (const [n, want] of [[1, 19], [2, 24]]) {
-    const { S } = fresh(n);
-    game.testHook('level', n);
-    ok(S.enemies.length === want && S.totalEnemies === want, `level ${n} still has ${want} robots (${S.enemies.length})`);
-    ok(!S.enemies.some((e) => prepared.has(e.kind)), `level ${n}: none of the four in the running game`);
+  // introduced in level 1, where the fights are small, before level 2 has more
+  for (const kind of KINDS) {
+    ok((total[`1:${kind}`] || 0) >= 1, `${kind} is met in level 1 first`);
+    ok((total[`2:${kind}`] || 0) >= (total[`1:${kind}`] || 0), `${kind}: level 2 has at least as many as level 1 (${total[`2:${kind}`] || 0} against ${total[`1:${kind}`] || 0})`);
   }
   ok(KINDS.every((k) => ENEMY_DEFS[k] && ENEMY_DEFS[k].ai === k), 'all four have an ENEMY_DEFS entry with their own ai');
   ok(!KINDS.some((k) => ENEMY_DEFS[k].boss), 'none of the four is a boss');
   ok(!ENEMY_DEFS.shaken.ranged && !ENEMY_DEFS.mimic.ranged, 'Dr Fizzbang camp (Shaken, Mimic) is melee only: ranged false');
   ok(ENEMY_DEFS.longshot.ranged && !ENEMY_DEFS.nurse.ranged && ENEMY_DEFS.nurse.support, 'Bampot camp: the Longshot shoots, the Nurse does not');
+}
+
+// ---- the placed robots, where they stand ----
+// Distances are along the floor (the flow field), with every door open, from the door each area is entered by.
+{
+  for (const n of Object.keys(PLACED)) {
+    const w = buildWorld({ level: Number(n), quality: 'low' });
+    for (const d of w.doors) w.setDoorOpen(d.id, true);
+    w.update(2, 0);
+    const lv = LEVEL_DEFS[n];
+    const ff = w.createFlowField();
+    w.areas.forEach((a, i) => {
+      const door = i === 0 ? null : w.doors.find((d) => d.id === lv.entryDoor[i]);
+      if (!door) return;
+      ff.update(door.x, door.z);
+      for (const sp of a.spawns) {
+        const d = ff.distAt(sp.x, sp.z);
+        if (!['shaken', 'longshot', 'mimic', 'nurse'].includes(sp.kind)) continue;
+        ok(Number.isFinite(d), `level ${n} ${a.id}: ${sp.kind} is reachable from the door in`);
+        // 'distance matters' for a Shaken: it must not be on top of the door, or there is no choice to make
+        if (sp.kind === 'shaken') ok(d >= 8, `level ${n} ${a.id}: a Shaken is ${d.toFixed(1)} m (floor) from the door in, at least 8`);
+        // a Longshot is a long-range robot: far enough from the door that the laser is seen before it is a threat, with cover about
+        if (sp.kind === 'longshot') {
+          ok(d >= 14, `level ${n} ${a.id}: a Longshot is ${d.toFixed(1)} m from the door in, at least 14`);
+          let cover = 0;
+          for (let r = a.rect.r0; r <= a.rect.r1; r++) for (let c = a.rect.c0; c <= a.rect.c1; c++) if (w.tileSolid(c, r) && w.blocksShotAt((c + 0.5) * 2, (r + 0.5) * 2)) cover++;
+          ok(cover >= 3, `level ${n} ${a.id}: ${cover} tiles of pillar, stack or wall to hide behind in the Longshot's room`);
+        }
+        if (sp.kind === 'mimic') {
+          // against a wall, its front to the room
+          let wall = 0;
+          for (const [dx, dz] of [[1.2, 0], [-1.2, 0], [0, 1.2], [0, -1.2]]) if (w.isSolidAt(sp.x + dx, sp.z + dz)) wall++;
+          ok(wall >= 1 && wall <= 2, `level ${n} ${a.id}: the Mimic stands against ${wall} wall side(s), not out in the open and not boxed in`);
+          ok(d >= 5, `level ${n} ${a.id}: the Mimic is ${d.toFixed(1)} m from the door in (a surprise, not an ambush at the threshold)`);
+        }
+        if (sp.kind === 'nurse') {
+          // her revive can only matter if she is ignored: robots die near her (her reach is 6 m and she never walks to a body)
+          const others = a.spawns.filter((o) => o !== sp && o.kind !== 'nurse' && !ENEMY_DEFS[o.kind].boss);
+          const near = others.filter((o) => Math.hypot(o.x - sp.x, o.z - sp.z) <= ENEMY_DEFS.nurse.revive.range && w.los(o.x, o.z, sp.x, sp.z));
+          ok(others.length >= 3, `level ${n} ${a.id}: the Nurse has ${others.length} robots to look after, so a fight is going on`);
+          ok(near.length >= 1, `level ${n} ${a.id}: ${near.length} robot(s) start within her 6 m reach and sight, so the revive can happen`);
+        }
+      }
+    });
+  }
+}
+
+// ---- the doors still wait for them, and still open ----
+{
+  for (const n of Object.keys(PLACED)) {
+    const g = fresh(Number(n));
+    game.testHook('level', Number(n));
+    const S = g.S;
+    const W = game.getWorld();
+    S.player.maxHealth = S.player.health = 1e6;
+    game.testHook('torch', { attached: true });
+    S.areas.forEach((a) => {
+      if (!a.def.spawns.length) return;
+      const door = W.doors.find((d) => d.id === a.def.unlocks[0]);
+      game.testHook('teleport', { x: W.start.x, z: W.start.z, yaw: 0 }); // far from any burst
+      run(0.2);
+      ok(!a.cleared && door && !door.open, `level ${n} ${a.def.id}: the door out is shut while its ${a.alive} robots live`);
+      const rest = S.enemies.filter((e) => e.areaId === a.def.id && !e.dead && e.kind !== 'nurse' && e.kind !== 'mimic');
+      for (const e of rest) kill(S, e); // everyone but the Nurse and the Mimic
+      run(0.3);
+      if (S.enemies.some((e) => e.areaId === a.def.id && !e.dead && (e.kind === 'nurse' || e.kind === 'mimic'))) {
+        ok(!a.cleared && !door.open, `level ${n} ${a.def.id}: a living Nurse or Mimic keeps the door shut`);
+      }
+      game.testHook('killArea', a.def.id);
+      run(0.5);
+      ok(a.cleared && door.open && S.enemies.filter((e) => e.areaId === a.def.id).every((e) => e.dead), `level ${n} ${a.def.id}: with everything dead the area clears and the door opens`);
+    });
+    ok(S.areas.every((a) => a.cleared) && S.kills === S.totalEnemies, `level ${n}: all ${S.totalEnemies} robots dead, every area clear, kills ${S.kills}`);
+  }
 }
 
 // ---- Fizzbang Shaken ----
@@ -332,6 +432,76 @@ function findBlock(W, wantFull) {
     return 1000 - s.S.player.health;
   })();
   ok(strafe === def.damage, 'a slow drift while it tracks does not save you: it keeps up and the lock lands on you');
+
+  // the laser as drawn: it thins and dims as it nears the camera, its brightness stays under what blooms to white, and the line
+  // you see is still exactly the line that is shot
+  {
+    const s = fresh();
+    const ls = spawn(s.S, 'longshot', lane.x0, lane.z, -Math.PI / 2, '_t');
+    const r = ls.robot;
+    const draw = (locked, near) => { r.setLaser(18, 0.05, locked, 1, near); return { w: r.laserWidth, peak: r.laserPeak, near: r.laserNear }; };
+    for (const locked of [true, false]) {
+      const far = draw(locked, 1);
+      const mid = draw(locked, 0.5);
+      const top = draw(locked, 0);
+      const tag = locked ? 'locked' : 'tracking';
+      ok(top.w < mid.w && mid.w < far.w && top.w <= far.w * 0.3, `laser ${tag}: the width falls as the camera nears (${far.w.toFixed(3)} > ${mid.w.toFixed(3)} > ${top.w.toFixed(3)} m)`);
+      ok(top.peak < mid.peak && mid.peak < far.peak && top.peak <= far.peak * 0.4, `laser ${tag}: the brightness falls too (${far.peak.toFixed(2)} > ${mid.peak.toFixed(2)} > ${top.peak.toFixed(2)})`);
+      ok(far.peak <= 2.3, `laser ${tag}: full brightness stays at or under HDR 2.3 (${far.peak.toFixed(2)}), the old core was 8`);
+    }
+    for (const bad of [undefined, null, NaN, -5, 9, Infinity]) {
+      const d = draw(true, bad);
+      ok(Number.isFinite(d.w) && Number.isFinite(d.peak) && d.near >= 0 && d.near <= 1, `laser near ${bad}: stays finite and in range`);
+    }
+    // the same line at every `near`: the group does not move, only the widths and colours change
+    const line = (near) => {
+      r.setLaser(18, 0.1, true, 1, near);
+      r.group.updateMatrixWorld(true);
+      const o = new THREE.Vector3();
+      r.muzzle.getWorldPosition(o);
+      const d = new THREE.Vector3(0, 0, -1).transformDirection(r.muzzle.matrixWorld);
+      return { o, d, len: r.laserLen };
+    };
+    const l1 = line(1);
+    const l0 = line(0);
+    ok(l1.o.distanceTo(l0.o) < 1e-9 && l1.d.distanceTo(l0.d) < 1e-9 && l1.len === l0.len, 'laser: its start, direction and length do not depend on how near the camera is');
+
+    // in a real duel: the line you see is the line it fires, and it is thin and dim where it points at the camera
+    const s2 = fresh();
+    const l2 = spawn(s2.S, 'longshot', lane.x0, lane.z, -Math.PI / 2, '_t');
+    place(lane.x0 + 14, lane.z, Math.PI / 2);
+    wake(l2);
+    let peak = 0;
+    let atLock = null;
+    run(8, () => {
+      if (l2.state === 'charge') peak = Math.max(peak, l2.robot.laserPeak);
+      if (l2.locked && !atLock) {
+        l2.robot.group.updateMatrixWorld(true);
+        const o = new THREE.Vector3();
+        l2.robot.muzzle.getWorldPosition(o);
+        const d = new THREE.Vector3(0, 0, -1).transformDirection(l2.robot.muzzle.matrixWorld);
+        // the shot: from the rifle pivot, horizontally along the yaw, rising by tan(aimPitch) per metre (fireSnipe)
+        const pv = l2.robot.pivot;
+        const P = new THREE.Vector3(l2.x - Math.sin(l2.yaw) * pv.fwd, pv.up, l2.z - Math.cos(l2.yaw) * pv.fwd);
+        const sd = new THREE.Vector3(-Math.sin(l2.yaw), Math.tan(l2.aimPitch), -Math.cos(l2.yaw)).normalize();
+        const off = new THREE.Vector3().subVectors(o, P);
+        const perp = off.clone().addScaledVector(sd, -off.dot(sd)).length();
+        atLock = { perp, angle: Math.acos(Math.min(1, d.dot(sd))), near: l2.robot.laserNear, w: l2.robot.laserWidth, len: l2.robot.laserLen };
+      }
+      return !(l2.state === 'recover');
+    });
+    ok(atLock && atLock.perp < 0.03 && atLock.angle < 0.002, `laser: the drawn line is the shot line (${atLock ? (atLock.perp * 1000).toFixed(1) : '-'} mm off it, ${atLock ? (atLock.angle * 1000).toFixed(2) : '-'} mrad apart)`);
+    ok(atLock && atLock.near < 0.25 && atLock.w <= 0.06, `laser: aimed at the camera it is thin and dim (near ${atLock ? atLock.near.toFixed(2) : '-'}, glow ${atLock ? atLock.w.toFixed(3) : '-'} m wide)`);
+    ok(peak <= 2.3, `laser: no frame of a real charge goes over HDR 2.3 (${peak.toFixed(2)})`);
+    // and it is full strength when it points somewhere else: Naebun well to one side of the line
+    const s3 = fresh();
+    const l3 = spawn(s3.S, 'longshot', lane.x0, lane.z, -Math.PI / 2, '_t');
+    place(lane.x0 + 14, lane.z, Math.PI / 2);
+    wake(l3);
+    run(8, () => { if (l3.locked) { s3.S.player.z += 6; return false; } return true; });
+    run(0.1);
+    ok(l3.state === 'charge' && l3.robot.laserOn && l3.robot.laserNear > 0.99, `laser: full strength when Naebun is 6 m off the line (near ${l3.robot.laserNear.toFixed(2)})`);
+  }
 
   // it cannot swing faster than charge.turn
   {
@@ -823,6 +993,26 @@ function findBlock(W, wantFull) {
   const r = M.makeRobot('longshot');
   ok(r.pivot && r.pivot.up === 1.5 && r.pivot.fwd === 0.3 && typeof r.setLaser === 'function', 'Longshot: pivot and laser');
   ok(typeof M.makeRobot('nurse').setBeam === 'function' && typeof M.makeRobot('shaken').setBlast === 'function', 'Nurse: beam; Shaken: blast ring');
+  // the Mimic's lit parts (window, sign, display) are dim while it is dormant, so it does not stand out in a dark level, and come
+  // up as it unfolds
+  {
+    const mm = M.makeRobot('mimic');
+    const lit = (pose, k) => {
+      mm.setPose(pose, 0, k);
+      const out = [];
+      mm.group.traverseVisible((o) => { if (o.isMesh && o.material.isMeshBasicMaterial && o.material.side === THREE.DoubleSide) out.push(Math.max(o.material.color.r, o.material.color.g, o.material.color.b)); });
+      return out;
+    };
+    const dorm = lit('dormant', 0);
+    const peakOf = (a) => Math.max(...a);
+    ok(dorm.length === 3 && peakOf(dorm) <= 0.7, `Mimic dormant: window, sign and display are all dim (peak channel ${peakOf(dorm).toFixed(2)}, the display was 1.6)`);
+    const w0 = dorm[1];
+    const ramp = [0, 0.1, 0.2, 0.3, 0.4, 0.5].map((k) => lit('unfold', k)[1]);
+    ok(ramp.every((v, i) => i === 0 || v >= ramp[i - 1] - 1e-9) && ramp[5] > w0 * 2, `Mimic unfolding: the window comes up (${ramp.map((v) => v.toFixed(2)).join(', ')})`);
+    ok(lit('unfold', 0).every((v, i) => Math.abs(v - dorm[i]) < 1e-9), 'Mimic: unfold k 0 is the dormant light exactly (no pop when it wakes)');
+    ok(peakOf(lit('idle', 0)) > peakOf(dorm) * 2, 'Mimic awake: lit properly');
+    for (const [pose, k] of [['dead', 0.5], ['hurt', 0.2], ['walk', 0.5]]) ok(lit(pose, k).every(Number.isFinite), `Mimic ${pose}: lights are finite`);
+  }
   for (const f of ['rattle', 'hiss', 'fizz', 'snipeCharge', 'lock', 'snipe', 'reviveStart', 'reviveDone', 'unfold']) {
     ok(typeof audio[f] === 'function', `audio.${f} exists`);
     audio[f]();

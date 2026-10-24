@@ -7,6 +7,7 @@ import * as THREE from '../vendor/three.module.min.js';
 import * as audio from './audio.js';
 import { WALL_H, EYE, PLAYER_R, COLOURS } from './consts.js';
 import { buildWorld } from './world.js';
+import { loadBaked, bakedBytes } from './textures.js';
 import { createPipeline, TIERS, TIER_ORDER } from './gfx.js';
 import { makeEnvironment } from './gfx-env.js';
 import { createFx } from './fx.js';
@@ -18,7 +19,8 @@ import * as screens from './screens.js';
 import * as M from './models.js';
 import * as store from './save.js';
 import { createArsenalPlay } from './arsenal-play.js';
-import { WEAPONS, WEAPON_ORDER, ENEMY_DEFS, PLAYER, LEVELS, DEATH_LINES, DRINKS, DRINK_ORDER } from './data.js';
+import { createPerf } from './perf.js';
+import { WEAPONS, WEAPON_ORDER, ENEMY_DEFS, PLAYER, LEVELS, DEATH_LINES, DRINKS, DRINK_ORDER, DIFFICULTY, DIFFICULTY_ORDER, defFor } from './data.js';
 
 const TAU = Math.PI * 2;
 const HURT_DUR = 0.38; // matches the hurt animation length in models.js
@@ -48,12 +50,16 @@ function detectMobile() {
 let mobileBrowser = detectMobile();
 const inputMode = () => S.settings.input || (mobileBrowser ? 'mobile' : 'pc');
 // Quality: ?q=low|medium|high forces a tier (used by tests); otherwise start from the saved tier (default high)
-// and step down automatically if the device is clearly struggling. ?perf shows a frame-rate overlay.
-const Q = { tier: 'high', fixed: false, ema: 1 / 60, frames: 0, last: 0, perf: query.has('perf'), fps: 60 };
+// and step down automatically if the device is clearly struggling. ?perf (or the P key) shows the readout in src/perf.js.
+const Q = { tier: 'high', fixed: false, ema: 1 / 60, frames: 0, last: 0, fps: 60 };
+let PERF = null; // the performance readout; null (one check per frame, nothing else) until switched on
 // Debug mode is a testing aid for Naebun only. It must never feed back into balance: enemies, weapons' base stats,
 // areas and everything in data.js are tuned for normal mode alone.
 const DEBUG_MULT = { fire: 2, damage: 2, health: 2 };
 const NORMAL_MULT = { fire: 1, damage: 1, health: 1 };
+// Difficulty (docs/difficulty.md) is a different thing: it scales the robots, once, when each is spawned (defFor in data.js).
+// Debug mode stacks on top of it and neither knows about the other. ?difficulty=hard|extra forces a mode, for tests.
+const forcedMode = () => (DIFFICULTY[query.get('difficulty')] ? query.get('difficulty') : null);
 
 const S = {
   mode: 'title', // title | controls | settings | voicemail | intro | play | dead | complete
@@ -75,6 +81,8 @@ const S = {
   deadT: 0,
   completeT: 0,
   debugMode: false,
+  difficulty: 'normal', // normal | hard | extra: this run's mode, fixed from START GAME on (src/data.js DIFFICULTY)
+  prevKeys: new Set(), // keys held on the previous menu step, so a key press is one press
   best: 0,
   newBest: false,
   score: 0,
@@ -147,7 +155,7 @@ const makeDrinkMesh = (id) => {
 const buffOn = (name) => S.buffs[name] > 0;
 
 // The prepared arsenal (src/arsenal-play.js, docs/arsenal.md): the Feedback Beam, Bass-Drop Grenade and Airhorn, stun, the SMG's
-// alt-fire, upgrades and collectible records. No level places any of it yet; the hooks below are all it needs from here.
+// alt-fire, upgrades and collectible records. Levels 1 and 2 place it (docs/placement.md); the hooks below are all it needs from here.
 const ARS = createArsenalPlay({
   S, M, audio, store, getWorld: () => world, getR: () => R, castRay, damageEnemy, alertNear, forward3, spark, fxHit, toast, mult, bounceOff,
   inputMode: () => inputMode(),
@@ -164,21 +172,22 @@ export function init(view) {
   if (savedSettings && typeof savedSettings === 'object') S.settings = { input: savedSettings.input === 'pc' || savedSettings.input === 'mobile' ? savedSettings.input : null, sens: clamp(Math.round(Number(savedSettings.sens)) || 1, 0, MOUSE_SENS.length - 1) };
   S.save = store.load();
   S.torch.attached = S.save.torch === true;
-  for (let n = 1; n <= store.MAX_LEVELS; n++) { // scores from before the cookie save existed
+  for (let n = 1; n <= store.MAX_LEVELS; n++) { // scores from before the cookie save existed: they were normal mode
     const old = Number(read(bestKey(n))) || 0;
-    if (old > (S.save.best[n] || 0)) S.save.best[n] = old;
+    if (old > store.bestOf(S.save, 'normal', n)) store.setBest(S.save, 'normal', n, old);
   }
   S.level = startLevel();
+  S.difficulty = startMode();
   S.best = bestFor(S.level);
   S.debugMode = read(DEBUG_KEY) === true;
   const forced = query.get('q');
   const saved = read(QUALITY_KEY);
   Q.fixed = !!TIERS[forced];
   Q.tier = TIERS[forced] ? forced : (TIERS[saved] ? saved : 'high');
-  world = buildWorld({ quality: Q.tier, level: S.level });
+  world = buildWorld({ quality: Q.tier, level: S.level, baked: bakedSets() });
   rememberDoors();
   flow = world.createFlowField();
-  if (typeof document !== 'undefined' && document.getElementById('gl')) initRender(view);
+  if (typeof document !== 'undefined' && document.getElementById('gl')) { initRender(view); startBaked(); }
   resetLevel();
   S.mode = 'title';
 }
@@ -189,7 +198,13 @@ function startLevel() {
   return n >= 1 && n <= LEVELS.length ? Math.floor(n) : 1;
 }
 
-const bestFor = (n) => S.save.best[n] || 0;
+const bestFor = (n) => store.bestOf(S.save, S.difficulty, n);
+// The mode a new game starts highlighted in and CONTINUE resumes in: the saved one (or ?difficulty). The run's own mode is S.difficulty.
+const startMode = () => forcedMode() || S.save.difficulty;
+const setDifficulty = (m) => {
+  S.difficulty = DIFFICULTY[m] ? m : 'normal';
+  S.best = bestFor(startLevel());
+};
 
 function rememberDoors() {
   for (const k of Object.keys(initialOpen)) delete initialOpen[k];
@@ -204,7 +219,7 @@ function loadLevel(n) {
   S.best = bestFor(n);
   if (world && world.level === n) return;
   const old = world;
-  world = buildWorld({ quality: Q.tier, level: n });
+  world = buildWorld({ quality: Q.tier, level: n, baked: bakedSets() });
   rememberDoors();
   flow = world.createFlowField();
   if (R) {
@@ -214,9 +229,33 @@ function loadLevel(n) {
       o.geometry.dispose();
       for (const m of [].concat(o.material)) m.dispose();
     });
+    old.disposeTextures(); // generated textures only: the baked ones are shared with the next level
     applyAtmosphere();
     R.scene.add(world.group);
   }
+}
+
+// Baked textures (src/textures.js, made by scripts/blender/textures.py): medium and high tiers only, loaded in the background
+// from the title screen. The game never waits for them: it starts on the generated textures, which also stay if a file fails
+// or the tier is low. When the files arrive they are swapped in at the next moment nobody is playing (a texture upload is a
+// small stall), and every level built afterwards takes them directly. ?baked=0 turns them off, for before and after shots.
+const BAKED = { state: 'off', sets: null, bytes: 0 }; // off | loading | ready | applied | failed
+const bakedSets = () => (BAKED.state === 'ready' || BAKED.state === 'applied') && Q.tier !== 'low' ? BAKED.sets : null;
+function startBaked() {
+  if (Q.tier === 'low' || query.get('baked') === '0' || typeof Image === 'undefined') return;
+  BAKED.state = 'loading';
+  loadBaked().then((sets) => {
+    BAKED.sets = sets;
+    BAKED.bytes = bakedBytes(sets);
+    BAKED.state = Object.keys(sets).length ? 'ready' : 'failed';
+  });
+}
+function applyBaked() {
+  if (BAKED.state !== 'ready' || !R || Q.tier === 'low') return;
+  if (S.mode === 'play' && !query.has('test')) return; // wait for the next menu, death or level change
+  world.retexture(BAKED.sets);
+  for (const set of Object.values(BAKED.sets)) for (const t of [set.map, set.normal, set.rough]) R.renderer.initTexture(t); // upload now, not on the first frame that needs it
+  BAKED.state = 'applied';
 }
 
 // Fog, ambient, grade, the camera fill light and the gun torch's settings all come from the level.
@@ -393,6 +432,34 @@ function initRender(view) {
   R = { renderer, scene, camera, hemi, fill, fillBase: 0, spot, tbeam, torchCfg: DEFAULT_TORCH, attachRig, wscene, wcam, wroot, models, flashes, impacts, explosions: [], flashT: 0, muzzleT: 0, pipeline, fx, look: null, drinkVms, beam, beamParts: [beamCore, beamMid, beamGlow], fov: 85, baseFov: 85, naebun };
   applyAtmosphere();
   resize(view);
+  initPerf();
+}
+
+// The performance readout: ?perf in the URL, or the P key, switches it on (and off). Nothing exists until then.
+function setPerf(on) {
+  if (on && !PERF && R) {
+    PERF = createPerf({
+      renderer: R.renderer,
+      scenes: () => [R.scene, R.wscene],
+      info: () => {
+        const area = world.areaAt(S.player.x, S.player.z);
+        return { tier: R.pipeline.tier, fixed: Q.fixed, pixelRatio: R.pipeline.pixelRatio, level: S.level, area: area ? area.id : '' };
+      },
+    });
+    if (PERF) window.__perf = PERF; // the latest numbers, for tests and for reading off a connected phone
+  } else if (!on && PERF) {
+    PERF.destroy();
+    PERF = null;
+    delete window.__perf;
+  }
+}
+
+function initPerf() {
+  if (typeof window === 'undefined') return;
+  window.addEventListener('keydown', (e) => {
+    if (e.key.toLowerCase() === 'p' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) setPerf(!PERF);
+  });
+  if (query.has('perf')) setPerf(true);
 }
 
 // The torch beam: an open cone from the lens, drawn additively and brightest at its edges-on silhouette fade, so it reads as
@@ -437,7 +504,7 @@ function makeTorchBeam() {
       varying float vT; varying vec3 vN; varying vec3 vV;
       void main() {
         float f = abs(dot(normalize(vN), normalize(vV)));
-        float a = pow(f, 1.7) * pow(1.0 - vT, 1.5) * smoothstep(0.0, 0.05, vT) * uI;
+        float a = pow(f, 1.7) * pow(1.0 - vT, 2.4) * smoothstep(0.0, 0.05, vT) * uI;
         gl_FragColor = vec4(uColor * a, 1.0);
       }`,
     transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false,
@@ -552,6 +619,7 @@ function requestLevel(n) {
 
 function toTitle() {
   S.mode = 'title';
+  setDifficulty(startMode()); // a pick that was never started (or a debug run's) does not stay on the title
   if (world.level !== startLevel()) requestLevel(startLevel());
   else resetLevel();
   audio.setMood(0.1, false);
@@ -560,6 +628,10 @@ function toTitle() {
 function beginRun() {
   audio.unlock();
   if (S.level === 1) S.torch.attached = false; // a new game: the pistol has no torch until the first dark level
+  if (!S.debugMode && S.save.difficulty !== S.difficulty) { // the run's mode is saved so CONTINUE resumes in it; a debug run never writes it
+    S.save.difficulty = S.difficulty;
+    store.save(S.save);
+  }
   loadLevel(S.level);
   resetLevel();
   S.mode = 'intro';
@@ -572,8 +644,9 @@ function resumeGame() {
   const n = Math.min(S.save.unlocked, LEVELS.length);
   audio.unlock();
   S.torch.attached = S.save.torch === true;
+  S.difficulty = startMode(); // CONTINUE resumes in the saved mode
   if (world.level !== n || S.pendingLoad) requestLevel(n);
-  else { S.level = n; resetLevel(); }
+  else { S.level = n; S.best = bestFor(n); resetLevel(); }
   audio.setLevel(n - 1);
   if (n > 1 && LEVELS[n - 1].voicemail) {
     S.mode = 'voicemail';
@@ -600,7 +673,7 @@ function nextLevel() {
 // ---- enemies ----
 
 function spawnEnemy(area, sp) {
-  const def = ENEMY_DEFS[sp.kind];
+  const def = defFor(sp.kind, S.difficulty); // the run's difficulty is applied here and nowhere else
   const robot = makeRobot(sp.kind);
   robot.group.position.set(sp.x, 0, sp.z);
   robot.group.rotation.y = sp.yaw;
@@ -967,8 +1040,8 @@ function fireBottle(e, off = 0) {
   audio.spit();
 }
 
-// >>> PREPARED ENEMIES BEGIN (game logic for the four approved enemies that are not placed in any level)
-// ---- Prepared enemies (docs/enemies-next.md): built and tested, not placed in any level ----
+// >>> PREPARED ENEMIES BEGIN (game logic for the four newer enemies, placed in levels 1 and 2: docs/placement.md)
+// ---- The four newer enemies (docs/enemies-next.md): built and tested ahead of time, now placed in levels 1 and 2 ----
 // Four kinds have an `ai` in their ENEMY_DEFS entry. updateEnemy() hands them to updateSpecial(), which returns true when it
 // has done the whole update (movement, turning and pose) and false to leave the usual code to it (a sleeping robot, a
 // Mimic that has finished unfolding). Models: src/models.js, between the PREPARED ENEMIES markers.
@@ -1244,7 +1317,7 @@ function updateLongshot(e, dt) {
     if (along > 0 && along < wall && lateral < def.shot.halfWidth + 0.2) reach = Math.min(reach, (along - 1.2) / cp);
     const len = Math.max(0.5, reach - 0.96); // the beam starts at the muzzle, 0.96 m along the barrel
     const k = clamp(e.stateT / total, 0, 1);
-    e.robot.setLaser(len, e.aimPitch, e.locked, k);
+    e.robot.setLaser(len, e.aimPitch, e.locked, k, laserNear(e, pv, len));
     e.robot.setPose('aim', e.stateT, k);
     if (e.stateT >= total) {
       fireSnipe(e, pv, wall, cp);
@@ -1258,7 +1331,7 @@ function updateLongshot(e, dt) {
 
   // recover: the shot has gone; the tracer lingers a moment
   e.tracerT -= dt;
-  if (e.tracerT > 0) e.robot.setLaser(e.tracerLen, e.aimPitch, true, 1);
+  if (e.tracerT > 0) e.robot.setLaser(e.tracerLen, e.aimPitch, true, 1, laserNear(e, pv, e.tracerLen));
   else e.robot.setLaser(0, e.aimPitch);
   e.robot.setPose('shoot', e.stateT, clamp(e.stateT / def.shot.recover, 0, 1));
   if (e.stateT >= def.shot.recover) {
@@ -1272,6 +1345,23 @@ function updateLongshot(e, dt) {
 
 // The shot: a straight line from the rifle's pivot along the locked yaw and pitch. It hurts Naebun if Naebun is within the
 // line's half-width and the line is not stopped by a wall or pillar first. Low cover does not stop it.
+// How clear the camera is of a Longshot's laser, 0 (on top of it) to 1 (5 m or more away). models.js thins and dims the line by
+// it, so a line aimed at the player does not flood the screen. Only the drawing changes: the line itself is the shot line.
+function laserNear(e, pv, len) {
+  const p = S.player;
+  const cp = Math.cos(e.aimPitch);
+  const dx = -Math.sin(e.yaw) * cp;
+  const dy = Math.sin(e.aimPitch);
+  const dz = -Math.cos(e.yaw) * cp;
+  const sx = e.x - Math.sin(e.yaw) * (pv.fwd + 0.96 * cp);
+  const sy = pv.up + dy * 0.96;
+  const sz = e.z - Math.cos(e.yaw) * (pv.fwd + 0.96 * cp);
+  const t = clamp((p.x - sx) * dx + (EYE - sy) * dy + (p.z - sz) * dz, 0, len); // the closest point on the line to the camera
+  const d = Math.hypot(sx + dx * t - p.x, sy + dy * t - EYE, sz + dz * t - p.z);
+  const n = clamp((d - 1.2) / 3.8, 0, 1);
+  return n * n * (3 - 2 * n);
+}
+
 function fireSnipe(e, pv, wall, cp) {
   const p = S.player;
   const def = e.def;
@@ -1511,7 +1601,7 @@ function die() {
   if (!S.debugMode && S.score > S.best) {
     S.best = S.score;
     S.newBest = true;
-    S.save.best[S.level] = S.best;
+    store.setBest(S.save, S.difficulty, S.level, S.best);
     store.save(S.save);
   }
   audio.gameOver();
@@ -1530,7 +1620,7 @@ function completeLevel() {
   if (!S.debugMode && S.score > S.best) {
     S.best = S.score;
     S.newBest = true;
-    S.save.best[S.level] = S.best;
+    store.setBest(S.save, S.difficulty, S.level, S.best);
     store.save(S.save);
   }
   audio.dawn();
@@ -2161,21 +2251,24 @@ function updateAreas() {
 
 // One line for the Settings page: how far the saved game is and the best scores.
 function progressText() {
-  const best = Object.keys(S.save.best).map((n) => `L${n} ${S.save.best[n]}`).join('  ');
-  return `Furthest level: ${S.save.unlocked}${S.save.done.length ? `   Done: ${S.save.done.join(', ')}` : ''}${best ? `   Best: ${best}` : ''}`;
+  const bests = S.save.best[S.save.difficulty];
+  const best = Object.keys(bests).map((n) => `L${n} ${bests[n]}`).join('  ');
+  const mode = DIFFICULTY[S.save.difficulty].tag;
+  return `Furthest level: ${S.save.unlocked}${S.save.done.length ? `   Done: ${S.save.done.join(', ')}` : ''}${best ? `   Best${mode ? ` (${mode})` : ''}: ${best}` : ''}`;
 }
 
 function stateFor(mode) {
   switch (mode) {
     case 'settings': return { t: S.t, input: inputMode(), sensLabel: MOUSE_SENS[S.settings.sens].label, resetArmed: S.resetArmed > 0, saved: progressText() };
     case 'setlist': return { t: S.t, found: S.save.records.slice() };
-    case 'title': return { t: S.t, records: S.save.records.length, input: inputMode(), resumeLevel: S.save.unlocked > 1 ? Math.min(S.save.unlocked, LEVELS.length) : 0, debugMode: S.debugMode, best: S.best, levelNumber: LEVELS[startLevel() - 1].number, levelName: LEVELS[startLevel() - 1].name };
+    case 'difficulty': return { t: S.t, input: inputMode(), difficulty: S.difficulty };
+    case 'title': return { t: S.t, records: S.save.records.length, input: inputMode(), resumeLevel: S.save.unlocked > 1 ? Math.min(S.save.unlocked, LEVELS.length) : 0, difficulty: S.difficulty, debugMode: S.debugMode, best: bestFor(startLevel()), levelNumber: LEVELS[startLevel() - 1].number, levelName: LEVELS[startLevel() - 1].name };
     case 'controls': return { t: S.t, input: inputMode() };
-    case 'dead': return { t: S.deadT, line: S.deadLine, score: S.score, best: S.best, newBest: S.newBest, debugMode: S.debugMode, levelName: levelInfo().name };
+    case 'dead': return { t: S.deadT, line: S.deadLine, score: S.score, best: S.best, newBest: S.newBest, debugMode: S.debugMode, difficulty: S.difficulty, levelName: levelInfo().name };
     case 'complete':
       return {
         t: S.completeT, score: S.score, best: S.best, newBest: S.newBest, timeSec: S.runT, kills: S.kills,
-        totalEnemies: S.totalEnemies, debugMode: S.debugMode, hasNext: S.level < LEVELS.length,
+        totalEnemies: S.totalEnemies, debugMode: S.debugMode, difficulty: S.difficulty, hasNext: S.level < LEVELS.length,
         title: levelInfo().doneTitle, line: levelInfo().doneLine, sub: levelInfo().doneSub,
       };
     case 'voicemail': return { t: S.mailT, mail: levelInfo().voicemail, level: levelInfo() };
@@ -2190,22 +2283,26 @@ function handlePresses(input, view) {
     if (!b) continue;
     audio.unlock();
     audio.blip();
-    switch (b.id) {
-      case 'new': S.mode = 'controls'; break;
-      case 'back': S.mode = 'title'; break;
+    switch (b.mode ? 'mode' : b.id) {
+      case 'new': S.mode = 'difficulty'; break;
+      case 'back':
+        if (S.mode === 'controls') S.mode = 'difficulty';
+        else { S.mode = 'title'; setDifficulty(startMode()); } // leaving the difficulty page (or any other) unpicks an unstarted choice
+        break;
       case 'settings': S.mode = 'settings'; S.resetArmed = 0; break;
       case 'setlist': S.mode = 'setlist'; break;
       case 'resume': resumeGame(); break;
       case 'reset': // two taps: the first arms it, the second erases the saved progress and scores
         if (S.resetArmed > 0) {
           S.save = store.reset();
-          S.best = 0;
+          setDifficulty(startMode());
           S.resetArmed = 0;
         } else S.resetArmed = 4;
         break;
       case 'input': S.settings.input = inputMode() === 'pc' ? 'mobile' : 'pc'; saveSettings(); break;
       case 'sens': S.settings.sens = (S.settings.sens + 1) % MOUSE_SENS.length; saveSettings(); break;
       case 'start': S.level = startLevel(); beginRun(); break;
+      case 'mode': setDifficulty(b.mode); S.mode = 'controls'; break; // a choice on the difficulty page: pick it and go on
       case 'next': nextLevel(); break;
       case 'continue': S.mode = 'intro'; S.introT = 0; break;
       case 'debug':
@@ -2224,6 +2321,27 @@ function handlePresses(input, view) {
   }
 }
 
+// The difficulty page also answers the keyboard: 1 2 3 pick, Up and Down move the highlight, Enter picks it, Escape goes back.
+// `input.keys` holds what is down, so a press is a key that was not down on the previous menu step.
+function handleDifficultyKeys(input) {
+  const down = (k) => input.keys.has(k) && !S.prevKeys.has(k);
+  const at = DIFFICULTY_ORDER.indexOf(S.difficulty);
+  let pick = null;
+  DIFFICULTY_ORDER.forEach((m, i) => { if (down(String(i + 1))) pick = m; });
+  if (!pick && down('enter')) pick = S.difficulty;
+  if (down('arrowup') && at > 0) setDifficulty(DIFFICULTY_ORDER[at - 1]);
+  if (down('arrowdown') && at < DIFFICULTY_ORDER.length - 1) setDifficulty(DIFFICULTY_ORDER[at + 1]);
+  if (pick) {
+    audio.blip();
+    setDifficulty(pick);
+    S.mode = 'controls';
+  } else if (down('escape')) {
+    audio.blip();
+    S.mode = 'title';
+    setDifficulty(startMode());
+  }
+}
+
 export function update(dt, input, view) {
   S.view = view;
   S.t += dt;
@@ -2233,6 +2351,7 @@ export function update(dt, input, view) {
     loadLevel(S.level);
     resetLevel();
   }
+  if (BAKED.state === 'ready') applyBaked();
   world.update(dt, S.t);
   if (S.banner && (S.banner.t -= dt) <= 0) S.banner = null;
   if (S.toast && (S.toast.t -= dt) <= 0) S.toast = null;
@@ -2243,18 +2362,22 @@ export function update(dt, input, view) {
 
   switch (S.mode) {
     case 'title':
+    case 'difficulty':
     case 'controls':
     case 'settings':
     case 'setlist':
     case 'dead':
     case 'complete':
+      if (S.mode === 'difficulty') handleDifficultyKeys(input);
+      S.prevKeys.clear();
+      for (const k of input.keys) S.prevKeys.add(k);
       if (S.mode === 'dead') S.deadT += dt;
       if (S.mode === 'complete') S.completeT += dt;
       if (S.mode === 'dead' || S.mode === 'complete') {
         for (const e of S.enemies) if (e.state === 'dead') updateEnemy(e, dt);
       }
       handlePresses(input, view);
-      audio.setMood(S.mode === 'title' || S.mode === 'controls' || S.mode === 'settings' || S.mode === 'setlist' ? 0.1 : 0.4, S.mode === 'dead');
+      audio.setMood(S.mode === 'title' || S.mode === 'difficulty' || S.mode === 'controls' || S.mode === 'settings' || S.mode === 'setlist' ? 0.1 : 0.4, S.mode === 'dead');
       break;
     case 'voicemail':
       S.mailT += dt;
@@ -2396,7 +2519,7 @@ const BUFF_MAX = { speed: DRINKS.orange.seconds, guard: DRINKS.heavy.seconds, ra
 const hudState = {
   health: 0, maxHealth: 0, hurt: 0, damageDirs: null, weapon: { id: '', name: '', clip: 0, clipSize: 0, reload: null },
   weapons: null, hitMarker: 0, headshot: false, toast: null, banner: null, objective: '', enemiesLeft: 0, areaName: '',
-  boss: null, score: 0, timeSec: 0, debugMode: false, move: null, look: null, firing: false, buffs: null, cinematic: 0,
+  boss: null, score: 0, timeSec: 0, debugMode: false, difficulty: '', move: null, look: null, firing: false, buffs: null, cinematic: 0,
 };
 
 function buildHudState() {
@@ -2422,6 +2545,7 @@ function buildHudState() {
   h.score = S.score;
   h.timeSec = S.runT;
   h.debugMode = S.debugMode;
+  h.difficulty = DIFFICULTY[S.difficulty].tag; // '' in normal mode
   h.cinematic = S.camK;
   h.buffs = Object.entries(S.buffs).filter(([, t]) => t > 0).map(([id, t]) => ({ id, t, max: BUFF_MAX[id] }));
   h.move = S.ui.move;
@@ -2435,7 +2559,7 @@ function buildHudState() {
 function placeCamera() {
   const { camera } = R;
   const p = S.player;
-  if (S.mode === 'title' || S.mode === 'controls' || S.mode === 'settings' || S.mode === 'setlist') {
+  if (S.mode === 'title' || S.mode === 'difficulty' || S.mode === 'controls' || S.mode === 'settings' || S.mode === 'setlist') {
     // slow drift through the dance floor as a backdrop for the menus
     const a = world.areas.find((x) => x.id === levelInfo().titleArea) || world.areas[0];
     const cx = ((a.rect.c0 + a.rect.c1 + 1) / 2) * 2;
@@ -2557,13 +2681,13 @@ function animateViewmodel(dt) {
     wroot.position.set(baseX + bobX, (R.wcam.aspect < 1 ? -0.205 : -0.24) + bobY - dip * 0.22 - sw * 0.4, -0.62 + p.kick * 0.08);
     wroot.rotation.set(0.03 + p.kick * 0.22 + dip * 0.7, 0.07 + dip * -0.25, dip * 0.2);
     if (S.attach) {
-      // while the torch is fitted the pistol comes up and rolls a little, so the rail faces the player
+      // while the torch is fitted the pistol comes up and rolls a little, so its top (where the module clips on) faces the left hand
       const lift = Math.sin(clamp(S.attach.k, 0, 1) * Math.PI);
       wroot.position.z += 0.05 * lift;
       wroot.position.y += 0.035 * lift;
       wroot.position.x -= 0.03 * lift;
       wroot.rotation.x += 0.12 * lift;
-      wroot.rotation.z += -0.3 * lift;
+      wroot.rotation.z += 0.3 * lift;
     }
   }
   // the shotgun's pump (and the left hand on it) slides back and forward in the gap between shots
@@ -2650,7 +2774,7 @@ function updateTorch() {
   u.uL.value = len;
   u.uR0.value = 0.025;
   u.uR1.value = tbeam.tanA * len;
-  u.uI.value = 0.22 * T.k * flick;
+  u.uI.value = 0.12 * T.k * flick;
   tbeam.mesh.position.copy(_tp);
   tbeam.mesh.quaternion.setFromUnitVectors(_tz, _td);
   tbeam.mesh.visible = true;
@@ -2691,22 +2815,11 @@ function drawVignette(ctx, view) {
   ctx.fillRect(0, 0, view.w, view.h);
 }
 
-function drawPerf(ctx, view) {
-  const info = R.renderer.info;
-  ctx.font = '600 11px ui-monospace, Menlo, monospace';
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'top';
-  ctx.fillStyle = 'rgba(0,0,0,0.55)';
-  ctx.fillRect(4, view.safe.top + 70, 214, 30);
-  ctx.fillStyle = '#9dff9d';
-  ctx.fillText(`${Q.fps.toFixed(0)} fps  ${(Q.ema * 1000).toFixed(1)} ms  ${R.pipeline.tier}${Q.fixed ? ' (fixed)' : ''}`, 8, view.safe.top + 74);
-  ctx.fillText(`calls ${info.render.calls}  tris ${(info.render.triangles / 1000).toFixed(0)}k  ratio ${R.pipeline.pixelRatio}`, 8, view.safe.top + 88);
-}
-
 export function render(ctx, view, alpha) {
   const dtv = 1 / 60;
   ctx.clearRect(0, 0, view.w, view.h);
   if (!R) return;
+  if (PERF) PERF.begin(performance.now());
   if (S.pendingLoad) S.loadReady = true; // this frame shows the new screen; the world swaps on the next update
   placeCamera();
   animateWorld();
@@ -2728,6 +2841,9 @@ export function render(ctx, view, alpha) {
   switch (S.mode) {
     case 'title':
       screens.drawTitle(ctx, view, stateFor('title'));
+      break;
+    case 'difficulty':
+      screens.drawDifficulty(ctx, view, stateFor('difficulty'));
       break;
     case 'controls':
       screens.drawControls(ctx, view, stateFor('controls'));
@@ -2757,7 +2873,7 @@ export function render(ctx, view, alpha) {
     default:
       hud.drawPlayHud(ctx, view, buildHudState());
   }
-  if (Q.perf) drawPerf(ctx, view);
+  if (PERF) PERF.end(performance.now(), view);
 }
 
 // ---- tests ----
@@ -2773,6 +2889,9 @@ export function testHook(cmd, arg) {
     case 'play': resetLevel(); S.mode = 'play'; return undefined;
     case 'level': loadLevel(arg); resetLevel(); S.mode = 'play'; return undefined;
     case 'title': toTitle(); return undefined;
+    case 'difficulty': // set this run's mode ('normal' | 'hard' | 'extra') and respawn the robots in it; returns the mode in force
+      if (arg !== undefined) { setDifficulty(arg); S.best = bestFor(S.level); resetLevel(); }
+      return S.difficulty;
     case 'teleport': S.player.x = arg.x; S.player.z = arg.z; if (arg.yaw !== undefined) S.player.yaw = arg.yaw; return undefined;
     case 'killArea':
       for (const e of S.enemies) if (e.areaId === arg && !e.dead) damageEnemy(e, 1e6, false, e.x, e.z, 0);
@@ -2787,6 +2906,7 @@ export function testHook(cmd, arg) {
     case 'hurt': hurtPlayer(arg, S.player.x, S.player.z + 5, false); return undefined;
     case 'screen': // jump to a menu screen, for screenshots: title | controls | intro | voicemail | dead | complete
       if (arg === 'title') toTitle();
+      else if (arg === 'difficulty') S.mode = 'difficulty';
       else if (arg === 'controls') S.mode = 'controls';
       else if (arg === 'settings') S.mode = 'settings';
       else if (arg === 'setlist') S.mode = 'setlist';
@@ -2795,6 +2915,7 @@ export function testHook(cmd, arg) {
       else if (arg === 'dead') { resetLevel(); S.mode = 'play'; die(); }
       else if (arg === 'complete') { resetLevel(); S.mode = 'play'; completeLevel(); }
       return undefined;
+    case 'baked': return { state: BAKED.state, bytes: BAKED.bytes, names: [...world.bakedNames], loaded: BAKED.sets ? Object.keys(BAKED.sets) : [] }; // baked texture status, for tests
     case 'drink': startDrink(arg); return undefined;
     case 'torch': // { attached, on } to set; returns the torch state either way (headless tests and screenshots)
       if (arg && arg.attached !== undefined) { S.torch.attached = !!arg.attached; if (S.torch.attached) S.attach = null; }

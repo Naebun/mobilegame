@@ -5,37 +5,39 @@
 // Legend. Solid: # wall, P pillar, S speaker stack, T stairs. Low cover (blocks walking, not bullets):
 // b bar counter, j DJ booth, v booth, x crate or flight case, r coat or costume rail, o round table.
 // 1-6 door tiles (two per door), . floor. Markers that sit on floor: @ start, E exit (two tiles),
-// d fizzbang, w bampot, K bouncer, G shotgun, M smg, L launcher; drinks H dram, O orange, B heavy, N energy, X last orders.
+// d fizzbang, w bampot, K bouncer, k shaken, l longshot, u nurse, m mimic, G shotgun, M smg, L launcher, W airhorn; drinks
+// H dram, O orange, B heavy, N energy, X last orders; upgrades C clip, R reload; records q y z a p (one letter each).
+// Why each new thing is where it is: docs/placement.md.
 // <map>
 export const MAP = [
   '####################################',
   '####....xxx.....xx........xx.......#',
-  '#..#...............................#',
+  '#p.#...............................#',
   '#EE6................d..............#',
   '#EE6......K.....P.......P..........#',
   '#..#..................d............#',
   '####.........B...................H.#',
   '####..........rr....rr.............#',
   '###############################55###',
-  '#.....vvv...N.vvv..X..vvv..........#',
+  '#R....vvv...N.vvv..X..vvv.........a#',
   '#..................................#',
   '#.L...............d.......d...w..w.#',
   '#..........................H.......#',
   '###44###############################',
-  '#...........................#x.....#',
+  '#...........................#x....z#',
   '#........w..................#......#',
   '#..................w........#...H..#',
   '#...........................#.....x#',
   '#....bbbbbbbbbbbbbbbbbbbbB..#.....x#',
   '#..........o................#......#',
   '#..o...d........P....d.............#',
-  '#.............d....................#',
+  '#.W..u........d....................#',
   '#.................o.....o..........#',
   '###############################33###',
-  '#...........S.jjjjjjjj.S...........#',
+  '#.y.........S.jjjjjjjj.S...........#',
   '#...........S.jjjjjjjjNS...........#',
   '#...d.........jjjjjjjj.............#',
-  '#...........w....X.........d.......#',
+  '#...........l....X.........d.......#',
   '#v....S...........................S#',
   '#v....S......................P....S#',
   '#.....S...P........................#',
@@ -43,17 +45,17 @@ export const MAP = [
   '#..M...............................#',
   '#.................................S#',
   '#.....S...P........SS........P....S#',
-  '#v....S....................H...d...#',
+  '#v....S....................H...k...#',
   '#v....S............................#',
   '#..................................#',
   '###################22###############',
   '########..............##############',
-  '#TTT..x#..............##############',
+  '#TTT.qx#..............##############',
   '#TTT...#...Orrr..P....##############',
-  '#......#..............##############',
+  '#......#.............m##############',
   '#......1..G..d....d...##############',
   '#..@...1.......rrr....##############',
-  '#......#..............##############',
+  '#......#.............C##############',
   '#x....x#...xx.........##############',
   '####################################',
 ];
@@ -88,10 +90,13 @@ export const FLOOR_STYLE = { stairwell: 'flag', cloakroom: 'flag', dancefloor: '
 export const FLOOR_TINT = { stairwell: [0.95, 0.95, 1.0], cloakroom: [1.0, 0.92, 0.88], dancefloor: [0.9, 0.82, 0.8], bar: [1.0, 0.9, 0.8], vip: [1.0, 0.9, 0.9], backstage: [0.95, 1.0, 1.05] };
 
 // Marker letters on the map: enemy kinds and floor pickups (kind, item).
-export const KINDS = { d: 'fizzbang', w: 'bampot', K: 'bouncer' };
+export const KINDS = { d: 'fizzbang', w: 'bampot', K: 'bouncer', k: 'shaken', l: 'longshot', u: 'nurse', m: 'mimic' };
 export const PICKS = {
-  G: ['weapon', 'shotgun'], M: ['weapon', 'smg'], L: ['weapon', 'launcher'],
+  G: ['weapon', 'shotgun'], M: ['weapon', 'smg'], L: ['weapon', 'launcher'], W: ['weapon', 'airhorn'],
   H: ['drink', 'dram'], O: ['drink', 'orange'], B: ['drink', 'heavy'], N: ['drink', 'energy'], X: ['drink', 'lastorders'],
+  C: ['upgrade', 'clip'], R: ['upgrade', 'reload'],
+  // records, one letter each (PICKS maps a letter to one item)
+  q: ['record', 'haar'], y: ['record', 'bypass'], z: ['record', 'gala'], a: ['record', 'pipes'], p: ['record', 'wee'],
 };
 
 export const LEVEL_DEF = {

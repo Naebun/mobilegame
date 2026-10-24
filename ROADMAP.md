@@ -4,16 +4,25 @@
 Levels 1 and 2 are built. Level 2 was built with the owner's explicit permission. No later level is to be built without
 the owner's explicit permission, however obvious the next step looks.
 
-## Prepared weapons, upgrades and collectibles (built, tested, not placed)
-The owner approved the roadmap's weapons, upgrades and collectibles being built ahead of the levels that need them. They
-exist, are wired into the game and are tested on both levels, but **no level contains any of them** (asserted on every level
-by `scripts/harness/arsenal-check.mjs`). Feedback Beam, Bass-Drop Grenade and Airhorn (Blender models with hands, floor pickups,
+## Weapons, upgrades and collectibles (built ahead of time, now placed in levels 1 and 2)
+The owner approved the roadmap's weapons, upgrades and collectibles being built ahead of the levels that need them, and has
+since said to put them in the two levels that exist. They are wired into the game, tested on both levels and placed: the Airhorn
+and the clip and reload upgrades in level 1, the Grenade, the Beam, the clip, reload and altfire upgrades in level 2, and five of
+the ten records in each (asserted by `scripts/harness/arsenal-check.mjs`; what is where, and why, is in `docs/placement.md`). Feedback Beam, Bass-Drop Grenade and Airhorn (Blender models with hands, floor pickups,
 sounds, HUD icons, a mounted torch on the beam and the airhorn), stun for robots (bosses stunned less), the SMG alt-fire behind
 the `altfire` upgrade (right mouse button or E, an ALT button on mobile), the clip and reload upgrades, ten collectible
 records with a joke each, saved in `src/save.js`, and a SETLIST screen on the title once one is found. Design, numbers, how to
-place them later and what is not verified: `docs/arsenal.md`. Nothing has been played by a person; the numbers are first guesses.
+place them and what is not verified: `docs/arsenal.md`. Nothing has been played by a person; the numbers are first guesses.
 
-## Level 2 (the Vaults), on branch `level-2`, not merged
+## Hard and Extra Hard (built, owner's request)
+Three difficulties, all open from the start, picked on a new screen on the NEW GAME path (title, difficulty, controls, START) and
+saved so CONTINUE resumes in the same mode. They multiply robot damage, health, speed and wind-up (the `DIFFICULTY` table in
+`src/data.js`), nothing else: same maps, same pickups, Naebun untouched, no telegraph under 0.35 s. Best scores are kept per mode and
+level. Rules, numbers and what the bots showed: `docs/difficulty.md`. Open: a human playtest of both modes (bots aim better than a
+thumb in a small box with no aim assist, so people will do worse), and whether the multipliers want another pass after that.
+
+
+## Level 2 (the Vaults), merged to main
 Built on request: the level pipeline (`buildWorld({ level })`, definitions in `src/levels/`), the Vaults (six areas,
 nearly dark, torches), the Shielded Fizzbang, the Vinyl Disc, the Tour Guide boss, NEXT LEVEL with a Cheryl voicemail,
 and per-level best scores. Details, numbers and what is not verified: `docs/level-2.md`. Nothing here has been played by a
@@ -79,32 +88,31 @@ the new names.
 - Graphics: the owner wants a more modern look than the current flat-shaded low-poly. Direction still to decide.
 - The full plan is in `docs/full-game-plan.md`.
 
-## Approved enemy ideas (1 built and placed; 2 to 5 built, not placed)
+## Approved enemy ideas (all five built and placed in levels 1 and 2)
 
-The owner approved all five of these for the game. Number 1 is built and used in level 2. Numbers 2 to 5 are **built** (model, definition, AI, sounds and tests) at the owner's request, but are **not placed in any level** until the owner says so. Design, numbers, rules and what is not verified: `docs/enemies-next.md`.
-They are not tied to level 1 and may appear in any level. Approval of an enemy is not permission to build a later
+The owner approved all five of these for the game. Number 1 is built and used in level 2. Numbers 2 to 5 were built (model, definition, AI, sounds and tests) at the owner's request and have since been **placed in levels 1 and 2** at the owner's say-so: where each stands and why is in `docs/placement.md`. Design, numbers, rules and what is not verified: `docs/enemies-next.md`.
+Approval of an enemy is not permission to build a later
 level (see the standing rule). The melee and ranged rule holds: Fizzbang robots only fight in melee, Bampot robots can
 shoot.
 
 | # | Robot | Camp | Idea |
 | --- | --- | --- | --- |
 | 1 | Shielded Fizzbang | Melee | **Built, in level 2.** Carries a vending-machine door as a shield. Shots from the front do almost nothing, so the player flanks it, shoots it from behind, or uses the launcher or shotgun up close |
-| 2 | Fizzbang Shaken | Melee, exploder | **Built, not placed.** A can on spring legs that rattles faster as it nears, primes with a red blast ring on the floor, then bursts when it dies, touches Naebun or its fuse ends. The blast hurts Naebun and every robot in 3.2 m and sets off neighbouring Shakens in a ripple, so shooting it close is a mistake |
-| 3 | Bampot Longshot | Ranged, sniper | **Built, not placed.** A tall green bottle in a flat cap with a rifle. A red laser line tracks Naebun for 1.1 s, locks white-hot for 0.55 s, then one 38-damage hitscan shot along the locked line. Walls and pillars stop it, so cover matters; a sidestep after the lock beats it |
-| 4 | Bampot Nurse | Support | **Built, not placed.** An apothecary bottle with a syringe and a lantern. Never attacks. Revives a dead robot of her own area (not bosses, Shakens or Nurses; once each) 3.6 s after starting, within 6 m and in sight, with a visible beam, unless she is killed first. Keeps away from Naebun at 1.7 m/s. Makes kill order matter |
-| 5 | Vending Mimic | Melee, dormant | **Built, not placed.** A clean teal drinks machine that unfolds into a robot when Naebun comes within 3.4 m in sight, or when it is shot. Hit like any robot while disguised, counts for its area, ignores noise. It is in the level from the start, so nothing appears from nowhere |
+| 2 | Fizzbang Shaken | Melee, exploder | **Built, placed** (level 1 dancefloor; level 2 Cask Cellar). A can on spring legs that rattles faster as it nears, primes with a red blast ring on the floor, then bursts when it dies, touches Naebun or its fuse ends. The blast hurts Naebun and every robot in 3.2 m and sets off neighbouring Shakens in a ripple, so shooting it close is a mistake |
+| 3 | Bampot Longshot | Ranged, sniper | **Built, placed** (level 1 dancefloor; level 2 Plague Cellar). A tall green bottle in a flat cap with a rifle. A red laser line tracks Naebun for 1.1 s, locks white-hot for 0.55 s, then one 38-damage hitscan shot along the locked line. Walls and pillars stop it, so cover matters; a sidestep after the lock beats it |
+| 4 | Bampot Nurse | Support | **Built, placed** (level 1 bar; level 2 Long Vault). An apothecary bottle with a syringe and a lantern. Never attacks. Revives a dead robot of her own area (not bosses, Shakens or Nurses; once each) 3.6 s after starting, within 6 m and in sight, with a visible beam, unless she is killed first. Keeps away from Naebun at 1.7 m/s. Makes kill order matter |
+| 5 | Vending Mimic | Melee, dormant | **Built, placed** (level 1 cloakroom; level 2 Mary King's Close). A clean teal drinks machine that unfolds into a robot when Naebun comes within 3.4 m in sight, or when it is shot. Hit like any robot while disguised, counts for its area, ignores noise. It is in the level from the start, so nothing appears from nowhere |
 
-Notes for whoever places them: the model, definition, AI, sounds and headless checks (`scripts/harness/enemies-check.mjs`)
-are done and screenshots of each were reviewed (`scripts/harness/enemy-views.mjs`). What is left is placement in a level's
-data (map letters are reserved in `docs/enemies-next.md`), a bot that can deal with them, and a human playtest. No level
-contains them yet, and `enemies-check` asserts that. The idea of the first three for level 1 (Shielded, Longshot, Mimic)
-was suggested but not approved for level 1 specifically.
+Notes: the model, definition, AI, sounds and headless checks (`scripts/harness/enemies-check.mjs`) are done and screenshots of
+each were reviewed (`scripts/harness/enemy-views.mjs`). The placement is in the level data (the map letters `k l u m`) and
+`enemies-check` asserts it area by area. The sim bots were taught to deal with them before the placement was tuned
+(`scripts/sim3d.mjs`). What is left is a human playtest: nobody has played any of it, and the sim bots are a proxy.
 
 ## Parked
 - **Top-down version.** Replaced by this rebuild. It is in git history on `main` (squash commits up to PR #2).
 - **Top-down tuning work for levels 2 to 5** (a headless balance simulator and tuning passes) is on the branch
   `tune-levels`, unmerged. It only applies to the top-down game.
-- **Levels 3 and later** do not exist in the first-person game yet.
+- **Levels 3 and later** do not exist in the first-person game yet. Level 3 has a design document only (Grassmarket pubs, the Landlord, Fizzbang Turbo): `docs/level-3.md`. Building it needs the owner's explicit go-ahead.
 
 ## Rule: balance is for normal mode only
 Debug mode (2x fire rate, 2x damage, 2x health) is a testing aid. Never tune enemies, weapons, areas or anything in

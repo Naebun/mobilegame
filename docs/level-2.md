@@ -29,6 +29,11 @@ level 1. The numbers are what the bot saw, not a promise for people.
 
 24 robots including the boss, against 19 in level 1.
 
+**Since the placement** (`docs/placement.md`) the Vaults hold 27: a Bampot Nurse in the Long Vault, a Fizzbang Shaken in the Cask
+Cellar, a Vending Mimic in the Close and a Bampot Longshot in the Plague Cellar (replacing its Bampot), plus the Grenade, the
+Beam, three upgrades and five records on the floor. The table above and the balance section below describe the level before
+that; the numbers after it are in `docs/placement.md`.
+
 ## New things
 
 **Shielded Fizzbang** (melee, Dr Fizzbang camp). It carries a vending-machine door. A hit from inside 63 degrees of the
@@ -45,7 +50,8 @@ percent faster. Last Orders is refused in its room, like the Bouncer's.
 
 ## Look
 
-Nearly dark on purpose. The baked ambient tint is a third of level 1's, the fog is near and black, and the world's four
+Nearly dark on purpose. The baked ambient tint is about a fifth of level 1's (cut again after a real-phone screenshot showed too much
+readable outside the torch cone; the hemisphere light is 0.16 and the camera fill 0.07), the fog is near and black, and the world's four
 point lights are braziers and lamps. Wall torches light pools through the baked light (no extra lights). The level is dark enough that the gun torch is needed:
 at the start Naebun fits a torch to the pistol by hand (a short animation; the pistol cannot fire until it is on), and from then
 on the torch is a spotlight and a visible beam placed on the torch lens, so it points where the gun points, including through

@@ -21,13 +21,24 @@ Two levels so far. Read `README.md` for the layout and `docs/fps-design.md` for 
   levels are dark enough to need it (level 2 now, 2 or 3 of the 10 in all); Naebun fits the pistol's torch at the start of
   the first dark level, and every other gun already has one fitted.
 - **Prepared objects:** the roadmap's enemies, weapons, upgrades and collectibles may be built and tested ahead of time, but
-  they stay unplaced: no level map uses them until the owner says to put them in a level.
+  they stay unplaced until the owner says to put them in a level. The owner has said so for levels 1 and 2: the four newer
+  robots (Fizzbang Shaken, Bampot Longshot, Bampot Nurse, Vending Mimic), the Airhorn, Bass-Drop Grenade and Feedback Beam,
+  the clip, reload and altfire upgrades and the ten records are placed in the two existing maps. What is where, and why, is in
+  `docs/placement.md` (any item can be vetoed by name). Anything still prepared and unplaced stays unplaced, and no
+  placement means building level 3.
 - Match the surrounding code: 2-space indent, single quotes, semicolons, short comments that say why. British English.
 - `world.js` and `models.js` are procedural only: geometry, flat colours and generated `THREE.DataTexture`s. No image
-  files, no canvas textures, no DOM access, so they run under plain Node (used by the headless tests).
+  files, no canvas textures, no DOM access, so they run under plain Node (used by the headless tests). `world.js` is
+  handed finished baked textures (`buildWorld({ baked })`, `world.retexture(sets)`) but never loads a file.
+- **Textures are baked in Blender and shipped as WebP.** `scripts/blender/textures.py` models brick, painted brick, stone,
+  flags and boards as real geometry, bakes albedo, normal, roughness and occlusion with Cycles, and writes
+  `assets/textures/*.webp`. Those are the only image files the repo may hold (textures, nothing else: models stay data
+  modules). `src/textures.js` (DOM allowed) loads them in the background from the title screen and `game3d.js` swaps them in
+  on the medium and high tiers. The generated textures stay as the fallback: the low tier, every headless test and any
+  failed load use them. Change the script and rerun it, never edit the files. Details: `docs/textures.md`.
 - The five drink meshes are modelled in Blender (`scripts/blender/drinks.py`) and generated into `src/drink-meshes.js`,
   which `models.js` decodes. That file is data, not hand-written: change the script and rerun it, never edit the output.
-  Geometry and vertex colour only, still no image files. Texture work has not started.
+  Geometry and vertex colour only: drinks and the other models carry no image files.
 - The five weapons and Naebun's hands and forearms are modelled in Blender too (`scripts/blender/weapons.py` generates
   `src/weapon-meshes.js`; same rules: change the script, never the output). The procedural `WEAPON_PARTS` in `models.js` stay as
   the fallback.
@@ -51,11 +62,17 @@ Two levels so far. Read `README.md` for the layout and `docs/fps-design.md` for 
 - The Settings page (from the title) switches CONTROLS between PC and MOBILE and sets mouse sensitivity (PC only). In PC mode the
   mouse aims with no button held and the left button fires. Progress is saved by `src/save.js` (cookie plus localStorage); debug runs never write it.
 - Menu buttons come from `screens.buttons(mode, view, state)`, used for both drawing and hit testing.
-- NEW GAME goes to the controls screen first; only START GAME begins the run.
+- NEW GAME goes to the difficulty screen first (NORMAL, HARD, EXTRA HARD), then the controls screen; only START GAME begins the run.
 
 ## Balance rule
 Debug mode (home-screen toggle, `DEBUG_MULT` in `game3d.js`) gives Naebun 2x fire rate, 2x damage and 2x health.
-**Never balance against it.** All tuning is for normal mode. Debug runs must not write the best score.
+**Never balance against it.** All tuning is for normal mode. Debug runs must not write the best score or the saved difficulty.
+
+**Difficulty:** Hard and Extra Hard are multipliers on top of normal, in one `DIFFICULTY` table in `src/data.js` (robot damage, health,
+speed and wind-up; applied once when a robot spawns, by `defFor`). Same maps, same pickups, nothing about Naebun changes, no warning
+shorter than `TELEGRAPH_FLOOR`. The mode is picked once per run, saved, and never changed mid-run; best scores are kept per mode.
+The balance rule stands: tune the base numbers for normal mode, the table for the two harder modes, and never against debug.
+See `docs/difficulty.md`.
 
 ## Testing
 - `npm run smoke -- <dir>` is the end-to-end test (needs the `?test` hook, `window.__game`, which the page exposes only
@@ -63,7 +80,10 @@ Debug mode (home-screen toggle, `DEBUG_MULT` in `game3d.js`) gives Naebun 2x fir
 - `npm run sim` plays the level with bots in plain Node. It is a proxy for a person, not a replacement: use it to check
   the level is winnable and to compare changes, then ask for a human playtest.
 - Look at screenshots (`scripts/shot.mjs`, `scripts/harness/level-tour.mjs`) for anything visual. Do not judge the 3D
-  look from logs.
+  look from logs. The browser harnesses take `PORT` (so parallel runs do not clash) and `TIMEOUT`; `EXTRA='&baked=0'` (or
+  `?baked=0`) turns the baked textures off for a before and after.
+- `node scripts/harness/textures-check.mjs` checks the baked-texture hand-off in Node (files, swap, dispose, low tier, Node
+  start-up); the smoke test checks that the files really decode and swap in on medium and are never fetched on low.
 
 ## Current state
 See `ROADMAP.md`.

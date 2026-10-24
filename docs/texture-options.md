@@ -1,8 +1,8 @@
 # Texture options
 
-Planning only. Nothing here is built, and `CLAUDE.md` still says texture work has not started and the repo holds no image
-files. This is the write-up the owner asked for before deciding. Numbers marked "measured" were taken on this branch in
-Node; the rest are estimates or things we do not know.
+**Decided: D then C, with A kept as the fallback. Built and measured; see `docs/textures.md`.** The rest of this file is the
+planning write-up as it was, kept for the reasoning. The estimates in it are checked against what was built in the last
+section.
 
 ## Where things are
 
@@ -67,3 +67,21 @@ Do level 1's brick and flag first. It is the most visible surface in the game an
 - Decode and upload time on an A15 phone. Desktop numbers will not tell us.
 - Whether tiling repeats show on long walls. Baked brick tends to repeat visibly unless there are a few variants, which costs size.
 - Whether the owner wants image files in the repo at all.
+
+## Decision and what was measured
+
+The owner confirmed option D then C. Image files may now enter the repo for textures only, in `assets/textures/`. Measured on
+the built result:
+
+| Question in this file | Estimate then | Measured |
+| --- | --- | --- |
+| Real size of Blender-baked tileable textures | 1.5 to 2.5 MB for nine materials | 594 KB for five baked surfaces (13 files); brick albedo 78 KB, brick normal 158 KB, roughness 4 to 15 KB each. Carpet, concrete and plaster were not baked |
+| Bake time | "a minute or two per material" | brick about 3 to 3.5 minutes, the others about 1 minute each, about 6.5 minutes for all (4-core container, other work running) |
+| Is the output reproducible | assumed | yes: byte-identical across repeated full runs (`cmp`), for this bpy build |
+| GPU memory | about 38 MB for nine materials at 512 px | 17.7 MiB for what is baked (brick is 1024 x 512), about +8 MB over the generated ones at medium (estimates) |
+| Do tiling repeats show | probably, without variants | yes for the 0.9 m brick tile; fixed with a 1.8 m tile, fewer outlier bricks and a per-face offset, for about 125 KB. Nothing seen on flags or stone |
+| Decode and upload time on an A15 | unknown | still unknown: no phone was available |
+
+What changed from the plan: roughness stayed a separate half-size grey file instead of being packed into another map's alpha
+(lossless alpha is large; the files are tiny anyway); occlusion went into the albedo instead of a file; painted brick and
+floor boards reuse maps instead of having their own. The visual verdict is in `docs/textures.md` and the hand-over notes.
