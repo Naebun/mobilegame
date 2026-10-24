@@ -16,7 +16,7 @@ whose pronouns have not been stated, the owner included.
 | Where | What |
 | --- | --- |
 | `main` (`9366288`, PR #8, squash) | Everything up to the Blender weapons, torch, prepared enemies and arsenal. This is what is deployed to the owner's phone |
-| Branch `playtest-textures-placement` (in `/home/user/mobilegame`, pushed, head `4086cd9` when written) | The **integration branch**. Forked from `main`. Holds my own small commits (below) and is where the four agents' work should be merged. Not merged to `main` |
+| Branch `playtest-textures-placement` (in `/home/user/mobilegame`, pushed) | The **integration branch**. Forked from `main`. Holds my own small commits (below) and all four agents' merged work. Not merged to `main` |
 | Four agent worktrees under `/home/user/mobilegame/.claude/worktrees/` | Now fully merged into the integration branch, so nothing is lost if they go. The branches `worktree-agent-<id>` are local only |
 
 My own commits on the integration branch (all on top of `main`, all pushed):
@@ -151,7 +151,7 @@ Pitfalls found the hard way:
 - Old session detail, if the file still exists:
   `/root/.claude/projects/-home-user-mobilegame/ed3ea337-f0c8-56e8-b8c9-fbd460f4be73.jsonl`.
 
-## Suggested next steps
+## Suggested next steps (superseded items are done: the agents are integrated)
 
 1. Check each worktree (`git -C <path> status`, `git -C <path> log --oneline -5`), finish or re-brief whatever is incomplete.
 2. Integrate as described above, run everything, push the integration branch, report numbers to the owner.
