@@ -239,6 +239,19 @@ SPECS = {
   'boards': dict(W=1.6, H=1.6, res=(512, 512), blocks=boards_blocks, r=0.003, D=0.006, famp=0.0006, fcells=5, step=0.02, mstep=0.01, wob=0.2,
                  mortar=(28, 20, 14), mamp=0.0005, mcells=30, cvar=0.10, chipcol=(120, 84, 56), wood=True,
                  target=(64.1, 41.4, 26.7), half_rough=True, micro=1.8, grain=0.0, boost=2.0, lowboost=2.0, ao_pow=1.2, ao_mix=1.0, streak=0.0),
+  # field surfaces (see run_field): edge keeps variant features off the tile edge, pad_h and wave are the trowel relief in metres,
+  # crack_hw the half width of a crack's mouth, chip_r and chip_d the radius and depth of a spall, damp_r a stain's radius,
+  # stripe the trowel streaks in the micro relief. The two variants are one atlas, 1024 x 512, tile 4 x 2 m.
+  'plaster': dict(field=True, W=2.0, H=2.0, res=(512, 512), step=0.0025, edge=0.14, pad_h=0.0003, wave=0.0010, pits=34,
+                  base=(196, 186, 168), brick_col=(140, 100, 84), lath_col=(70, 56, 44), crack_len=(0.5, 1.1), crack_hw=0.0024,
+                  chip_r=(0.04, 0.09), chip_d=(0.005, 0.009), damp_r=(0.35, 0.6), target=(107.6, 97.4, 85.2), boost=2.0, lowboost=6.0,
+                  micro=1.0, stripe=0.08, grain=0.2, ao_pow=1.3, ao_mix=1.0,
+                  variants=[dict(seed=101, cracks=3, chips=1, patches=0, damps=1, soot=1), dict(seed=202, cracks=4, chips=1, patches=2, damps=0, soot=1)]),
+  # one slab per tile (the joints are on the tile edge), 2.4 m, no atlas
+  'concrete': dict(field=True, W=2.4, H=2.4, res=(512, 512), step=0.003, wave=0.0008, pits=140, base=(190, 190, 186), crack_len=(0.4, 1.0), crack_hw=0.0022,
+                   joint_d=0.006, oil_r=(0.08, 0.2), damp_r=(0.2, 0.45), polish_r=(0.35, 0.8), target=(104.8, 104.8, 102.6), boost=2.0, lowboost=6.0,
+                   micro=1.2, stripe=0.0, grain=0.22, ao_pow=1.3, ao_mix=1.0,
+                   variants=[dict(seed=303, cracks=3, oils=2, damps=1, polish=3)]),
 }
 
 
@@ -612,6 +625,458 @@ def setup_scene(seed):
   return sc
 
 
+# ---------------------------------------------------------------------------------------------
+# Field surfaces (plaster, concrete): one continuous skin instead of blocks. The surface is a heightfield on a periodic grid
+# (so it tiles exactly), meshed at a few millimetres and baked like the block surfaces. A texture may be an atlas of
+# several variants side by side: every variant has the same background (trowel pads, grain, soft stains: one seed) and its
+# own cracks, chips, patches and stains, all kept clear of the tile edge. world.js picks a variant for each ceiling tile, so
+# neighbouring tiles join without a seam and a long vault does not repeat the same crack every 2 m.
+# ---------------------------------------------------------------------------------------------
+
+class Grid:
+  def __init__(self, W, H, step):
+    self.W, self.H = W, H
+    self.nx, self.ny = int(round(W / step)), int(round(H / step))
+    self.step = W / self.nx
+    xs = np.arange(self.nx) * self.step
+    ys = np.arange(self.ny) * self.step
+    self.X, self.Y = np.meshgrid(xs, ys)
+
+  def box(self, cx, cy, ext):
+    """periodic box of half-size ext around (cx, cy): local offsets DX, DY, the index tuple into a (ny, nx) field, and the
+    unwrapped world coordinates (for the tileable noise, which wraps by itself)"""
+    r = int(math.ceil(ext / self.step)) + 1
+    i0, j0 = int(round(cx / self.step)), int(round(cy / self.step))
+    ii = np.arange(i0 - r, i0 + r + 1)
+    jj = np.arange(j0 - r, j0 + r + 1)
+    GX, GY = np.meshgrid(ii * self.step, jj * self.step)
+    return GX - cx, GY - cy, np.ix_(jj % self.ny, ii % self.nx), GX, GY
+
+
+def voronoi(g, cells, seed):
+  """tileable Voronoi: F1, F2, offset from the nearest point, and the nearest cell's id"""
+  cw, ch = g.W / cells, g.H / cells
+  pxs = np.empty((cells, cells))
+  pys = np.empty((cells, cells))
+  for j in range(cells):
+    for i in range(cells):
+      pxs[j, i] = (i + 0.15 + 0.7 * hrand(i, j, seed)) * cw
+      pys[j, i] = (j + 0.15 + 0.7 * hrand(i, j, seed + 1)) * ch
+  ci = np.floor(g.X / cw).astype(np.int64)
+  cj = np.floor(g.Y / ch).astype(np.int64)
+  f1 = np.full(g.X.shape, 1e9)
+  f2 = np.full(g.X.shape, 1e9)
+  ox = np.zeros(g.X.shape)
+  oy = np.zeros(g.X.shape)
+  idx = np.zeros(g.X.shape, np.int64)
+  for dj in (-1, 0, 1):
+    for di in (-1, 0, 1):
+      ii, jj = ci + di, cj + dj
+      fx = pxs[jj % cells, ii % cells] + (ii // cells) * g.W
+      fy = pys[jj % cells, ii % cells] + (jj // cells) * g.H
+      d = np.hypot(g.X - fx, g.Y - fy)
+      closer = d < f1
+      f2 = np.where(closer, f1, np.minimum(f2, d))
+      ox = np.where(closer, g.X - fx, ox)
+      oy = np.where(closer, g.Y - fy, oy)
+      idx = np.where(closer, (jj % cells) * cells + (ii % cells), idx)
+      f1 = np.where(closer, d, f1)
+  return f1, f2, ox, oy, idx
+
+
+def wrap_pad(a, m):
+  return np.pad(a, [(m, m), (m, m)] + [(0, 0)] * (a.ndim - 2), mode='wrap')
+
+
+def seg_dist(px, py, ax, ay, bx, by):
+  """distance from points to the segment a-b, and the position t (0..1) along it"""
+  vx, vy = bx - ax, by - ay
+  l2 = vx * vx + vy * vy + 1e-12
+  t = np.clip(((px - ax) * vx + (py - ay) * vy) / l2, 0, 1)
+  return np.hypot(px - (ax + t * vx), py - (ay + t * vy)), t
+
+
+def crack_paths(rng, n, lo, hi, length, hw):
+  """n hairline cracks as lists of (x, y, half width): a wandering main run plus short branches that taper to nothing.
+  Everything stays inside [lo, hi] so no crack touches the tile edge."""
+  paths = []
+  for _ in range(n):
+    x, y = rng.uniform(lo + 0.25, hi - 0.25), rng.uniform(lo + 0.25, hi - 0.25)
+    th = rng.uniform(0, 2 * math.pi)
+    steps = int(rng.uniform(*length) / 0.012)
+    main = []
+    for k in range(steps):
+      t = k / max(1, steps - 1)
+      main.append((x, y, hw * (0.35 + 0.65 * math.sin(math.pi * min(1, t * 1.15 + 0.08)) ** 0.6)))
+      th += rng.gauss(0, 0.2) + (rng.gauss(0, 0.8) if rng.random() < 0.03 else 0)  # smooth wander, now and then a kink
+      x, y = x + 0.012 * math.cos(th), y + 0.012 * math.sin(th)
+      if not (lo < x < hi and lo < y < hi):
+        break
+    if len(main) < 6:
+      continue
+    paths.append(main)
+    for _b in range(rng.choice((1, 2, 2, 3))):
+      k0 = rng.randrange(2, len(main) - 2)
+      bx, by, bw = main[k0]
+      bth = math.atan2(main[k0 + 1][1] - main[k0 - 1][1], main[k0 + 1][0] - main[k0 - 1][0]) + rng.choice((-1, 1)) * rng.uniform(0.4, 0.9)
+      bl = int(rng.uniform(0.08, 0.3) / 0.012)
+      br = []
+      for k in range(bl):
+        t = k / max(1, bl - 1)
+        br.append((bx, by, bw * 0.7 * (1 - t) ** 0.8 + 0.0003))
+        bth += rng.gauss(0, 0.25)
+        bx, by = bx + 0.012 * math.cos(bth), by + 0.012 * math.sin(bth)
+        if not (lo < bx < hi and lo < by < hi):
+          break
+      if len(br) > 4:
+        paths.append(br)
+  return paths
+
+
+def plaster_field(spec, vi):
+  """heightfield, albedo (linear), roughness and mask for one plaster variant, on the periodic grid. Heights in metres,
+  positive towards the viewer. mask: R crack, G chip, B repaired patch."""
+  v = spec['variants'][vi]
+  g = Grid(spec['W'], spec['H'], spec['step'])
+  W, H = g.W, g.H
+  X, Y = g.X, g.Y
+  rng = random.Random(v['seed'])
+  lo, hi = spec['edge'], W - spec['edge']  # variant features stay inside this
+
+  def f(cells, seed, octaves=3):
+    return fbm(X, Y, W, H, cells, seed, octaves)
+
+  # ---- background, the same for every variant ----
+  f1, f2, ox, oy, cid = voronoi(g, 4, 11)
+  cr = np.array([[hrand(i, 0, 301), hrand(i, 1, 301), hrand(i, 2, 301), hrand(i, 3, 301)] for i in range(16)])
+  pad = cr[cid, 0] * 2 - 1
+  h = spec["pad_h"] * pad + 0.0008 * ((cr[cid, 1] * 2 - 1) * ox + (cr[cid, 2] * 2 - 1) * oy) / 0.25  # each float of the trowel sits a little differently
+  h = h + 0.0003 * np.exp(-(((f2 - f1) / 0.011) ** 2))  # a ridge where one pad meets the next
+  h = h + spec["wave"] * ((f(5, 21, 3) - 0.5) * 2 + 0.6 * (f(11, 25, 2) - 0.5) * 2)
+  h = blur(h, 5, 2)
+  alb = np.broadcast_to(lin(spec['base'])[None, None, :], X.shape + (3,)).copy()
+  tone = 1 + 0.09 * (f(7, 22, 3) - 0.5) * 2 + 0.03 * (cr[cid, 3] - 0.5) * 2
+  rgh = 0.9 + 0.035 * (f(12, 23, 2) - 0.5) * 2
+  msk = np.zeros(X.shape + (3,))
+  # blown-lime pits: small round craters
+  for k in range(spec['pits']):
+    px_, py_ = hrand(k, 1, 700) * W, hrand(k, 2, 700) * H
+    r = 0.004 + 0.007 * hrand(k, 3, 700) ** 1.5
+    DX, DY, ix, GX, GY = g.box(px_, py_, r * 1.6)
+    d = np.hypot(DX, DY) / r
+    dep = 0.0006 + 0.0016 * hrand(k, 4, 700)
+    h[ix] += -dep * (1 - sst(0.2, 1.0, d)) + 0.0003 * np.exp(-(((d - 1.15) / 0.2) ** 2))
+    alb[ix] *= (1 - 0.25 * (1 - sst(0.4, 1.0, d)))[..., None]
+
+  # ---- this variant: cracks, chips, patches, damp, soot ----
+  crack_d = np.zeros(X.shape)  # groove depth
+  crack_s = np.zeros(X.shape)  # soft dirt line beside it
+  for path in crack_paths(rng, v.get('cracks', 0), lo, hi, spec['crack_len'], spec['crack_hw']):
+    for (ax, ay, aw), (bx, by, bw) in zip(path[:-1], path[1:]):
+      DX, DY, ix, GX, GY = g.box((ax + bx) / 2, (ay + by) / 2, max(aw, bw) * 3 + 0.01)
+      d, t = seg_dist(GX, GY, ax, ay, bx, by)
+      hw = aw + (bw - aw) * t
+      crack_d[ix] = np.maximum(crack_d[ix], np.clip(1 - d / hw, 0, 1) * hw * 1.05)
+      crack_s[ix] = np.maximum(crack_s[ix], np.clip(1 - d / (hw * 3.0), 0, 1))
+  h -= crack_d
+  alb *= (1 - 0.62 * np.clip(crack_d / 0.0012, 0, 1) - 0.18 * crack_s)[..., None]
+  msk[..., 0] = np.clip(crack_d / 0.001, 0, 1)
+
+  chipm = np.zeros(X.shape)
+  for ci_ in range(v.get('chips', 0)):
+    cx, cy = rng.uniform(lo + 0.1, hi - 0.1), rng.uniform(lo + 0.1, hi - 0.1)
+    r = rng.uniform(*spec['chip_r'])
+    dep = rng.uniform(*spec['chip_d'])
+    ph = [rng.uniform(0, 6.3) for _ in range(5)]
+    brick = rng.random() < 0.6
+    DX, DY, ix, GX, GY = g.box(cx, cy, r * 1.9)
+    th = np.arctan2(DY, DX)
+    R = r * (1 + sum(0.13 / (k + 1) ** 0.5 * np.cos((k + 2) * th + ph[k]) for k in range(5)))
+    R = R * (1 + 0.45 * (pn(GX, GY, W, H, 36, 36, 51 + ci_) - 0.5) + 0.2 * (pn(GX, GY, W, H, 110, 110, 55 + ci_) - 0.5))
+    d = np.hypot(DX, DY)
+    inside = sst(0.0, 0.006, R - d)  # steep walls, a thumb wide
+    fl = (pn(GX, GY, W, H, 90, 90, 52 + ci_) - 0.5) * 0.0024 + (pn(GX, GY, W, H, 30, 30, 53 + ci_) - 0.5) * 0.002
+    h[ix] = h[ix] * (1 - inside) + (-dep + fl) * inside + 0.0006 * np.exp(-(((d - R - 0.004) / 0.004) ** 2)) * (1 - inside)  # crumbled lip
+    col = lin(spec['brick_col'] if brick else spec['lath_col'])[None, None, :] * (0.75 + 0.5 * pn(GX, GY, W, H, 60, 60, 54 + ci_))[..., None]
+    alb[ix] = alb[ix] * (1 - inside)[..., None] + col * inside[..., None]
+    rgh[ix] = rgh[ix] * (1 - inside) + 0.97 * inside
+    chipm[ix] = np.maximum(chipm[ix], inside)
+  msk[..., 1] = chipm
+
+  patchm = np.zeros(X.shape)
+  for pi_ in range(v.get('patches', 0)):
+    cx, cy = rng.uniform(lo + 0.3, hi - 0.3), rng.uniform(lo + 0.3, hi - 0.3)
+    a, b = rng.uniform(0.11, 0.26), rng.uniform(0.09, 0.22)
+    rot = rng.uniform(0, math.pi)
+    amp = rng.uniform(0.0014, 0.0026)
+    tn = rng.choice((0.92, 1.0, 1.08, 1.14)) * np.array([1.0, 0.99, 0.96])
+    gapped = rng.random() < 0.7
+    DX, DY, ix, GX, GY = g.box(cx, cy, max(a, b) * 1.5 + 0.04)
+    qx = DX * math.cos(rot) + DY * math.sin(rot)
+    qy = -DX * math.sin(rot) + DY * math.cos(rot)
+    rr = 0.04
+    q0, q1 = np.abs(qx) - (a - rr), np.abs(qy) - (b - rr)
+    sdf = np.hypot(np.maximum(q0, 0), np.maximum(q1, 0)) + np.minimum(np.maximum(q0, q1), 0) - rr
+    sdf = sdf + (pn(GX, GY, W, H, 30, 30, 61 + pi_) - 0.5) * 0.045
+    inside = 1 - sst(-0.006, 0.014, sdf)
+    h[ix] += amp * inside
+    if gapped:  # the hairline where the patch meets the old plaster
+      gap = np.clip(1 - np.abs(sdf - 0.004) / 0.0022, 0, 1)
+      h[ix] -= 0.0022 * gap
+      alb[ix] *= (1 - 0.4 * gap)[..., None]
+      mk = msk[..., 0]
+      mk[ix] = np.maximum(mk[ix], gap * 0.7)
+    alb[ix] = alb[ix] * (1 - inside)[..., None] + alb[ix] * (tn[None, None, :] * (1 + 0.05 * (pn(GX, GY, W, H, 12, 12, 62 + pi_) - 0.5) * 2)[..., None]) * inside[..., None]
+    rgh[ix] = rgh[ix] - 0.07 * inside  # trowelled smoother
+    patchm[ix] = np.maximum(patchm[ix], inside)
+  msk[..., 2] = patchm
+
+  # damp: a stain with a dark tide line at its edge
+  for di_ in range(v.get('damps', 0)):
+    cx, cy = rng.uniform(lo + 0.35, hi - 0.35), rng.uniform(lo + 0.35, hi - 0.35)
+    r = rng.uniform(*spec['damp_r'])
+    asp = rng.uniform(0.6, 1.0)
+    rot = rng.uniform(0, math.pi)
+    DX, DY, ix, GX, GY = g.box(cx, cy, r * 1.6)
+    qx = DX * math.cos(rot) + DY * math.sin(rot)
+    qy = (-DX * math.sin(rot) + DY * math.cos(rot)) / asp
+    d = np.hypot(qx, qy) / r + (pn(GX, GY, W, H, 9, 9, 71 + di_) - 0.5) * 0.7 + (pn(GX, GY, W, H, 26, 26, 72 + di_) - 0.5) * 0.18
+    gxm, gym = GX % W, GY % H
+    win = sst(0.08, 0.22, np.minimum(np.minimum(gxm, W - gxm), np.minimum(gym, H - gym)))  # fade out before the tile edge
+    inner = (1 - sst(0.55, 1.0, d)) * win
+    tide = np.exp(-(((d - 0.95) / 0.07) ** 2)) * win
+    stain = np.array([0.74, 0.64, 0.5])
+    mott = 0.75 + 0.5 * pn(GX, GY, W, H, 14, 14, 73 + di_)
+    wgt = (inner * 0.8 * mott)[..., None]
+    alb[ix] = alb[ix] * (1 - wgt) + alb[ix] * stain[None, None, :] * wgt
+    alb[ix] *= (1 - 0.32 * tide)[..., None]
+    rgh[ix] = rgh[ix] - 0.2 * inner  # damp plaster is a little glossier
+    h[ix] += -0.0006 * inner + 0.0004 * tide  # blistered and swollen
+
+  # a grey bloom of soot where the smoke sits
+  for si_ in range(v.get('soot', 0)):
+    cx, cy = rng.uniform(lo + 0.3, hi - 0.3), rng.uniform(lo + 0.3, hi - 0.3)
+    r = rng.uniform(0.18, 0.4)
+    DX, DY, ix, GX, GY = g.box(cx, cy, r * 1.5)
+    d = np.hypot(DX, DY) / r + (pn(GX, GY, W, H, 10, 10, 81 + si_) - 0.5) * 0.6
+    alb[ix] *= ((1 - 0.28 * (1 - sst(0.2, 1.0, d)))[..., None]) * np.array([1.0, 1.0, 1.03])[None, None, :]
+
+  alb = alb * tone[..., None] * (1 - 0.1 * sst(0.55, 0.8, f(4, 24, 3)))[..., None]
+  return g, h, alb, np.clip(rgh, 0.3, 1.0), msk
+
+
+def concrete_field(spec, vi):
+  """a trowelled slab: expansion joints on the tile edge (every slab is one tile), air holes, hairline cracks, oil and damp
+  stains, polished boot tracks and a few patches where the cement skin has worn off and the aggregate shows. Same outputs as
+  plaster_field. Features may cross the tile edge: the stamps wrap."""
+  v = spec['variants'][vi]
+  g = Grid(spec['W'], spec['H'], spec['step'])
+  W, H = g.W, g.H
+  X, Y = g.X, g.Y
+  rng = random.Random(v['seed'])
+
+  def f(cells, seed, octaves=3):
+    return fbm(X, Y, W, H, cells, seed, octaves)
+
+  h = spec['wave'] * ((f(5, 121, 3) - 0.5) * 2 + 0.6 * (f(12, 125, 2) - 0.5) * 2)
+  f1, f2, ox, oy, cid = voronoi(g, 5, 12)
+  h = h + 0.00035 * (np.array([hrand(i, 0, 321) for i in range(25)])[cid] * 2 - 1) + 0.00025 * np.exp(-(((f2 - f1) / 0.012) ** 2))  # trowel passes
+  h = blur(h, 4, 2)
+  alb = np.broadcast_to(lin(spec['base'])[None, None, :], X.shape + (3,)).copy()
+  tone = 1 + 0.12 * (f(6, 122, 3) - 0.5) * 2 + 0.05 * (f(18, 123, 2) - 0.5) * 2
+  rgh = 0.86 + 0.04 * (f(10, 124, 2) - 0.5) * 2
+  msk = np.zeros(X.shape + (3,))
+  # air holes
+  for k in range(spec['pits']):
+    px_, py_ = hrand(k, 1, 710) * W, hrand(k, 2, 710) * H
+    r = 0.003 + 0.007 * hrand(k, 3, 710) ** 1.6
+    DX, DY, ix, GX, GY = g.box(px_, py_, r * 1.6)
+    d = np.hypot(DX, DY) / r
+    h[ix] += -(0.0012 + 0.0022 * hrand(k, 4, 710)) * (1 - sst(0.2, 1.0, d))
+    alb[ix] *= (1 - 0.4 * (1 - sst(0.4, 1.0, d)))[..., None]
+  # worn skin: the pale cement film gone from a path, the grit showing
+  worn = sst(0.6, 0.78, f(4, 126, 3)) * (0.5 + 0.5 * f(24, 127, 2))
+  alb *= (1 - 0.12 * worn)[..., None]
+  # expansion joints: a groove along the tile edge with a chamfer on each slab, filled with dust and old bitumen
+  dxe = np.minimum(X, W - X)
+  dye = np.minimum(Y, H - Y)
+  dj = np.minimum(dxe, dye)
+  wob = (pn(X, Y, W, H, 30, 30, 128) - 0.5) * 0.0016
+  jd = np.maximum(dj + wob, 0)
+  h -= spec["joint_d"] * (1 - sst(0.003, 0.011, jd))
+  jm = 1 - sst(0.003, 0.009, jd)
+  alb *= (1 - 0.6 * jm)[..., None]
+  msk[..., 0] = jm
+  # cracks
+  crack_d = np.zeros(X.shape)
+  crack_s = np.zeros(X.shape)
+  for path in crack_paths(rng, v.get('cracks', 0), 0.05, W - 0.05, spec['crack_len'], spec['crack_hw']):
+    for (ax, ay, aw), (bx, by, bw) in zip(path[:-1], path[1:]):
+      DX, DY, ix, GX, GY = g.box((ax + bx) / 2, (ay + by) / 2, max(aw, bw) * 3 + 0.01)
+      d, t = seg_dist(GX, GY, ax, ay, bx, by)
+      hw = aw + (bw - aw) * t
+      crack_d[ix] = np.maximum(crack_d[ix], np.clip(1 - d / hw, 0, 1) * hw * 1.05)
+      crack_s[ix] = np.maximum(crack_s[ix], np.clip(1 - d / (hw * 3.0), 0, 1))
+  h -= crack_d
+  alb *= (1 - 0.6 * np.clip(crack_d / 0.0012, 0, 1) - 0.15 * crack_s)[..., None]
+  msk[..., 0] = np.maximum(msk[..., 0], np.clip(crack_d / 0.001, 0, 1))
+  # stains: oil (dark, glossy), damp (darker, glossy, pale salts at the edge) and polished boot tracks (smooth, a little lighter)
+  stainm = np.zeros(X.shape)
+  for kind, key in (('oil', 'oils'), ('damp', 'damps'), ('polish', 'polish')):
+    for si_ in range(v.get(key, 0)):
+      cx, cy = rng.uniform(0, W), rng.uniform(0, H)
+      r = rng.uniform(*spec[kind + '_r'])
+      asp = rng.uniform(0.35, 1.0) if kind == 'polish' else rng.uniform(0.6, 1.0)
+      rot = rng.uniform(0, math.pi)
+      DX, DY, ix, GX, GY = g.box(cx, cy, r * 1.6)
+      qx = DX * math.cos(rot) + DY * math.sin(rot)
+      qy = (-DX * math.sin(rot) + DY * math.cos(rot)) / asp
+      d = np.hypot(qx, qy) / r + (pn(GX, GY, W, H, 9, 9, 131 + si_) - 0.5) * 0.7 + (pn(GX, GY, W, H, 28, 28, 132 + si_) - 0.5) * 0.2
+      inner = (1 - sst(0.15, 1.0, d)) * (0.55 + 0.45 * pn(GX, GY, W, H, 12, 12, 134 + si_))
+      edge = np.exp(-(((d - 0.95) / 0.08) ** 2))
+      mott = 0.7 + 0.6 * pn(GX, GY, W, H, 16, 16, 133 + si_)
+      if kind == 'oil':
+        alb[ix] *= (1 - 0.62 * inner * mott)[..., None] * np.array([1.0, 0.97, 0.9])[None, None, :]
+        rgh[ix] = rgh[ix] * (1 - inner) + 0.38 * inner
+      elif kind == 'damp':
+        alb[ix] *= (1 - 0.4 * inner * mott - 0.1 * edge)[..., None] * np.array([1.0, 1.0, 1.04])[None, None, :]
+        alb[ix] = alb[ix] * (1 - 0.35 * edge[..., None]) + (0.3 * edge)[..., None] * np.array([0.8, 0.78, 0.72])[None, None, :] * 0.3
+        rgh[ix] = rgh[ix] * (1 - inner * 0.8) + 0.45 * inner * 0.8
+      else:
+        alb[ix] *= (1 + 0.14 * inner)[..., None]
+        rgh[ix] = rgh[ix] * (1 - inner) + 0.42 * inner
+        h[ix] -= 0.00025 * inner
+      stainm[ix] = np.maximum(stainm[ix], inner)
+  msk[..., 2] = stainm
+  alb = alb * tone[..., None]
+  return g, h, alb, np.clip(rgh, 0.3, 1.0), msk
+
+
+FIELDS = {'plaster': plaster_field, 'concrete': concrete_field}
+
+
+def field_geometry(name, spec, vi):
+  """the periodic fields wrapped into a margin, as one mesh soup"""
+  g, h, alb, rgh, msk = FIELDS[name](spec, vi)
+  m = int(math.ceil(MARGIN / g.step))
+  xs = (np.arange(g.nx + 2 * m) - m) * g.step
+  ys = (np.arange(g.ny + 2 * m) - m) * g.step
+  X, Y = np.meshgrid(xs, ys)
+  soup = Soup()
+  soup.add_grid(X, Y, wrap_pad(h, m), wrap_pad(alb, m), wrap_pad(rgh, m), wrap_pad(msk, m))
+  return soup, g
+
+
+def post_field(name, spec, vi, A, N, AO, R, M, res):
+  """numpy detail on one variant's bake. Returns linear albedo (not yet calibrated), normal, roughness."""
+  W, H = spec['W'], spec['H']
+  rw, rh = res
+  X, Y = np.meshgrid((np.arange(rw) + 0.5) / rw * W, (np.arange(rh) + 0.5) / rh * H)
+
+  def f(cells, seed, octaves=3):
+    return fbm(X, Y, W, H, cells, seed, octaves)
+
+  crack = np.clip(M[..., 0], 0, 1)
+  chip = np.clip(M[..., 1], 0, 1)
+  patch = np.clip(M[..., 2], 0, 1)
+  white = hrand_field(res, 75) - 0.5
+  n = N * 2 - 1
+  n = n / np.maximum(np.linalg.norm(n, axis=-1, keepdims=True), 1e-6)
+  sx0 = n[..., 0] / np.maximum(n[..., 2], 0.2)
+  sy0 = n[..., 1] / np.maximum(n[..., 2], 0.2)
+  lb = spec['lowboost'] - 1
+  rr_ = max(2, int(rw / 60))
+  sx = (sx0 + lb * blur(sx0, rr_)) * spec['boost']
+  sy = (sy0 + lb * blur(sy0, rr_)) * spec['boost']
+  # micro relief: sand grain and the faint stripes a trowel leaves (a direction per pad, so it does not read as a pattern)
+  _, _, _, _, cid = voronoi(Grid(W, H, W / rw), 4, 11)
+  ang = np.array([hrand(i, 0, 310) * math.pi for i in range(16)])[cid]
+  stripe = np.sin((X * np.cos(ang) + Y * np.sin(ang)) * (2 * math.pi / 0.012) + 6 * f(20, 91, 2)) * 0.5 + 0.5
+  stripe = stripe * sst(0.35, 0.65, f(14, 92, 2))
+  hf = f(int(W / 0.02), 71, 2) * 0.5 + f(int(W / 0.008), 72, 2) * 0.3 + white * 0.06 + stripe * spec["stripe"]
+  hf = hf * (1 - 0.65 * patch) * (1 - 0.5 * chip) + chip * (f(int(W / 0.004), 93, 2) - 0.5) * 0.8
+  gx = (np.roll(hf, -1, 1) - np.roll(hf, 1, 1)) * 0.5
+  gy = (np.roll(hf, -1, 0) - np.roll(hf, 1, 0)) * 0.5
+  sx = sx - gx * spec['micro']
+  sy = sy - gy * spec['micro']
+  inv = 1 / np.sqrt(sx * sx + sy * sy + 1)
+  nrm = np.stack([sx * inv, sy * inv, inv], -1)
+
+  alb = A.copy()
+  ao = np.clip(AO[..., 0], 0, 1) ** spec['ao_pow']
+  alb *= (1 - spec['ao_mix'] + spec['ao_mix'] * ao)[..., None]
+  grain = ((f(int(W / 0.04), 74, 2) - 0.5) * 2 * 0.6 + (f(int(W / 0.012), 82, 2) - 0.5) * 2 * 0.5 + white * 1.3) * spec['grain']
+  alb *= (1 + grain * (1 - 0.5 * patch) * (1 + 2.0 * chip))[..., None]
+  fleck = sst(0.8, 0.9, f(int(W / 0.006), 94, 2))  # dark impurities in the lime
+  alb *= (1 - 0.22 * fleck * (1 - chip))[..., None]
+  lime = sst(0.82, 0.92, f(int(W / 0.01), 95, 2))  # unslaked lime: little pale lumps
+  alb = alb * (1 - 0.5 * lime)[..., None] + (0.35 * lime)[..., None] * np.array([0.85, 0.82, 0.76])[None, None, :]
+  # the broken edge of a chip shows the chalky white of the top coat
+  rim = np.clip(np.clip(blur(chip, 3) - chip, 0, 1) * 3, 0, 1) * (1 - chip)
+  alb = alb * (1 - 0.8 * rim)[..., None] + (0.64 * rim)[..., None] * np.array([0.9, 0.87, 0.8])[None, None, :]
+  rgh_out = np.clip(R[..., 0] + (f(int(W / 0.02), 79, 2) - 0.5) * 0.06 + white * 0.08, 0.2, 1.0)
+  return alb, nrm, rgh_out
+
+
+def run_field(name, out_dir, ss, debug=None):
+  spec = SPECS[name]
+  t0 = time.time()
+  res = spec['res']
+  nv = len(spec['variants'])
+  albs, nrms, rghs = [], [], []
+  for vi in range(nv):
+    setup_scene(7)
+    ta = time.time()
+    soup, g = field_geometry(name, spec, vi)
+    V, F, alb, rgh, msk = soup.arrays()
+    high = make_mesh_object(f'{name}-high', V, F, alb, rgh, msk)
+    tgt = make_target(spec['W'], spec['H'])
+    tb = time.time()
+    size = (res[0] * ss, res[1] * ss)
+    A = bake(tgt, high, 'DIFFUSE', size, samples=4)
+    Nn = bake(tgt, high, 'NORMAL', size, samples=4)
+    M = bake(tgt, high, 'EMIT', size, samples=4)
+    Rr = bake(tgt, high, 'ROUGHNESS', size, samples=4)
+    AOb = bake(tgt, high, 'AO', res, samples=32)
+    tc = time.time()
+    A, M, Rr = (down(a, ss) for a in (A, M, Rr))
+    Nn = down(Nn * 2 - 1, ss)
+    Nn = Nn / np.maximum(np.linalg.norm(Nn, axis=-1, keepdims=True), 1e-6) * 0.5 + 0.5
+    a, n, r = post_field(name, spec, vi, A, Nn, AOb, Rr, M, res)
+    albs.append(a)
+    nrms.append(n)
+    rghs.append(r)
+    if debug:
+      os.makedirs(debug, exist_ok=True)
+      save_png(os.path.join(debug, f'{name}{vi}-ao.png'), np.clip(AOb, 0, 1))
+      save_png(os.path.join(debug, f'{name}{vi}-mask.png'), np.clip(M, 0, 1))
+    print(f'  {name} variant {vi}: {len(V)} verts; geometry {tb - ta:.1f}s, bakes {tc - tb:.1f}s, post {time.time() - tc:.1f}s')
+  # one gain for the whole atlas (so every variant keeps the same background at the shared tile edges), then each channel's
+  # mean onto the old generated texture's: exposure and tints were set against that
+  lin_all = np.concatenate(albs, axis=1)
+  alb_s = np.empty_like(lin_all)
+  for c in range(3):
+    gain = 1.0
+    for _ in range(8):
+      gain *= (spec['target'][c] / 255 / srgb_enc(lin_all[..., c] * gain).mean()) ** 2.2
+    alb_s[..., c] = srgb_enc(lin_all[..., c] * gain)
+  nrm_all = np.concatenate(nrms, axis=1)
+  rgh_all = np.concatenate(rghs, axis=1)
+  os.makedirs(out_dir, exist_ok=True)
+  sizes = {}
+  sizes['albedo'] = save_webp(os.path.join(out_dir, f'{name}-albedo.webp'), alb_s, QUALITY['albedo'])
+  sizes['normal'] = save_webp(os.path.join(out_dir, f'{name}-normal.webp'), nrm_all * 0.5 + 0.5, QUALITY['normal'])
+  rg = down(rgh_all[..., None], 2)[..., 0]
+  sizes['rough'] = save_webp(os.path.join(out_dir, f'{name}-rough.webp'), np.stack([rg, rg, rg], -1), QUALITY['rough'])
+  if debug:
+    save_png(os.path.join(debug, f'{name}-albedo.png'), alb_s)
+    save_png(os.path.join(debug, f'{name}-normal.png'), nrm_all * 0.5 + 0.5)
+    save_png(os.path.join(debug, f'{name}-rough.png'), np.stack([rgh_all] * 3, -1))
+    save_png(os.path.join(debug, f'{name}-albedo-2x2.png'), np.tile(alb_s, (2, 2, 1)))
+  print(f'{name}: {nv} variants, total {time.time() - t0:.1f}s; bytes ' + ', '.join(f'{k} {v}' for k, v in sizes.items()) + f' (sum {sum(sizes.values())})')
+  return sizes
+
+
 def run(name, out_dir, ss, debug=None):
   spec = SPECS[name]
   t0 = time.time()
@@ -665,14 +1130,14 @@ def run(name, out_dir, ss, debug=None):
 
 def main():
   ap = argparse.ArgumentParser()
-  ap.add_argument('--only', default='brick,flag')
+  ap.add_argument('--only', default='brick,flag,stone,boards,plaster')
   ap.add_argument('--out', default='assets/textures')
   ap.add_argument('--debug', default=None)
   ap.add_argument('--ss', type=int, default=2)
   a = ap.parse_args(sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else sys.argv[1:])
   tot = {}
   for nme in a.only.split(','):
-    for k, v in run(nme, a.out, a.ss, a.debug).items():
+    for k, v in (run_field if SPECS[nme].get('field') else run)(nme, a.out, a.ss, a.debug).items():
       tot[k] = tot.get(k, 0) + v
   print('total bytes', sum(tot.values()), tot)
 

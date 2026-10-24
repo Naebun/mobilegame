@@ -5,6 +5,7 @@
 // generated texture stays. Files per surface: albedo (sRGB), normal (linear, OpenGL +Y) and roughness (linear grey, read
 // from the green channel), the roughness at half the size. Details and sizes: docs/textures.md.
 import * as THREE from '../vendor/three.module.min.js';
+import { CEIL_VARIANTS } from './consts.js';
 import INLINE from './textures-inline.js'; // null in the repo; scripts/build-artifact.mjs swaps in data URIs for the single-file build
 
 // tile: the baked tile's size in metres [across, up]. scale: the metres one UV unit covers in world.js (the Mesher scale
@@ -18,7 +19,10 @@ export const BAKED = {
   flag: { tile: [2, 2], scale: 2, ns: 1 },
   stone: { tile: [1.2, 1.2], scale: 1.2, ns: 1 },
   boards: { tile: [1.6, 1.6], scale: 1.6, ns: 1 },
+  // ceiling plaster: an atlas of CEIL_VARIANTS tiles side by side, 2 m each; world.js gives each ceiling tile its own variant
+  plaster: { tile: [2 * CEIL_VARIANTS, 2], scale: 2, ns: 1 },
   floorboards: { tile: [1.6, 1.6], scale: 1.6, ns: 1, files: [], share: 'boards', tint: 0.78 },
+  concrete: { tile: [2.4, 2.4], scale: 2.4, ns: 1 }, // one slab, expansion joints on the tile edge
 };
 const FILES = { map: 'albedo', normal: 'normal', rough: 'rough' };
 export const bakedNames = () => Object.keys(BAKED);
