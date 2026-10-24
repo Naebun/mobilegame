@@ -4,6 +4,17 @@ This file is for a fresh chat taking over. Read it first, then `CLAUDE.md` (bind
 `docs/HANDOVER.md`. Snapshot taken 24 October 2026, after PR #11 merged. It goes stale fast: check `git log origin/main` before
 trusting it, and refresh it at the end of any substantial piece of work.
 
+**Where this copy lives.** This version is on the branch `status-after-pr11`; `main`'s copy is older (it says the last round is
+unmerged) until a docs PR lands. If `origin/status-after-pr11` exists and is newer than `main`'s file, trust it.
+
+## Docs index
+
+`README.md` (layout and commands), `CLAUDE.md` (binding rules), `ROADMAP.md`, `docs/HANDOVER.md` (detail per feature),
+`docs/fps-design.md` (module contract), `docs/full-game-plan.md` (the 8 to 10 level plan), `docs/level-2.md`,
+`docs/level-3.md` (design only), `docs/placement.md` (what is where in levels 1 and 2, and why), `docs/enemies-next.md`,
+`docs/arsenal.md`, `docs/difficulty.md`, `docs/textures.md` and `docs/texture-options.md`, `docs/props.md`, `docs/drinks.md`,
+`docs/playtest.md` (the checklist for a real-phone test, including the `?perf` readout).
+
 ## The project in one paragraph
 
 "Naebun's Last Set": a first-person 3D horror shooter for phone browsers, set in an Edinburgh basement club, dark comedy, light
@@ -178,7 +189,14 @@ Pitfalls found the hard way:
 - `testHook` names include `torch`, `mobile`, `setting`, `mouse`, `screen`, `save`, `hitEnemy`, `play`, `level`, `title`, `teleport`,
   `giveWeapons`, `spawn`, `give`, `arsenal`, `hud`, `difficulty`, `baked`, `buttons`; read `testHook` in `src/game3d.js` for the list.
 - Tests that hard-code robot counts break when placement changes them (they were 19 and 24, now 21 and 27).
-- Starting several agents' worktrees at once once failed with a git-config error; retrying worked.
+- Starting several agents' worktrees at once once failed with a git-config error; retrying worked. An agent's worktree forks from
+  `main` or the current branch at the time, so check what an agent's branch contains before merging it.
+- `git push --delete` is refused by the git proxy ("remote end hung up"), so merged remote branches cannot be removed from here.
+- The real phone renders brighter than the software renderer, so a look judged from software screenshots (the Vaults' darkness
+  above all) needs the owner's eyes on a device. The dark level's brightness is set by the grade stage in `src/gfx.js`
+  (`lift`, `exposure`) as much as by the lights; the low tier skips the grade stage and is much darker.
+- `world-check`'s build-time checks flake on a busy machine; the smoke test needs `SMOKE_WAIT=90000` there.
+- `testHook('strip')` returns the weapon strip cells for tests; the strip's rectangles come from `hud.layout(view).strip(n)`.
 - To brief an agent: own worktree (`isolation: "worktree"`), a distinct `PORT`, a lane (files it owns and files it must not touch),
   "do not push, merge or fetch", commit trailers, and a report listing commands run and what was not verified. A fresh chat does not
   receive an old chat's agent reports, so merge agent work before clearing the chat.
