@@ -21,6 +21,9 @@ export const WEAPONS = {
   launcher: {
     id: 'launcher', name: 'REVERB LAUNCHER', kind: 'projectile', clip: 3, interval: 1.1, reload: 2.4,
     damage: 60, splashRadius: 3.6, splashDamage: 70, speed: 20, knock: 9, kick: 0.07, noise: 24,
+    // The blast hurts Naebun too: `selfDamage` at the centre, falling to `selfFloor` of it at `selfRadius`. Not scaled by the
+    // damage multiplier (that is Naebun's output), and the Guard drink still soaks it.
+    selfRadius: 3, selfDamage: 40, selfFloor: 0.3,
   },
   // Level 2. A record flung flat and fast. It bounces off walls (`bounces` times, then it drops) and stops in the first
   // robot it hits, so a bounce is how to reach the unprotected back of a shielded robot.

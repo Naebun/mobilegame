@@ -1972,6 +1972,13 @@ function explode(pr, x, y, z) {
     const fall = 1 - clamp(d / w.splashRadius, 0, 1) * 0.65;
     damageEnemy(e, w.splashDamage * fall * m.damage, false, x, z, w.knock, { pierce: true });
   }
+  // Naebun is hurt by their own rocket if it goes off close. Cover stops it, as it does for robots' blasts.
+  const p = S.player;
+  const dp = Math.hypot(p.x - x, p.z - z);
+  if (w.selfDamage && dp < w.selfRadius && (dp < 0.5 || world.los(x, z, p.x, p.z))) {
+    const fall = 1 - (1 - w.selfFloor) * clamp(dp / w.selfRadius, 0, 1);
+    hurtPlayer(Math.round(w.selfDamage * fall), x, z, false);
+  }
   alertNear(x, z, 22);
 }
 
