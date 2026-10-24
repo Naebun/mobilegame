@@ -24,6 +24,9 @@ export const WEAPONS = {
     // The blast hurts Naebun too: `selfDamage` at the centre, falling to `selfFloor` of it at `selfRadius`. Not scaled by the
     // damage multiplier (that is Naebun's output), and the Guard drink still soaks it.
     selfRadius: 3, selfDamage: 40, selfFloor: 0.3,
+    // ...and throws Naebun away from it: `selfPush` m/s at the centre, same falloff, bleeding off at `PLAYER.pushDecay` a second
+    // (so about 3 m at point blank). Walls still stop them.
+    selfPush: 16,
   },
   // Level 2. A record flung flat and fast. It bounces off walls (`bounces` times, then it drops) and stops in the first
   // robot it hits, so a bounce is how to reach the unprotected back of a shielded robot.
@@ -111,6 +114,7 @@ ENEMY_DEFS.mimic = {
 
 export const PLAYER = {
   health: 100, speed: 4.4,
+  pushDecay: 5, // how fast a blast's shove dies away, per second
   // drag sensitivity in radians per pixel, and the continuous turn rate (rad/s) when the thumb rests at the box edge
   lookX: 0.009, lookY: 0.0075, edgeTurn: 2.4,
   // mouse look, radians per mouse count at MEDIUM sensitivity
