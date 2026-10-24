@@ -44,6 +44,33 @@ Bot win rates on these maps, 30 runs, sloppy / casual / good (a sample, about pl
 | 1 | 97 / 100 / 100 | 73 / 100 / 93 | 53 / 67 / 87 |
 | 2 | 67 / 90 / 97 | 10 / 47 / 67 | 3 / 17 / 50 |
 
+## In flight, not yet on `main` (24 October, after PR #9)
+
+All of this sits on the pushed branch `integration-2` (head `ff55d18` when written) unless noted. Nothing here is merged to `main`.
+
+- **Darker Vaults (`darker-vaults-2`, merged into `integration-2`).** The cause of the haze was the grade stage's `lift` in
+  `look.grade` (added in linear light before the sRGB conversion, so the old values lifted black to about 8, 16 and 28 percent
+  grey on medium and high; the low tier skips the stage). It is now near zero, with ambient 0.08, fill 0.04 and exposure 1.25.
+  Measured in software screenshots only: mean brightness outside the cone 0.15 to 0.07, black level 0.09 to 0.007. The owner's
+  phone shows a brighter render than the software one, so the owner's reaction decides whether it is now too dark.
+- **Direct weapon selection (task 1, done).** Tap a cell in the weapon strip on a phone; keys 1 to 8 (fixed slots in
+  `WEAPON_ORDER`), the wheel both ways and Q (quick-swap to the last weapon) on a computer. SWAP still cycles forward. In portrait
+  the strip is now its own row under the score line. All checks pass and the smoke test (156 checks) passes. Bots select directly.
+- **Tidy-ups (task 6, done except one thing).** The sim is repeatable (`tidy-ups`, PR #10, merged into `integration-2`). The
+  remote branches `mouse-and-blender`, `playtest-textures-placement` and `status-after-pr9` could not be deleted from here (the
+  git proxy hung up on `push --delete`); they are merged and can be deleted on GitHub.
+- **Plaster and ceiling textures (task 3, in progress).** An agent is baking them in its own worktree
+  (`.claude/worktrees/agent-a055e416bc1f3ea7d`, branch `worktree-agent-a055e416bc1f3ea7d`, forked from `main`, not pushed). A fresh
+  chat will not receive its report: look at that worktree, merge it into `integration-2` and re-run the checks.
+
+**Finding to decide on: the Feedback Beam against the Tour Guide.** With direct selection the bots can reach the Beam and hold it
+for 17 to 22 seconds a run. Level 2 win rates (60 runs, `--exact 1`, sloppy / casual / good): before 62 / 82 / 97, after 37 / 83 / 92;
+with the Beam pickup removed from the map, 78 / 93 / 95. The Tour Guide killed the sloppy bot 16 times before and 29 times after.
+So in these runs the Beam does worse than the launcher against the boss; the agent's reading (untested) is that its damage ramps
+only while the crosshair stays on the target. Options: retune the Beam (higher base damage or a faster ramp), move or drop its
+pickup, or leave it for a human playtest. No data or rules were changed. Thumb reach of the strip row at the top of a tall portrait
+screen is a guess (the aim thumb has to leave its box), and a question for the playtest.
+
 ## What is next: the choices
 
 The owner asked for options after the merge. Nothing here is started.
@@ -60,9 +87,9 @@ needed; hold 3 and 5 until the owner has played):
 
 | # | Task | Why |
 | --- | --- | --- |
-| 1 | Fix weapon swapping | SWAP only cycles forward. With seven guns in level 2 the placement bots lost the Plague Cellar more often once cycling cost was counted, and a person would hit the same wall. A swap-back key and a weapon wheel is the likely fix; the owner should say which. The bots barely use the Grenade and the Beam today, so fix the swap, then teach them |
+| 1 | Fix weapon swapping (**done**, see above) | SWAP only cycles forward. With seven guns in level 2 the placement bots lost the Plague Cellar more often once cycling cost was counted, and a person would hit the same wall. A swap-back key and a weapon wheel is the likely fix; the owner should say which. The bots barely use the Grenade and the Beam today, so fix the swap, then teach them |
 | 2 | Stop drawing robots and pickups that cannot be seen | A frame draws 150k to 330k triangles on high (up to 276 draw calls) because things behind walls inside the view cone are still drawn. The playtest agent's cause is a guess. Measure with `?perf` first |
-| 3 | Bake plaster and ceilings | Plaster, carpet and concrete are still generated, and the ceilings now look flatter than the walls. Flag tiling in a big open space was not tested |
+| 3 | Bake plaster and ceilings (**in progress**, see above) | Plaster, carpet and concrete are still generated, and the ceilings now look flatter than the walls. Flag tiling in a big open space was not tested |
 | 4 | Re-tune Hard and Extra Hard | The multipliers were tuned before placement. Level 2 Hard is a wall for the sloppy bot (10 percent) and Extra Hard is a wall for all but the good bot. The Longshot's shot is 67 on Extra Hard, two thirds of Naebun's health. Re-run all three modes on both levels, normal mode only for the base numbers |
 | 5 | Sound and music | Everything is synthesised and nobody has heard it. Ambience for the dark Vaults would help most |
 | 6 | Tidy-ups | **Done** (owner approved): the sim is now repeatable (the game clock `S.t` is reset per run, saved records are cleared per run, world builds use a throwaway random stream, and one discarded warm-up run goes first; the same seeds in any order give the same runs), the docs PR and the deletion of merged branches. Win rates from before this change are not comparable run for run |
