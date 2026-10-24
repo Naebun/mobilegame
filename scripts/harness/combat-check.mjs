@@ -400,7 +400,7 @@ function setEnemy(S, e, x, z, yaw) { e.x = x; e.z = z; e.yaw = yaw; e.kx = e.kz 
     S.enemies.length = 0;
     // the level's own robots, respawned by the hook, carry the mode too (bosses included)
     game.testHook('difficulty', mode);
-    ok(S.enemies.length === 24 && S.enemies.every((e) => e.maxHp === sc(ENEMY_DEFS[e.kind].hp, D.health)), label('all 24 robots of the Vaults, the Shielded and the Tour Guide among them, have scaled hp'));
+    ok(S.enemies.length === 27 && S.enemies.every((e) => e.maxHp === sc(ENEMY_DEFS[e.kind].hp, D.health)), label('all 27 robots of the Vaults, the Shielded and the Tour Guide among them, have scaled hp'));
     const tg = S.enemies.find((e) => e.kind === 'tourguide');
     ok(tg.boss && tg.maxHp === sc(360, D.health) && tg.def.slam.damage === sc(20, D.damage), label(`the Tour Guide boss: ${tg.maxHp} hp, slam ${tg.def.slam.damage}`));
     ok(game.testHook('hud').difficulty === D.tag, label(`the HUD is told "${D.tag}"`));

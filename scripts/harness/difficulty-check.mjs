@@ -190,7 +190,7 @@ if (CHILD) {
   ok(S.mode === 'intro' && S.difficulty === 'hard', 'START GAME begins the run');
   ok(cookieSave().difficulty === 'hard', 'the choice is in the cookie');
   ok(JSON.parse(ls.get('mobilegame.save')).difficulty === 'hard', 'and in local storage');
-  ok(S.enemies.length === 19 && hpOf('fizzbang').every((h) => h === Math.round(60 * DIFFICULTY.hard.health)) && hpOf('bouncer')[0] === Math.round(450 * DIFFICULTY.hard.health), `level 1 robots are Hard robots (fizzbang ${hpOf('fizzbang')[0]} hp, the Bouncer ${hpOf('bouncer')[0]})`);
+  ok(S.enemies.length === 21 && hpOf('fizzbang').every((h) => h === Math.round(60 * DIFFICULTY.hard.health)) && hpOf('bouncer')[0] === Math.round(450 * DIFFICULTY.hard.health), `level 1 robots are Hard robots (fizzbang ${hpOf('fizzbang')[0]} hp, the Bouncer ${hpOf('bouncer')[0]})`);
   step([], 60 * 4);
   ok(S.mode === 'play', 'the intro ends in play');
 
@@ -218,7 +218,7 @@ if (CHILD) {
   ok(S.difficulty === 'extra' && game.testHook('buttons')[0].label === 'CONTINUE: LEVEL 2 (EXTRA HARD)', 'after a reload the title offers CONTINUE in the saved mode');
   press('resume');
   ok(S.mode === 'voicemail' && S.difficulty === 'extra' && S.level === 2, 'CONTINUE resumes level 2 in Extra Hard');
-  ok(S.enemies.length === 24 && S.enemies.every((e) => e.maxHp === Math.round(ENEMY_DEFS[e.kind].hp * DIFFICULTY.extra.health)), 'with Extra Hard robots');
+  ok(S.enemies.length === 27 && S.enemies.every((e) => e.maxHp === Math.round(ENEMY_DEFS[e.kind].hp * DIFFICULTY.extra.health)), 'with Extra Hard robots');
   ok(S.best === 0, 'and the best shown is the Extra Hard one for that level');
   // a different mode on NEW GAME afterwards: the new run's mode is saved
   S.mode = 'title';

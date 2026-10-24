@@ -17,7 +17,7 @@ whose pronouns have not been stated, the owner included.
 | --- | --- |
 | `main` (`9366288`, PR #8, squash) | Everything up to the Blender weapons, torch, prepared enemies and arsenal. This is what is deployed to the owner's phone |
 | Branch `playtest-textures-placement` (in `/home/user/mobilegame`, pushed, head `4086cd9` when written) | The **integration branch**. Forked from `main`. Holds my own small commits (below) and is where the four agents' work should be merged. Not merged to `main` |
-| Four agent worktrees under `/home/user/mobilegame/.claude/worktrees/` | Each agent's unmerged work, on a local branch named `worktree-agent-<id>`. **Local to this container and not pushed.** If the container is reclaimed before they are merged or pushed, that work is gone |
+| Four agent worktrees under `/home/user/mobilegame/.claude/worktrees/` | Now fully merged into the integration branch, so nothing is lost if they go. The branches `worktree-agent-<id>` are local only |
 
 My own commits on the integration branch (all on top of `main`, all pushed):
 
@@ -31,33 +31,38 @@ My own commits on the integration branch (all on top of `main`, all pushed):
 Note: the agent branches forked before some of those commits, so they do not contain the darker Vaults, the wheel fix or the
 level 3 doc. Merging them into the integration branch brings everything together.
 
-## In progress: four agents (spawned by the previous chat)
+## Integration state: all four agents' work is merged
 
-A fresh chat will **not** receive their completion messages. Look at each worktree directly. If an agent's work looks
-unfinished, you can brief a new agent in the same worktree or finish it yourself. Do not clear the chat while they are still
-running if you can avoid it.
+The four agents (playtest kit, textures, placement, Hard and Extra Hard) finished and are merged into the integration branch
+`playtest-textures-placement`, in that order, with conflicts resolved by hand (mostly harness scripts, `smoke.mjs`,
+`sim3d.mjs` and the docs). Their worktrees under `.claude/worktrees/` are no longer needed once this branch is on `main`.
+What each brought:
 
-| Piece | Worktree and branch (id) | Last commit seen | Brief in short |
+| Piece | What it added |
+| --- | --- |
+| Playtest kit and fixes | `?perf` readout (`src/perf.js`, P key, `window.__perf`), `docs/playtest.md`, pistol torch moved onto the slide's top rib, launcher lens at the horn's mouth, gooseneck lowered a little, Longshot laser fades near the camera, Mimic glow dimmed while dormant |
+| Textures | `scripts/blender/textures.py`, 13 WebP files (594 KB) in `assets/textures/`, `src/textures.js`, `world.retexture`, baked on medium and high only, generated textures remain the fallback and the low tier. `?baked=0` turns it off. Also fixed a texture leak on level swap |
+| Placement | Bots taught the newer robots and weapons (`scripts/sim3d.mjs`). Level 1 now has 21 robots, level 2 has 27; the Airhorn, Grenade, Beam, upgrades and ten records are placed. Full table and reasoning: `docs/placement.md` |
+| Hard and Extra Hard | `DIFFICULTY` table in `src/data.js`, difficulty screen after NEW GAME, save version 2 with per-mode bests, `--difficulty` on the sim, `docs/difficulty.md`. Tuned table: Hard 1.35 damage, 1.2 health, 1.1 speed, 0.9 wind-up; Extra Hard 1.75, 1.35, 1.15, 0.85 (the first guess was too hard on level 2) |
+
+Test fixes made during the merge: `combat-check` and `difficulty-check` hard-coded the old robot counts (19 and 24); they now
+expect 21 and 27.
+
+Checks on the merged tree (24 October): `models-check`, `drinks-check`, `ui-check`, `perf-check` pass; `combat-check` 416/416;
+`world-check` 4413/4413; `level-check` 748/748; `enemies-check` 261/261; `arsenal-check` 464/464; `textures-check` 93/93;
+`difficulty-check` 84/84; smoke test SMOKE OK (125 checks, `SMOKE_WAIT=90000`); `build:artifact` 4.0 MB with the textures
+inlined.
+
+Bot win rates on the merged maps, 30 runs, sloppy / casual / good (a sample, about plus or minus 10 to 15 points):
+
+| Level | Normal | Hard | Extra Hard |
 | --- | --- | --- | --- |
-| Playtest kit and visual fixes | `agent-a0e968e42d8423870` | **Finished and merged into the integration branch** (`9d95a0f`). `perf-check` and `enemies-check` (181) added; the others pass | `?perf` readout (`src/perf.js`, P key, `window.__perf`), `docs/playtest.md`, pistol torch moved onto the slide's top rib, launcher lens moved to the horn's mouth, gooseneck lowered a little, Longshot laser fades near the camera, Mimic glow dimmed while dormant |
-| Textures | `agent-ad5988b83f3eaa676` | no commits yet, 19 files changed | Blender-baked tileable brick and flagstone first (then stone, timber, plaster), WebP in `assets/textures/`, loader `src/textures.js`, generated textures stay as the low-tier and Node fallback. Updates the "no image files" rule in `CLAUDE.md` |
-| Placement | `agent-ac666eb0ec6334ba4` | `fcb28a8` bots taught the new robots and weapons | Part A: teach `scripts/sim3d.mjs` bots the Longshot, Shaken, Nurse, Mimic and new weapons. Part B: place the prepared enemies, weapons, upgrades and ten records in levels 1 and 2, write `docs/placement.md`, rebalance, flip the "nothing is placed" assertions in `enemies-check` and `arsenal-check` |
-| Hard and Extra Hard | `agent-a4c45d83ea3d21186` | `e6c8ded` difficulty screen | `DIFFICULTY` table in `src/data.js`, difficulty screen after NEW GAME, save v2 with per-mode bests, `--difficulty` flag on the sim, `docs/difficulty.md`. Multipliers: Hard 1.5x damage, 1.25x health, 1.1x speed, wind-ups 10 percent quicker; Extra Hard 2x, 1.5x, 1.2x, 20 percent quicker. Telegraph floor about 0.35 s |
+| 1 | 97 / 100 / 100 | 73 / 100 / 93 | 53 / 67 / 87 |
+| 2 | 67 / 90 / 97 | 10 / 47 / 67 | 3 / 17 / 50 |
 
-The other three worktrees still had uncommitted changes when this was written, so those agents were mid-task. Each agent was
-told to commit on its own branch, never push or merge, and to finish with a report (what it built, every command run, what it
-did not verify). Those reports are in the old chat only.
+The difficulty table was tuned on the maps before placement, so it may want another pass: the Longshot's shot is 67 on Extra Hard.
 
-### How to integrate them
-
-1. In `/home/user/mobilegame` (integration branch), merge them one at a time, smallest first: (playtest kit is done), textures,
-   difficulty, placement last. Conflict hotspots: `src/game3d.js`, `src/data.js`, `src/world.js`, `scripts/smoke.mjs`,
-   `scripts/sim3d.mjs`, `scripts/harness/enemies-check.mjs`, `arsenal-check.mjs`, `CLAUDE.md`, `README.md`, `docs/HANDOVER.md`,
-   `ROADMAP.md`. Regenerated data modules (`src/weapon-meshes.js`) should come from re-running the script, not hand merging.
-2. After each merge run the headless checks. At the end run all of them (below), both sims at 30 runs, the smoke test and
-   `npm run build:artifact`.
-3. Re-check the level 2 look after textures land (the darker Vaults numbers were tuned on generated textures).
-4. Only merge to `main` when the owner says so (see agreements).
+Still to do on this branch: the owner has not yet asked for it to go to `main`.
 
 ## Agreements with the owner
 
@@ -93,6 +98,8 @@ did not verify). Those reports are in the old chat only.
 
 ## Waiting on the owner
 
+- Whether to merge the integration branch to `main` (it holds the textures, the placement and Hard and Extra Hard).
+
 - A go-ahead to build level 3, and whether in one pass or area by area.
 - A real-phone playtest of level 2: is the dark too dark after the darkening, does the torch read, frame rate, touch feel.
 - When to merge the integration branch to `main`.
@@ -104,7 +111,10 @@ did not verify). Those reports are in the old chat only.
   with no aim assist, and 30 runs is only good for about plus or minus 15 points.
 - Real pointer lock in Safari, trackpad swap, iPhone safe areas with Safari's bottom tab bar: untested.
 - Level 2 on the high tier is about 145k triangles against a 150k limit.
-- Level 2 bot win rates at the last measurement (20 runs): sloppy 80, casual 80, good 100. Level 1: 100 at every skill.
+- The sim bots barely use the Grenade and the Beam. SWAP is a forward-only cycle, and with seven guns in level 2 the placement agent found cycling cost the bots the Plague Cellar. That is a design question for a human playtest: a swap-back, a weapon wheel, or fewer guns per level.
+- The Nurse revived almost nothing in the sims (she is killed first), so she may be decoration. The Shaken chain ripple appears in no level (each has one Shaken).
+- Per frame the game draws 150k to 330k triangles on high and up to 276 draw calls (robots and pickups behind walls are still drawn); the 145k figure is the empty level only. Check with `?perf` on the iPhone before trusting 'it feels smooth'.
+- The Vending Mimic's window still blows out white under torchlight. The pistol torch module sits on the slide (a box on top); the owner has not seen it.
 - Texture work, once merged, needs checking on a real phone for decode time and GPU memory.
 
 ## How to work here
