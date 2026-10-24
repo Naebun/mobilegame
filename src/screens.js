@@ -613,7 +613,7 @@ function swapDiagram(ctx, cx, cy, w, t) {
 const CELLS = [
   { kind: 'move', sub: 'LEFT THUMB', head: 'MOVE', cap: 'Drag in the box to walk. Up is forwards.' },
   { kind: 'look', sub: 'RIGHT THUMB', head: 'AIM AND FIRE', cap: 'Hold to fire. Drag to aim. Dragging anywhere outside the boxes aims too, without firing. No aim assist.' },
-  { kind: 'swap', sub: 'UNDER THE LEFT BOX', subW: 'BESIDE THE LEFT BOX', head: 'SWAP', cap: 'Walk over weapons to pick them up. SWAP cycles them.' },
+  { kind: 'swap', sub: 'UNDER THE LEFT BOX', subW: 'BESIDE THE LEFT BOX', head: 'SWAP', cap: 'Walk over weapons to pick them up. Tap one in the row at the top to use it, or SWAP to cycle.' },
   { kind: 'reload', sub: 'UNDER THE RIGHT BOX', subW: 'BESIDE THE RIGHT BOX', head: 'RELOAD', cap: 'Reloads on its own when the clip is empty. Tap RELOAD to do it early. Ammo is unlimited, clips are not.' },
 ];
 const TIP = 'Clear every robot in an area to unlock the next door.';
@@ -677,12 +677,12 @@ function drawControlsWide(ctx, view, st) {
 // ---- PC controls page ----
 
 // A keyboard key: a rounded cap with a label, lit when `on`.
-function keycap(ctx, cx, cy, w, h, label, on) {
+function keycap(ctx, cx, cy, w, h, label, on, minFont = 10) {
   rrect(ctx, cx - w / 2, cy - h / 2 + 2, w, h, 6);
   ctx.fillStyle = 'rgba(0,0,0,0.4)';
   ctx.fill();
   panel(ctx, cx - w / 2, cy - h / 2, w, h, 6, on ? 'rgba(34,211,238,0.45)' : 'rgba(120,124,138,0.4)', on ? CYAN : '#ffffff', on ? 0.9 : 0.4);
-  outlined(ctx, label, cx, cy + 0.5, Math.max(10, Math.min(w * 0.5, 18)), '#ffffff', 'center', 800, 'rgba(4,2,8,0.6)');
+  outlined(ctx, label, cx, cy + 0.5, Math.max(minFont, Math.min(w * 0.55, 18)), '#ffffff', 'center', 800, 'rgba(4,2,8,0.6)');
 }
 
 function wasdDiagram(ctx, cx, cy, ds, t) {
@@ -733,13 +733,23 @@ function mouseDiagram(ctx, cx, cy, ds, t) {
   ctx.stroke();
 }
 
+// Choosing a weapon on a computer: the number keys 1 to 8 (two rows of four, one lit at a time), Q for the last weapon and the wheel.
 function swapKeysDiagram(ctx, cx, cy, ds, t) {
-  keycap(ctx, cx - ds * 0.3, cy, ds * 0.34, ds * 0.34, 'Q', Math.floor(t * 1.2) % 2 === 0);
-  const w = ds * 0.26;
-  const h = ds * 0.46;
-  panel(ctx, cx + ds * 0.2 - w / 2, cy - h / 2, w, h, w / 2, 'rgba(120,124,138,0.42)', '#ffffff');
+  const k = ds * 0.2;
+  const step = k * 1.18;
+  const lit = Math.floor(t * 1.4) % 8;
+  for (let i = 0; i < 8; i++) {
+    const col = i % 4;
+    const row = Math.floor(i / 4);
+    keycap(ctx, cx + (col - 1.5) * step, cy - ds * 0.31 + row * step, k, k, String(i + 1), i === lit, 7);
+  }
+  const qy = cy + ds * 0.3;
+  keycap(ctx, cx - ds * 0.26, qy, ds * 0.3, ds * 0.3, 'Q', Math.floor(t * 1.2) % 2 === 0, 8);
+  const w = ds * 0.2;
+  const h = ds * 0.36;
+  panel(ctx, cx + ds * 0.26 - w / 2, qy - h / 2, w, h, w / 2, 'rgba(120,124,138,0.42)', '#ffffff');
   const roll = (Math.floor(t * 2.4) % 2) * 5;
-  rrect(ctx, cx + ds * 0.2 - 2, cy - h * 0.34 + roll * 0.4, 4, h * 0.2, 2);
+  rrect(ctx, cx + ds * 0.26 - 1.5, qy - h * 0.34 + roll * 0.3, 3, h * 0.2, 1.5);
   ctx.fillStyle = CYAN;
   ctx.fill();
 }
@@ -762,10 +772,10 @@ function reloadKeyDiagram(ctx, cx, cy, ds, t) {
 const PC_CELLS = [
   { kind: 'move', sub: 'W A S D', head: 'MOVE', cap: 'Walk with W A S D.' },
   { kind: 'aim', sub: 'MOUSE', head: 'AIM AND FIRE', cap: 'Move the mouse to aim, with no button held. Left click fires. Click the game once to capture the mouse; Esc lets go. No aim assist.' },
-  { kind: 'swap', sub: 'Q OR WHEEL', head: 'SWAP', cap: 'Walk over weapons to pick them up. Q or the mouse wheel cycles them.' },
+  { kind: 'swap', sub: '1 TO 8, Q, WHEEL', head: 'WEAPONS', cap: 'Keys 1 to 8 pick a slot (shown on the weapon row). Q flips back to the last weapon. The wheel steps through them.' },
   { kind: 'reload', sub: 'R', head: 'RELOAD', cap: 'Reloads on its own when the clip is empty. Press R to do it early. Ammo is unlimited, clips are not. F switches the torch.' },
 ];
-const PC_TIP = 'Clear every robot in an area to unlock the next door. Arrow keys and Space also work.';
+const PC_TIP = 'Clear the robots to open the next door. Arrows and Space work too.'; // short enough for a 360 px portrait window
 
 // PC mode: the same four cells as the touch page, with keys and a mouse. One row of four in landscape, two by two in portrait.
 function drawControlsPc(ctx, view, st) {
