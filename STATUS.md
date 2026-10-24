@@ -65,7 +65,7 @@ needed; hold 3 and 5 until the owner has played):
 | 3 | Bake plaster and ceilings | Plaster, carpet and concrete are still generated, and the ceilings now look flatter than the walls. Flag tiling in a big open space was not tested |
 | 4 | Re-tune Hard and Extra Hard | The multipliers were tuned before placement. Level 2 Hard is a wall for the sloppy bot (10 percent) and Extra Hard is a wall for all but the good bot. The Longshot's shot is 67 on Extra Hard, two thirds of Naebun's health. Re-run all three modes on both levels, normal mode only for the base numbers |
 | 5 | Sound and music | Everything is synthesised and nobody has heard it. Ambience for the dark Vaults would help most |
-| 6 | Tidy-ups | A docs PR so `main` has this file; fix the sim's non-repeatable results (`S.t`, the game clock the ranged robots' strafe uses, is not reset between runs in one process, so the same seed differs by what ran before it); delete merged branches |
+| 6 | Tidy-ups | **Done** (owner approved): the sim is now repeatable (the game clock `S.t` is reset per run, saved records are cleared per run, world builds use a throwaway random stream, and one discarded warm-up run goes first; the same seeds in any order give the same runs), the docs PR and the deletion of merged branches. Win rates from before this change are not comparable run for run |
 
 **Level 3** is designed and not built. It needs the owner's explicit go-ahead, and a go-ahead for the design is not that.
 

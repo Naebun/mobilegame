@@ -79,23 +79,37 @@ const SCENARIOS = {
 
 let inited = false;
 
+let warmed = false;
 export function runOnce(seed, skillName, opts = {}) {
+  // The very first run in a process differs from the same seed run later (state left by setup that a finished run overwrites), so
+  // one throwaway run goes first. It costs a few seconds and makes every counted run a function of its seed and skill alone.
+  if (!warmed && args.exact !== '1') {
+    warmed = true;
+    runOnce(0, 'good', { ...opts, scenario: undefined });
+  }
   const level = opts.level || LEVEL;
   const rng = mulberry32(seed * 7919 + (skillName === 'good' ? 13 : 0));
   const rng2 = mulberry32(seed * 104729 + 17 + (skillName === 'good' ? 5 : 0)); // for the newer decisions only
-  Math.random = rng;
   const gauss = () => Math.sqrt(-2 * Math.log(rng() || 1e-9)) * Math.cos(6.283185 * rng());
   const sk = { ...SKILL[skillName], ...(opts.skill || {}) };
 
   // Building a world takes seconds, so the game is initialised once per process and each run just resets the level (the
-  // robots, pickups and player). `--exact 1` initialises afresh every run, which is what this file did before: it gives the
-  // same runs as the old simulator on an unchanged level, but takes about twice as long.
+  // robots, pickups and player). `--exact 1` initialises afresh every run, which takes about twice as long. A run is a function of
+  // its seed and skill alone (checked: the same seeds in any order give the same runs); numbers from before this change are not
+  // comparable run for run.
+  // World builds draw random numbers, and only the first run pays for them, so they use a fixed throwaway stream and the run's own
+  // stream starts after setup. Both levels are built once up front so that every run takes the same path.
+  Math.random = mulberry32(1);
   if (!inited || args.exact === '1') game.init(VIEW);
+  if (!inited) for (const n of [1, 2]) game.testHook('level', n);
   inited = true;
+  Math.random = rng; // from here the run's own seeded stream (robot spawns draw from it)
+  game.testHook('save', { records: [] }); // records found in an earlier run are saved, and would change this one
   game.testHook('level', level);
   game.testHook('torch', { attached: true }); // the bot never watches the torch being fitted
   game.testHook('difficulty', DIFF); // before the player object is taken: it respawns the robots
   const S = game.getState();
+  S.t = 0; // the game clock is module state and init does not reset it; the ranged robots' strafe reads it, so without this a run depends on what ran before it
   const W = game.getWorld();
   // Experiments only: --drop shaken,longshot,nurse,mimic,records,upgrades,newweapons or an item name takes those out of the level
   // for the run, to see what each contributes. The level itself is unchanged.
