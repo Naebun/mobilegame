@@ -1,7 +1,7 @@
 # Status and handover
 
 This file is for a fresh chat taking over. Read it first, then `CLAUDE.md` (binding project rules), then `ROADMAP.md` and
-`docs/HANDOVER.md`. Snapshot taken 24 October 2026, after PR #9 merged. It goes stale fast: check `git log origin/main` before
+`docs/HANDOVER.md`. Snapshot taken 24 October 2026, after PR #11 merged. It goes stale fast: check `git log origin/main` before
 trusting it, and refresh it at the end of any substantial piece of work.
 
 ## The project in one paragraph
@@ -13,105 +13,99 @@ anyone whose pronouns have not been stated, the owner included.
 
 ## State of the code
 
-`main` is at `1a62736` (PR #9, squash). Nothing is in progress and no agents are running. It holds:
+`main` is at `d43cba4` (PR #11, squash, 24 October). Nothing is in progress and no agents are running. It holds:
 
 - Levels 1 and 2, portrait and landscape; PC mode (default) and mobile mode (picked automatically on a phone or tablet);
   Settings page; saved progress (cookie plus localStorage, save version 2).
 - Blender models: drinks, five weapons with hands and torches, 27 level props, the arsenal weapons and upgrade pickups.
-- Blender-baked textures (13 WebP files, 594 KB) on the medium and high tiers; generated textures stay as the fallback.
+- Blender-baked textures on the medium and high tiers (19 WebP files, 917 KB: brick, painted brick, stone, boards, plaster as a
+  two-variant atlas, concrete, flags as a two-layout atlas); generated textures stay as the fallback, the low tier and the tests.
 - The gun-mounted torch with a hand-fitted pistol torch at the start of level 2 (the only dark level so far).
 - Four newer robots (Fizzbang Shaken, Bampot Longshot, Bampot Nurse, Vending Mimic), the Airhorn, Bass-Drop Grenade and Feedback
   Beam, clip, reload and altfire upgrades and ten records, all placed in levels 1 and 2 (`docs/placement.md`). Level 1 has 21
   robots, level 2 has 27.
 - Hard and Extra Hard: a difficulty screen after NEW GAME, a `DIFFICULTY` table in `src/data.js` (Hard 1.35 damage, 1.2 health,
   1.1 speed, 0.9 wind-up; Extra Hard 1.75, 1.35, 1.15, 0.85), bests kept per mode (`docs/difficulty.md`).
+- Direct weapon selection: tap a cell in the weapon strip on a phone (in portrait the strip is its own row under the score line);
+  keys 1 to 8 (fixed slots in `WEAPON_ORDER`), the wheel both ways and Q (quick-swap to the last weapon) on a computer. SWAP still
+  cycles forward.
+- The Vaults are dark outside the torch cone. The haze came from the grade stage's `lift` in `look.grade` (added in linear light before
+  the sRGB conversion, so the old values lifted black to about 8, 16 and 28 percent grey on medium and high; the low tier skips the
+  stage). It is now near zero, with ambient 0.08, fill 0.04 and exposure 1.25. Measured in software screenshots only: mean brightness
+  outside the cone 0.15 to 0.07. The owner's phone renders brighter than the software renderer, so the owner's reaction decides
+  whether it is now too dark; `lift` and the ambient light in `src/levels/vaults.js` are the numbers to raise.
 - The playtest kit: `?perf` or the P key shows a readout (`src/perf.js`); the guide is `docs/playtest.md`.
-- The Vaults were darkened outside the torch cone after the owner's first real-phone screenshot.
+- A repeatable bot sim (`scripts/sim3d.mjs`): the same seed always gives the same run. Numbers measured before 24 October are not
+  comparable run for run.
 - `docs/level-3.md`: the level 3 design only (Grassmarket pubs, the Landlord, Fizzbang Turbo). Nothing of level 3 is built.
 
-Branches: `status-after-pr9` holds this file's update (not yet on `main`; it only needs a docs PR if the owner wants it there).
-`playtest-textures-placement` and the local `worktree-agent-<id>` branches are merged and can be deleted. Earlier merges: PR #7
-(`98a08cd`, level 2, landscape) and PR #8 (`9366288`, control modes, torch, Blender weapons and props).
+Branches: all work is on `main`. These remote branches are merged and could not be deleted from here (the git proxy hangs up on
+`git push --delete`): `mouse-and-blender`, `playtest-textures-placement`, `status-after-pr9`, `darker-vaults-2`, `tidy-ups`,
+`integration-2`. Delete them on GitHub if wanted. Earlier merges: PR #7 (`98a08cd`, level 2, landscape), PR #8 (`9366288`, control
+modes, torch, Blender weapons and props), PR #9 (`1a62736`, textures, placement, difficulty, playtest kit); PR #10 was closed as
+superseded by #11.
 
-Checks on `main` as of PR #9 (24 October): `models-check`, `drinks-check`, `ui-check`, `perf-check` pass; `combat-check` 416/416;
-`world-check` 4413/4413; `level-check` 748/748; `enemies-check` 261/261; `arsenal-check` 464/464; `textures-check` 93/93;
-`difficulty-check` 84/84; the smoke test (125 checks, run with `SMOKE_WAIT=90000`) passes; `build:artifact` makes a 4.0 MB file.
+Checks on `main` (24 October): `models-check`, `drinks-check`, `ui-check`, `perf-check` pass; `combat-check` 509/509; `world-check`
+4413/4413; `level-check` 748/748; `enemies-check` 261/261; `arsenal-check` 469/469; `textures-check` 127/127; `difficulty-check`
+84/84; the smoke test (161 checks, run with `SMOKE_WAIT=90000`) passes; `build:artifact` makes a 4.4 MB file.
 
-Bot win rates on `main` as of PR #9, 30 runs, sloppy / casual / good (a sample, about plus or minus 10 to 15 points; not repeatable run for run):
+Bot win rates on `main` (30 runs, sloppy / casual / good; a sample, about plus or minus 10 to 15 points):
 
 | Level | Normal | Hard | Extra Hard |
 | --- | --- | --- | --- |
-| 1 | 97 / 100 / 100 | 73 / 100 / 93 | 53 / 67 / 87 |
-| 2 | 67 / 90 / 97 | 10 / 47 / 67 | 3 / 17 / 50 |
+| 1 | 100 / 100 / 100 | 83 / 100 / 100 | 63 / 70 / 80 |
+| 2 | 43 / 90 / 97 | 13 / 47 / 53 | 3 / 7 / 37 |
 
-The table above is `main` as of PR #9. On `integration-2` (30 runs, sloppy / casual / good, now repeatable:
-the same seed always gives the same run) they are: level 1 Normal 100 / 100 / 100, Hard 83 / 100 / 100, Extra Hard 63 / 70 / 80;
-level 2 Normal 43 / 90 / 97, Hard 13 / 47 / 53, Extra Hard 3 / 7 / 37. The level 2 Normal sloppy figure fell from 67 and is below
-the placement floor of 65: that is the Feedback Beam finding below, not noise (60-run measurements: 62 before, 37 after direct
-selection).
-
-## In flight, not yet on `main` (24 October, after PR #9)
-
-All of this sits on the pushed branch `integration-2` unless noted. Nothing here is merged to `main`.
-
-- **Darker Vaults (`darker-vaults-2`, merged into `integration-2`).** The cause of the haze was the grade stage's `lift` in
-  `look.grade` (added in linear light before the sRGB conversion, so the old values lifted black to about 8, 16 and 28 percent
-  grey on medium and high; the low tier skips the stage). It is now near zero, with ambient 0.08, fill 0.04 and exposure 1.25.
-  Measured in software screenshots only: mean brightness outside the cone 0.15 to 0.07, black level 0.09 to 0.007. The owner's
-  phone shows a brighter render than the software one, so the owner's reaction decides whether it is now too dark.
-- **Direct weapon selection (task 1, done).** Tap a cell in the weapon strip on a phone; keys 1 to 8 (fixed slots in
-  `WEAPON_ORDER`), the wheel both ways and Q (quick-swap to the last weapon) on a computer. SWAP still cycles forward. In portrait
-  the strip is now its own row under the score line. All checks pass and the smoke test (156 checks) passes. Bots select directly.
-- **Tidy-ups (task 6, done except one thing).** The sim is repeatable (`tidy-ups`, PR #10, merged into `integration-2`). The
-  remote branches `mouse-and-blender`, `playtest-textures-placement` and `status-after-pr9` could not be deleted from here (the
-  git proxy hung up on `push --delete`); they are merged and can be deleted on GitHub.
-- **Plaster, concrete and a second flag layout (task 3, done, merged into `integration-2`).** Measured coverage: plaster is only ever
-  the ceiling (27 to 34 percent of a frame in both levels); concrete is 33 percent of the backstage frame only; carpet is 1.5 percent
-  overall and was not baked. Baked: plaster (two-variant atlas), concrete, and the flags as a two-layout atlas (a 2 m repeat showed on
-  big floors). 19 WebP files, 917 KB on the wire (was 594 KB); estimated GPU memory 29.7 MiB for the baked maps (a formula, not a
-  measurement). If that is too much for a phone: drop plaster to one variant (-6 MB), then flags (-3 MB), each one constant in
-  `src/consts.js` plus a rebake. Verdict from the agent: the baked ceilings are clearly better in lit rooms, but in the real game
-  they are nearly invisible, and in the very dark Vaults almost nothing of the ceiling shows; lighting, not more texture, is the
-  lever for how the Vaults look. The floor boards' 1.6 m repeat clearly shows on the dance floor and in the bar and was left alone.
-  Reproducible: all baked files compare byte-identical across processes.
+Level 2 Normal sloppy was 67 before direct weapon selection and is below the placement floor of 65. That is the Feedback Beam
+finding below, not noise (60-run measurements: 62 before, 37 after).
 
 **Finding to decide on: the Feedback Beam against the Tour Guide.** With direct selection the bots can reach the Beam and hold it
 for 17 to 22 seconds a run. Level 2 win rates (60 runs, `--exact 1`, sloppy / casual / good): before 62 / 82 / 97, after 37 / 83 / 92;
 with the Beam pickup removed from the map, 78 / 93 / 95. The Tour Guide killed the sloppy bot 16 times before and 29 times after.
 So in these runs the Beam does worse than the launcher against the boss; the agent's reading (untested) is that its damage ramps
 only while the crosshair stays on the target. Options: retune the Beam (higher base damage or a faster ramp), move or drop its
-pickup, or leave it for a human playtest. No data or rules were changed. Thumb reach of the strip row at the top of a tall portrait
-screen is a guess (the aim thumb has to leave its box), and a question for the playtest.
+pickup, or leave it for a human playtest. No data or rules were changed.
+
+Other things the last round found:
+
+- The new ceilings are clearly better in lit rooms but nearly invisible in the real game, and in the very dark Vaults almost nothing
+  of them shows: lighting, not more texture, is the lever for how the Vaults look. The floor boards' 1.6 m repeat clearly shows on
+  the dance floor and in the bar and was left alone.
+- Estimated GPU memory for the baked maps is 29.7 MiB (a formula, not a measurement). If a phone struggles: drop plaster to one
+  variant (-6 MB), then flags (-3 MB), each one constant in `src/consts.js` plus a rebake.
+- Thumb reach of the weapon strip row at the top of a tall portrait screen is a guess (the aim thumb has to leave its box); it is on
+  the playtest list.
 
 ## What is next: the choices
 
-The owner asked for options after the merge. Nothing here is started.
+The owner approved tasks 1, 3 and 6 of the last list and they are done (weapon selection, plaster and concrete and the flag atlas,
+tidy-ups). Nothing below is started.
 
 **The owner's playtest comes first** (about 20 minutes, iPhone 16 Pro and MacBook Air M4; `docs/playtest.md` is the checklist):
 
 1. Open the game with `?perf` on the address and play level 1 then the Vaults, in portrait and landscape.
 2. Send a screenshot of the readout in the Plague Cellar and on the dance floor (the heaviest views).
-3. Say whether the Vaults are now too dark, whether the pistol torch looks right, how Hard and Extra Hard feel.
-4. On the MacBook, check mouse look works and one trackpad flick swaps one weapon.
+3. Say whether the Vaults are now too dark, whether the pistol torch looks right, how Hard and Extra Hard feel, whether the strip at
+   the top is easy to tap.
+4. On the MacBook, check mouse look works, keys 1 to 8 select, the wheel steps and one trackpad flick is one step.
 
-**Work that can be done without a phone**, in the order we recommend (1, then 4, then 2 once the `?perf` numbers show whether it is
-needed; hold 3 and 5 until the owner has played):
+**Work that can be done without a phone:**
 
 | # | Task | Why |
 | --- | --- | --- |
-| 1 | Fix weapon swapping (**done**, see above) | SWAP only cycles forward. With seven guns in level 2 the placement bots lost the Plague Cellar more often once cycling cost was counted, and a person would hit the same wall. A swap-back key and a weapon wheel is the likely fix; the owner should say which. The bots barely use the Grenade and the Beam today, so fix the swap, then teach them |
-| 2 | Stop drawing robots and pickups that cannot be seen | A frame draws 150k to 330k triangles on high (up to 276 draw calls) because things behind walls inside the view cone are still drawn. The playtest agent's cause is a guess. Measure with `?perf` first |
-| 3 | Bake plaster and ceilings (**done**, see above) | Plaster, carpet and concrete are still generated, and the ceilings now look flatter than the walls. Flag tiling in a big open space was not tested |
-| 4 | Re-tune Hard and Extra Hard | The multipliers were tuned before placement. Level 2 Hard is a wall for the sloppy bot (10 percent) and Extra Hard is a wall for all but the good bot. The Longshot's shot is 67 on Extra Hard, two thirds of Naebun's health. Re-run all three modes on both levels, normal mode only for the base numbers |
-| 5 | Sound and music | Everything is synthesised and nobody has heard it. Ambience for the dark Vaults would help most |
-| 6 | Tidy-ups | **Done** (owner approved): the sim is now repeatable (the game clock `S.t` is reset per run, saved records are cleared per run, world builds use a throwaway random stream, and one discarded warm-up run goes first; the same seeds in any order give the same runs), the docs PR and the deletion of merged branches. Win rates from before this change are not comparable run for run |
+| A | Decide the Feedback Beam | See the finding above. Retune, move or drop it, or wait for the playtest |
+| B | Re-tune Hard and Extra Hard | The multipliers were tuned before placement and before direct selection. Level 2 Hard is a wall for the sloppy bot and Extra Hard is a wall for all but the good bot. The Longshot's shot is 67 on Extra Hard, two thirds of Naebun's health. Re-run all three modes on both levels, normal mode only for the base numbers; best done after A |
+| C | Stop drawing robots and pickups that cannot be seen | A frame draws 150k to 330k triangles on high (up to 276 draw calls) because things behind walls inside the view cone are still drawn. The playtest agent's cause is a guess. Measure with `?perf` first |
+| D | Light the Vaults better rather than add texture | The ceilings and walls barely show in the dark. A few more wall torches or brighter pools near them would help the baked work show. Wait for the owner's reaction to the darkening |
+| E | Two-layout floor boards | The boards' 1.6 m repeat shows on the dance floor and in the bar |
+| F | Sound and music | Everything is synthesised and nobody has heard it. Ambience for the dark Vaults would help most |
 
 **Level 3** is designed and not built. It needs the owner's explicit go-ahead, and a go-ahead for the design is not that.
 
 ## Agreements with the owner
 
 - **Never merge to `main` unless asked.** When asked ("merge", "merge to main"), open a PR with the GitHub MCP tools (there is no
-  `gh` CLI; load them with ToolSearch), check it is mergeable, squash-merge with the expected head SHA. PRs #7, #8 and #9 went
+  `gh` CLI; load them with ToolSearch), check it is mergeable, squash-merge with the expected head SHA. PRs #7, #8, #9 and #11 went
   that way. Do not open a PR unprompted.
 - **Level 3 and later: never build without the owner's explicit permission** (`CLAUDE.md`). Planning documents are fine.
 - **Prepared objects** (the roadmap's enemies, weapons, upgrades, records) are placed in levels 1 and 2 at the owner's request.
@@ -146,15 +140,15 @@ needed; hold 3 and 5 until the owner has played):
 
 - Nobody has played the merged build. No new sound has been heard. Every number for the newer robots and weapons and the
   difficulty multipliers is a first guess. The sim bots aim better than a thumb in a small box with no aim assist.
-- Not tested on a device: real pointer lock in Safari, the trackpad swap fix (one event per 180 ms quiet gap in `engine.js`), the
+- Not tested on a device: the weapon strip taps, keys 1 to 8, the wheel and Q, real pointer lock in Safari, the trackpad swap fix (one event per 180 ms quiet gap in `engine.js`), the
   iPhone safe areas with Safari's bottom tab bar, texture decode time and GPU memory, frame rate on any phone.
 - Level 2 on the high tier is about 145k triangles in the static world; with robots and pickups in view a frame is much heavier.
 - The Nurse revived almost nothing in the sims (she is killed first), so she may be decoration. The Shaken's chain ripple appears in
   no level (each has one Shaken).
 - The Vending Mimic's window still blows out white under torchlight. The pistol torch is a box on top of the slide and the owner has
   not yet seen it.
-- The Vaults darkening was judged from software screenshots; the numbers to raise if it is too dark are the ambient light and the
-  baked tint in `src/levels/vaults.js`.
+- The Vaults darkening was judged from software screenshots; the numbers to raise if it is too dark are `lift` (in `look.grade`), the
+  ambient light and the baked tint in `src/levels/vaults.js`.
 
 ## How to work here
 
