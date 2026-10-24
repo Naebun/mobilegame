@@ -87,10 +87,10 @@ maps, run for run, with `--exact 1`).
 | Nurse | Shoots her only once she is channelling | Once there is a body for her | First, whenever she is in sight |
 | Mimic | Walks up to it | Shoots it from 7 m | Shoots it from 10 m |
 | Beam | Boss or Mimic inside 8 m | Inside 12 m | Inside 15 m |
-| Grenade, Airhorn, SMG alt-fire | Grenade on a pack of three, Airhorn when two are on top of it, alt-fire when the pedal is fitted. A special weapon is used only when it is at most 2 presses of SWAP away and the way back at most 3 | same | same |
+| Grenade, Airhorn, SMG alt-fire | Grenade on a pack of three, Airhorn when two are on top of it, alt-fire when the pedal is fitted. Chosen by a direct select (see the last section; until then a special weapon was used only when it was at most 2 presses of SWAP away and the way back at most 3) | same | same |
 | Upgrades and records | Fetched within 15 m (records 8 m) | 28 m (14 m) | 60 m (24 m) |
 
-One finding from teaching them: **SWAP only cycles forward through the owned weapons.** With seven guns (level 2 after the Grenade
+One finding from teaching them (**now fixed**, see "Weapon selection and the bots" below): **SWAP only cycled forward through the owned weapons.** With seven guns (level 2 after the Grenade
 and the Beam) the Grenade is four presses from the SMG and three back, about a second with the gun down. A first version of the
 bots swapped to it anyway and lost the Plague Cellar far more often (sloppy bot, pickups only, no new robots: 60 percent against
 72 percent once the swap cost was counted). A person would hit the same wall. This is a design question for the owner, not
@@ -151,6 +151,56 @@ What the tries showed:
   SWAP gets in the way for them as well.
 
 
+## Weapon selection and the bots (after direct selection)
+
+Direct selection (`docs/HANDOVER.md`, Weapon selection) replaced the forward-only cycle as the way to choose a weapon. The bots in
+`scripts/sim3d.mjs` now pick the weapon they want in one action (the number key for its slot, the same code path as a tap on the
+strip), paying the game's 0.25 s swap plus their own 0.35 s pause before deciding again. Their decision rules are unchanged: only the
+"at most 2 presses away" limit is gone. Normal mode, 60 runs per skill, `--exact 1` (a fresh game each run, so before and after use the
+same seeds and the same clock), win percent sloppy / casual / good. "Before" is the old bots on the game as it stood, "after" the new
+bots on the new game. 60 runs is good for about plus or minus 6 points on one number.
+
+| Map | Before | After | After, bots also lose 0.35 s of aiming and moving per select (a guess at a thumb leaving its control) |
+| --- | --- | --- | --- |
+| Level 1 | 98 / 98 / 100 | 100 / 97 / 100 | not run |
+| Level 2 | 62 / 82 / 97 | 37 / 83 / 92 | 52 / 85 / 88 |
+| Level 2, Beam pickup removed from the map, both sides | 62 / 95 / 90 | 78 / 93 / 95 | not run |
+
+Damage taken per run (sloppy / casual / good): level 1 70 / 44 / 21 before, 65 / 46 / 18 after; level 2 141 / 98 / 68 before, 138 / 88 / 67 after.
+Where they died: level 1 before, one sloppy in the VIP corridor and one casual in the bar; after, two casuals in the bar. Level 2 sloppy, before:
+Plague Cellar 14, Tour 7, Long Vault 1, Cask Cellar 1; after: Plague Cellar 21, Tour 12, Long Vault 2, Cask Cellar 2, Close 1 (killed by the
+Tour Guide 16 times before, 29 after). Level 2 casual: Tour 4 and Plague 7 before, Tour 4 and Plague 6 after. Good: Tour 1 and Plague 1 before,
+Plague 3 and Tour 2 after.
+
+What each special weapon was used for (per run, sloppy / casual / good):
+
+| | Level 1 before | Level 1 after | Level 2 before | Level 2 after |
+| --- | --- | --- | --- | --- |
+| Grenade throws | 0 | 0 | 4.2 / 3.2 / 2.9 | 2.5 / 2.4 / 1.1 |
+| Airhorn blasts | 2.2 / 4.8 / 6.0 | 0.9 / 0.1 / 0.1 | 0 | 0 |
+| Beam, seconds firing | 0 | 0 | 8.2 / 9.4 / 5.2 | 10.8 / 8.0 / 7.3 |
+| SMG alt-fire bursts | 0 | 0 | 6.0 / 4.3 / 4.1 | 6.1 / 4.5 / 3.9 |
+| Weapon selects (new bots only) | | 13 / 11 / 10 | | 23 / 22 / 22 |
+
+What this says, and how far to trust it:
+
+- **Direct selection helps the bots when the Beam is out of the picture.** With the Beam pickup removed on both sides, the sloppy bot
+  goes from 62 to 78 and the good one from 90 to 95; the casual bot is the same within the noise (95 and 93). That is the effect the change was for,
+  and it is about as large as the swap-cost finding above suggested (60 against 72).
+- **With the Beam in, the sloppy bot gets worse (62 to 37) and the good one a little (97 to 92).** The cause is the Beam rule, which this change did
+  not touch: use the Beam on a boss or a Mimic inside a range set by aim steadiness. Before, the Beam was mostly out of reach in the cycle; now every
+  bot reaches it and holds it for 17 to 22 s a run, and the Tour Guide kills the sloppy bot 29 times in 60 instead of 16. Taking the Beam
+  out of the map restores the win rate, so in these runs holding it against the Tour Guide does worse than the launcher the bots would
+  otherwise use. Our reading, not tested: its damage only climbs while the crosshair stays on the target, and a wobbling aim restarts the climb.
+  We have not tried it with a person. If people turn out the same, the Beam wants a retune or the bots' rule wants changing; both are the
+  placement engineer's call and neither was touched here.
+- **The old special-weapon numbers were partly incidental.** A picked-up weapon is selected on pickup, and the old bots spent several swap presses
+  cycling away from it while still firing. The Airhorn's 2.2 to 6.0 blasts a run on level 1 fell to 0.1 to 0.9 once the bots could leave it in one
+  press and only used it by their rule. That is an inference from the code, not something we isolated.
+- **The bots still have no cost for reaching the strip.** The right-hand column adds 0.35 s of no aiming, walking or firing per select. It is a guess
+  at a thumb leaving its control, and the sloppy bot's 52 against 37 shows how noisy these numbers are, not that a cost helps.
+  Nobody has measured how long a real thumb takes to hit a cell at the top of a tall phone.
+
 ## What to watch in a playtest
 
 - **The Longshot's lock.** 0.55 s to sidestep 0.6 m with a thumb in a small box is the guess the whole design rests on. If players
@@ -161,7 +211,10 @@ What the tries showed:
 - **The Shaken's rattle in a group.** Level 1 and 2 have one each, so the chain ripple is not exercised by any level.
 - **Whether the Nurse is noticed at all.** In the bot runs she is almost always killed before she revives anything. If players
   never see a revive, she is decoration, and a second Nurse or a Nurse next to the Bampots would make her matter.
-- **Weapon swapping.** See above. Watch whether players pick up the Grenade and Beam and never use them.
+- **Weapon swapping.** Direct selection exists now (a tap on the strip, number keys, wheel, Q). Watch whether players pick up the Grenade
+  and Beam and never use them, and whether anyone can reach the strip at the top of the screen with a thumb mid-fight.
+- **The Beam against the Tour Guide.** In the bot runs it is a worse boss weapon than the launcher (see the last section). Watch whether people
+  who select it for the boss do worse than people who keep the launcher.
 - **Records.** Whether five a level feels like a hunt or like clutter, and whether the exit-alcove one in level 1 is found.
 - **Level 2 for a weak player.** The sloppy bot is at the edge of what was asked for (see the numbers); the Plague Cellar and the
   Tour Guide are where it dies.

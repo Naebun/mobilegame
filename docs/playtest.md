@@ -109,6 +109,9 @@ Answer each in a line. Say which orientation and tier, and which area.
   the hands? Do the buttons feel too close to the screen edge or the home bar?
 - Landscape: the same, with the boxes in the lower corners. Does the notch or the rounded corners get in the way?
 - Do you ever press SWAP or RELOAD when you meant to aim?
+- The weapon strip (tap a weapon to use it): can you reach it with a thumb in portrait without losing the aim, and is it quicker than
+  SWAP in a fight? Do you ever hit the wrong cell? The row is at the top of the screen, a guess nobody has tried on a phone.
+- PC: do the number keys (1 to 8, printed on the strip), Q (last weapon) and the wheel feel right, and does a trackpad flick step one weapon?
 - Rotate the phone during play. Does the layout settle, and does it ever show the old size?
 
 **Thumb aiming against the numbers**
