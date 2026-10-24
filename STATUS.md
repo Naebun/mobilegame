@@ -33,20 +33,26 @@ Branches: `status-after-pr9` holds this file's update (not yet on `main`; it onl
 `playtest-textures-placement` and the local `worktree-agent-<id>` branches are merged and can be deleted. Earlier merges: PR #7
 (`98a08cd`, level 2, landscape) and PR #8 (`9366288`, control modes, torch, Blender weapons and props).
 
-Checks on `main` (24 October): `models-check`, `drinks-check`, `ui-check`, `perf-check` pass; `combat-check` 416/416;
+Checks on `main` as of PR #9 (24 October): `models-check`, `drinks-check`, `ui-check`, `perf-check` pass; `combat-check` 416/416;
 `world-check` 4413/4413; `level-check` 748/748; `enemies-check` 261/261; `arsenal-check` 464/464; `textures-check` 93/93;
 `difficulty-check` 84/84; the smoke test (125 checks, run with `SMOKE_WAIT=90000`) passes; `build:artifact` makes a 4.0 MB file.
 
-Bot win rates on these maps, 30 runs, sloppy / casual / good (a sample, about plus or minus 10 to 15 points):
+Bot win rates on `main` as of PR #9, 30 runs, sloppy / casual / good (a sample, about plus or minus 10 to 15 points; not repeatable run for run):
 
 | Level | Normal | Hard | Extra Hard |
 | --- | --- | --- | --- |
 | 1 | 97 / 100 / 100 | 73 / 100 / 93 | 53 / 67 / 87 |
 | 2 | 67 / 90 / 97 | 10 / 47 / 67 | 3 / 17 / 50 |
 
+The table above is `main` as of PR #9. On `integration-2` (30 runs, sloppy / casual / good, now repeatable:
+the same seed always gives the same run) they are: level 1 Normal 100 / 100 / 100, Hard 83 / 100 / 100, Extra Hard 63 / 70 / 80;
+level 2 Normal 43 / 90 / 97, Hard 13 / 47 / 53, Extra Hard 3 / 7 / 37. The level 2 Normal sloppy figure fell from 67 and is below
+the placement floor of 65: that is the Feedback Beam finding below, not noise (60-run measurements: 62 before, 37 after direct
+selection).
+
 ## In flight, not yet on `main` (24 October, after PR #9)
 
-All of this sits on the pushed branch `integration-2` (head `ff55d18` when written) unless noted. Nothing here is merged to `main`.
+All of this sits on the pushed branch `integration-2` unless noted. Nothing here is merged to `main`.
 
 - **Darker Vaults (`darker-vaults-2`, merged into `integration-2`).** The cause of the haze was the grade stage's `lift` in
   `look.grade` (added in linear light before the sRGB conversion, so the old values lifted black to about 8, 16 and 28 percent
@@ -59,9 +65,15 @@ All of this sits on the pushed branch `integration-2` (head `ff55d18` when writt
 - **Tidy-ups (task 6, done except one thing).** The sim is repeatable (`tidy-ups`, PR #10, merged into `integration-2`). The
   remote branches `mouse-and-blender`, `playtest-textures-placement` and `status-after-pr9` could not be deleted from here (the
   git proxy hung up on `push --delete`); they are merged and can be deleted on GitHub.
-- **Plaster and ceiling textures (task 3, in progress).** An agent is baking them in its own worktree
-  (`.claude/worktrees/agent-a055e416bc1f3ea7d`, branch `worktree-agent-a055e416bc1f3ea7d`, forked from `main`, not pushed). A fresh
-  chat will not receive its report: look at that worktree, merge it into `integration-2` and re-run the checks.
+- **Plaster, concrete and a second flag layout (task 3, done, merged into `integration-2`).** Measured coverage: plaster is only ever
+  the ceiling (27 to 34 percent of a frame in both levels); concrete is 33 percent of the backstage frame only; carpet is 1.5 percent
+  overall and was not baked. Baked: plaster (two-variant atlas), concrete, and the flags as a two-layout atlas (a 2 m repeat showed on
+  big floors). 19 WebP files, 917 KB on the wire (was 594 KB); estimated GPU memory 29.7 MiB for the baked maps (a formula, not a
+  measurement). If that is too much for a phone: drop plaster to one variant (-6 MB), then flags (-3 MB), each one constant in
+  `src/consts.js` plus a rebake. Verdict from the agent: the baked ceilings are clearly better in lit rooms, but in the real game
+  they are nearly invisible, and in the very dark Vaults almost nothing of the ceiling shows; lighting, not more texture, is the
+  lever for how the Vaults look. The floor boards' 1.6 m repeat clearly shows on the dance floor and in the bar and was left alone.
+  Reproducible: all baked files compare byte-identical across processes.
 
 **Finding to decide on: the Feedback Beam against the Tour Guide.** With direct selection the bots can reach the Beam and hold it
 for 17 to 22 seconds a run. Level 2 win rates (60 runs, `--exact 1`, sloppy / casual / good): before 62 / 82 / 97, after 37 / 83 / 92;
@@ -89,7 +101,7 @@ needed; hold 3 and 5 until the owner has played):
 | --- | --- | --- |
 | 1 | Fix weapon swapping (**done**, see above) | SWAP only cycles forward. With seven guns in level 2 the placement bots lost the Plague Cellar more often once cycling cost was counted, and a person would hit the same wall. A swap-back key and a weapon wheel is the likely fix; the owner should say which. The bots barely use the Grenade and the Beam today, so fix the swap, then teach them |
 | 2 | Stop drawing robots and pickups that cannot be seen | A frame draws 150k to 330k triangles on high (up to 276 draw calls) because things behind walls inside the view cone are still drawn. The playtest agent's cause is a guess. Measure with `?perf` first |
-| 3 | Bake plaster and ceilings (**in progress**, see above) | Plaster, carpet and concrete are still generated, and the ceilings now look flatter than the walls. Flag tiling in a big open space was not tested |
+| 3 | Bake plaster and ceilings (**done**, see above) | Plaster, carpet and concrete are still generated, and the ceilings now look flatter than the walls. Flag tiling in a big open space was not tested |
 | 4 | Re-tune Hard and Extra Hard | The multipliers were tuned before placement. Level 2 Hard is a wall for the sloppy bot (10 percent) and Extra Hard is a wall for all but the good bot. The Longshot's shot is 67 on Extra Hard, two thirds of Naebun's health. Re-run all three modes on both levels, normal mode only for the base numbers |
 | 5 | Sound and music | Everything is synthesised and nobody has heard it. Ambience for the dark Vaults would help most |
 | 6 | Tidy-ups | **Done** (owner approved): the sim is now repeatable (the game clock `S.t` is reset per run, saved records are cleared per run, world builds use a throwaway random stream, and one discarded warm-up run goes first; the same seeds in any order give the same runs), the docs PR and the deletion of merged branches. Win rates from before this change are not comparable run for run |
