@@ -81,16 +81,30 @@ const give = (S, w) => { game.testHook('give', w); S.player.weapon = w; S.player
   game.testHook('give', 'all');
   h = game.testHook('hud');
   ok(h.weapons.length === 8, 'with all eight owned the strip has eight cells');
-  // cycling visits every owned weapon in WEAPON_ORDER and comes back round
+  // the SWAP button still cycles forward through every owned weapon in WEAPON_ORDER and comes back round
   p.weapon = 'pistol';
   const seen = [];
+  const sb = game.testHook('layout').swapBtn;
   for (let i = 0; i < 8; i++) {
     p.switchT = 0;
-    run(S, 0.01, hold(S, 'q'));
+    const tapSwap = input();
+    tapSwap.pressed.push({ x: sb.x + sb.w / 2, y: sb.y + sb.h / 2 });
+    run(S, 0.01, tapSwap);
     run(S, 0.05); // release
     seen.push(p.weapon);
   }
-  ok(seen.join() === 'shotgun,smg,launcher,vinyl,beam,grenade,airhorn,pistol', `Q cycles through all eight in order (${seen})`);
+  ok(seen.join() === 'shotgun,smg,launcher,vinyl,beam,grenade,airhorn,pistol', `SWAP cycles through all eight in order (${seen})`);
+  // the number keys reach any of them in one press, and Q flips between the last two (the full set is in combat-check)
+  for (const [key, id] of [['6', 'beam'], ['7', 'grenade'], ['8', 'airhorn'], ['1', 'pistol']]) {
+    p.switchT = 0;
+    run(S, 0.01, hold(S, key));
+    run(S, 0.05);
+    ok(p.weapon === id, `key ${key} selects the ${id} in one press (${p.weapon})`);
+  }
+  p.switchT = 0;
+  run(S, 0.01, hold(S, 'q'));
+  run(S, 0.05);
+  ok(p.weapon === 'airhorn', `Q flips back to the last weapon (${p.weapon})`);
 }
 
 // ---- where the levels place them (docs/placement.md) ----

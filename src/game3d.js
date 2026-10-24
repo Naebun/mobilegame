@@ -2941,6 +2941,7 @@ export function testHook(cmd, arg) {
     case 'arsenal': return ARS; // the arsenal's own functions, for the headless checks
     case 'hud': return buildHudState(); // what the HUD is told, for the headless checks
     case 'layout': return layoutFor(v);
+    case 'strip': return hud.layout(v).strip(arg === undefined ? stripWeapons().length : arg); // the weapon strip cells for n weapons (plain data, for the browser tests)
     case 'hurt': hurtPlayer(arg, S.player.x, S.player.z + 5, false); return undefined;
     case 'screen': // jump to a menu screen, for screenshots: title | controls | intro | voicemail | dead | complete
       if (arg === 'title') toTitle();

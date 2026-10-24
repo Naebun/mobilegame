@@ -78,11 +78,11 @@ try {
     const geo = await page.evaluate(() => {
       const r = document.getElementById('perf').getBoundingClientRect();
       const L = window.__game.testHook('layout');
-      return { panel: { x: r.x, y: r.y, w: r.width, h: r.height }, boxes: ['moveBox', 'lookBox', 'reloadBtn', 'swapBtn'].map((k) => [k, L[k]]) };
+      return { panel: { x: r.x, y: r.y, w: r.width, h: r.height }, boxes: ['moveBox', 'lookBox', 'reloadBtn', 'swapBtn'].map((k) => [k, L[k]]).concat(L.strip(8).cells.map((c, i) => [`strip cell ${i + 1}`, c.hit])) };
     });
     const hit = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
     ok(geo.panel.x >= 0 && geo.panel.y >= 0 && geo.panel.x + geo.panel.w <= W && geo.panel.y + geo.panel.h <= H, `${name}: the panel is on screen (${JSON.stringify(geo.panel)})`);
-    ok(geo.boxes.every(([k, b]) => !hit(geo.panel, b)), `${name}: the panel overlaps no control box or button`);
+    ok(geo.boxes.every(([k, b]) => !hit(geo.panel, b)), `${name}: the panel overlaps no control box, button or weapon strip cell`);
     // the HUD's own top strip: health, score (to y 52) and the weapon row (right). The panel starts below the score line.
     ok(geo.panel.y > 52, `${name}: the panel starts below the health and score line (y ${geo.panel.y})`);
     if (out) await page.screenshot({ path: `${out}/perf-${name}.png` });

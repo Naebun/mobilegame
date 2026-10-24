@@ -168,13 +168,37 @@ guess; nothing has been played by a person or heard. The sim bots (`scripts/sim3
 Shaken, hunt a Nurse and use the new weapons in a simple way, and both levels were tuned against them; that is a proxy, not
 a playtest. Level 3 and later are still not to be built.
 
+## Weapon selection
+Eight ids in `WEAPON_ORDER` (level 2 can hold seven guns and the pistol), so cycling forward alone cost a fight (the placement bots
+lost the Plague Cellar far more often after cycling through the Grenade). Every route ends in `selectWeapon(id)` in `game3d.js`:
+not owned or already in hand does nothing; otherwise the old weapon becomes `p.lastWeapon`, a reload in progress is dropped and the
+swap takes `switchT` (0.25 s). `updateWeapon` makes one weapon change a frame and, like before, nothing changes while a drink, the
+Last Orders spin or the torch fitting has the hands. The routes, all read in `readControls`:
+
+| Route | Where | What it does |
+| --- | --- | --- |
+| Tap a strip cell | Phone, any orientation | Selects that weapon if owned. Rectangles are `hud.layout(view).strip(n)` (`cells[i].hit` is the tap area, 41 x 44 px where the screen allows, never overlapping a neighbour or any control). The touch gets the button role, so it cannot aim or fire; a thumb in the aim box never reaches the strip |
+| Number keys 1 to 8 | PC | The weapon in that slot of `WEAPON_ORDER` if owned. The strip prints the slot on each cell in PC mode, so the key matches the icon; a prepared weapon not owned yet is not shown and leaves a gap (1 2 3 4 5 then 7 with the Beam missing) |
+| Mouse wheel | PC | Down is the next owned weapon, up the previous, both wrap. `engine.js` `wheelGate` keeps the 180 ms quiet gap (a trackpad flick is one step) and puts the sign in `input.mouse.wheel` |
+| Q | PC | Quick-swap to `p.lastWeapon`, a toggle between two. A pickup, a tap, a key or the wheel all set the last weapon. No last weapon yet: cycles forward |
+| SWAP button | Phone | Unchanged: next owned weapon |
+
+Layout: in landscape the strip sits top right beside the health bar; in portrait it has a row of its own under the score line (eight
+cells of a thumb's width do not fit beside the health bar on a 360 px phone), and the area name, objective and upgrade chips moved
+down to make room. `stripWeapons()` in `game3d.js` is the one list the HUD draws and the touch test uses.
+Tests: `combat-check` (every route, not owned, hands full, same weapon, swap time, the wheel gate), `ui-check` (the strip at all 12
+sizes: inside the view and the insets, clear of the controls, tap areas at least 40 px where the screen allows) and the smoke test.
+Not tested: a real phone (thumb reach to a row at the top of a tall screen is a guess; the aim thumb has to leave its box for a
+tap there), a real mouse wheel or trackpad with pointer lock (the checks inject the wheel through `testHook('mouse')`; the gate
+itself is tested as a function).
+
 ## The owner's test devices
 An iPhone 16 Pro and a MacBook Air M4. Both are much faster than the plan's floor (an A15, so an iPhone 14), which means a
 smooth frame rate on either says nothing about an older phone: keep the pixel ratio cap, the light count and the triangle
 budget as they are, and use the `?perf` readout (see `docs/playtest.md`) to look at
 frame time, not just whether it feels smooth. The iPhone's display is 120 Hz in Safari (30 or 60 in Low Power Mode), so
 nothing may assume 60 frames a second; the loop is fixed-step and reads taps from events, but test it. The Mac is PC mode
-with a trackpad: two-finger scroll sends wheel events that keep coming as the scroll coasts, so the wheel swap only counts
+with a trackpad: two-finger scroll sends wheel events that keep coming as the scroll coasts, so the wheel only counts one step for
 an event after a quiet gap of 180 ms (`engine.js`); the right button (alt-fire) is a two-finger click or a control-click.
 Not tested on either: real pointer lock in Safari, trackpad swap, the iPhone safe areas with Safari's bottom tab bar.
 

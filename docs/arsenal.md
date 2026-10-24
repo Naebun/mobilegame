@@ -66,6 +66,15 @@ each, in list order, so junk (numbers, objects, unknown or repeated ids, a strin
 without the field loads with none; `merge()` takes the union. The version stays 1 because the change is additive. Never rename a
 record id: it is what the save stores.
 
+## Choosing the new weapons
+
+The Feedback Beam, the Grenade and the Airhorn are slots 6, 7 and 8 of `WEAPON_ORDER` and are chosen like any other weapon: a tap on
+their cell in the strip (phone), the number key 6, 7 or 8 or the wheel (PC), Q back to the weapon before, or SWAP, which still cycles
+forward. A cell appears once the weapon is owned and its number is printed on it in PC mode, so a missing Beam leaves a gap in the
+numbers (1 to 5, then 7). Selecting costs the usual 0.25 s and drops a reload in progress. Before direct selection existed SWAP was
+the only way and the placement bots could not afford to reach the Grenade; see `docs/HANDOVER.md` (Weapon selection) and
+`docs/placement.md`.
+
 ## How it is wired
 
 - `scripts/blender/arsenal.py` writes `src/arsenal-meshes.js` (never edit it; run the script twice and `cmp`). It imports

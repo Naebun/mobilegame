@@ -37,10 +37,18 @@ braziers light pools, and Naebun's own torch does the rest. Design notes and num
 Two grey boxes on screen. **Left box:** drag to move. **Right box:** drag to aim; while a thumb is down in it,
 the weapon fires on its own. **Anywhere else on the screen:** drag to aim only, with no firing (a second
 aiming thumb, or a lighter way to look round). **RELOAD** sits under the right box and **SWAP** (next weapon) under the left box. In landscape the boxes sit in the lower corners, clear of the notch, with SWAP and RELOAD beside them and the whole middle of the screen free for the aiming drag.
-On a desktop: WASD to move, arrow keys to look, space to fire, R to reload, Q to swap. The controls screen shows these.
+On a desktop: WASD to move, arrow keys to look, space to fire, R to reload. The controls screen shows these.
+
+**Choosing a weapon.** *Phone:* tap a weapon in the row at the top of the screen to use it (only weapons Naebun owns; in portrait the row has a line of
+its own under the health bar, in landscape it sits top right). The tap area is taller than the drawn cell. A tap there never aims or fires.
+SWAP still cycles forward through the owned weapons. *Computer:* keys 1 to 8 pick the weapon in that slot of the weapon order
+(1 pistol, 2 shotgun, 3 SMG, 4 launcher, 5 vinyl disc, 6 beam, 7 grenade, 8 airhorn; the number is printed on its cell in the row, so the key
+matches the icon, and a weapon not shown yet leaves a gap in the numbers), the mouse wheel steps to the next (down) or previous (up) owned weapon, and
+Q flips to the last weapon used, a toggle between two (with no last weapon yet it cycles forward). A swap costs the same quarter of a second whichever route
+picks it, and nothing changes weapon while Naebun is drinking or fitting the torch.
 
 **Control modes.** PC mode is the default: the grey touch boxes are hidden, click the game once to capture the mouse, then
-move it to aim (no button held), left click fires, the wheel swaps weapon, Esc lets go. A mobile browser switches to mobile
+move it to aim (no button held), left click fires, the wheel steps through the weapons, Esc lets go. A mobile browser switches to mobile
 mode on its own at start-up (the grey boxes). SETTINGS on the title screen has CONTROLS: PC / MOBILE to change it (the
 choice is remembered and wins over detection) and a three-step MOUSE SENSITIVITY in PC mode. The controls screen shows
 whichever mode is active.
@@ -125,7 +133,7 @@ npm run smoke -- ./shots     # headless Chromium with software WebGL and synthet
 npm run sim                  # headless bot plays the real game logic: is the level winnable, how much damage (--level 2 for the Vaults, --difficulty hard|extra)
 node scripts/harness/world-check.mjs     # level 1 geometry, collision, rays, flow field (thousands of assertions)
 node scripts/harness/level-check.mjs     # every level: areas, spawns, pickups, doors one at a time, budgets, NaN-free geometry
-node scripts/harness/combat-check.mjs    # level 2 rules in the real game logic: shield, disc bounce, Tour Guide volley, slam, enrage; and the Hard and Extra Hard multipliers on every robot kind
+node scripts/harness/combat-check.mjs    # level 2 rules in the real game logic: shield, disc bounce, Tour Guide volley, slam, enrage; the Hard and Extra Hard multipliers on every robot kind; every way of choosing a weapon
 node scripts/harness/difficulty-check.mjs # the difficulty flow, the saved format (old saves, a best per mode), CONTINUE in the saved mode, debug runs writing nothing
 node scripts/harness/world-views.mjs 2 ./shots "name:x,z,yaw"   # screenshots of a level from tile positions (viewer harness, not the game pipeline)
 node scripts/harness/models-check.mjs    # every robot pose, every model
