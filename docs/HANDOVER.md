@@ -195,7 +195,7 @@ shipped as WebP; carpet is still generated. Read `docs/textures.md` for the numb
   bricks, recessed joints that vary in depth, worn flagstones at different heights, chips), bakes albedo, tangent normal,
   roughness, occlusion and a mask with Cycles on the CPU at twice the final size, averages down, then adds grain, pits, stains
   and wood grain in numpy from tileable noise. Output is byte-for-byte reproducible (two full runs compared with `cmp`).
-  About 8 to 10 minutes for everything on this container. Never edit the WebP files; change the script and rerun.
+  About 5 to 10 minutes for everything on this container, depending on load. Never edit the WebP files; change the script and rerun.
   Plaster and concrete are heightfields on a periodic grid (cracks, chips, patches, pits, joints modelled as relief) baked the same way.
 - **Delivery:** `assets/textures/<name>-albedo|normal|rough.webp`, 0.92 MB in all. `src/textures.js` loads them (DOM allowed)
   and builds `THREE.Texture`s, flagged `userData.baked`. `world.js` stays DOM-free: `buildWorld({ baked })` uses finished

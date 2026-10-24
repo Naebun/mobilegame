@@ -110,14 +110,15 @@ Then the numpy pass adds grain, dark flecks, pale lime lumps, trowel stripes and
 
 **Reproducible.** Fixed seeds, no thread-dependent code. Plaster, concrete and flags were baked three times in separate processes
 (the files in `assets/textures/` and two fresh runs into scratch directories); all nine files compared byte-identical with
-`cmp`. Brick, stone and boards were not rebaked in this pass (their code is unchanged and the seed offset is 0 for them), so
-their files are the ones from the first pass, which were compared three times then. This holds for this Blender (bpy 5.2.3)
+`cmp`. Brick, painted brick, stone and boards were rebaked once after the script changed (the seed offset is 0 for them, so
+nothing should move) and all ten files came out byte-identical to the committed ones. This holds for this Blender (bpy 5.2.3)
 and its bundled libwebp; a different bpy build may encode differently.
 
-**Build time.** Plaster 2 variants: 89 to 154 s (two bakes of 36 to 74 s each; the spread is the other engineer's work running
-on the same 4 cores). Concrete: 41 to 95 s. Flags, two layouts: 28 to 44 s. The three together, from a cold start: 221 s and
-174 s in two runs (with a browser test running in one of them). The first pass's brick (170 to 215 s), stone and boards are
-unchanged, so the whole set is still about 8 to 10 minutes. The bake is a one-off; nothing runs at build time for the game.
+**Build time.** Highly dependent on what else the 4 cores are doing. Plaster, two variants: 89 to 154 s (two bakes of 30 to 74 s
+each). Concrete: 41 to 95 s. Flags, two layouts: 28 to 44 s. Plaster, concrete and flags together: 221 s and 174 s in two
+consecutive runs. Brick, stone and boards together took 66 s on a quiet machine (brick alone 40 s; the first pass measured 170 to
+215 s for brick while three engineers shared the cores). So the whole set is about 4 to 5 minutes quiet and up to 10 busy. The
+bake is a one-off; nothing runs at build time for the game.
 
 ## Conventions that are easy to get wrong
 
