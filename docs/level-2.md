@@ -50,8 +50,11 @@ percent faster. Last Orders is refused in its room, like the Bouncer's.
 
 ## Look
 
-Nearly dark on purpose. The baked ambient tint is about a fifth of level 1's (cut again after a real-phone screenshot showed too much
-readable outside the torch cone; the hemisphere light is 0.16 and the camera fill 0.07), the fog is near and black, and the world's four
+Nearly dark on purpose. The baked ambient tint is about a fifth of level 1's (cut again after real-phone screenshots showed too much
+readable outside the torch cone). The biggest lever was the grade's `lift` in `look.grade` (src/levels/vaults.js): it is added in
+linear light before the sRGB conversion, so the old 0.006, 0.012, 0.022 lifted black to roughly 8, 16 and 28 percent grey and gave
+the navy haze; it is now close to zero. The hemisphere light is 0.08, the camera fill 0.04 and the exposure 1.25. The low tier skips
+the grade stage, which is why it was always darker, the fog is near and black, and the world's four
 point lights are braziers and lamps. Wall torches light pools through the baked light (no extra lights). The level is dark enough that the gun torch is needed:
 at the start Naebun fits a torch to the pistol by hand (a short animation; the pistol cannot fire until it is on), and from then
 on the torch is a spotlight and a visible beam placed on the torch lens, so it points where the gun points, including through
