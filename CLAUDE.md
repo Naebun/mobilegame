@@ -31,7 +31,7 @@ Two levels so far. Read `README.md` for the layout and `docs/fps-design.md` for 
   files, no canvas textures, no DOM access, so they run under plain Node (used by the headless tests). `world.js` is
   handed finished baked textures (`buildWorld({ baked })`, `world.retexture(sets)`) but never loads a file.
 - **Textures are baked in Blender and shipped as WebP.** `scripts/blender/textures.py` models brick, painted brick, stone,
-  flags and boards as real geometry, bakes albedo, normal, roughness and occlusion with Cycles, and writes
+  flags, boards, ceiling plaster and concrete as real geometry, bakes albedo, normal, roughness and occlusion with Cycles, and writes
   `assets/textures/*.webp`. Those are the only image files the repo may hold (textures, nothing else: models stay data
   modules). `src/textures.js` (DOM allowed) loads them in the background from the title screen and `game3d.js` swaps them in
   on the medium and high tiers. The generated textures stay as the fallback: the low tier, every headless test and any

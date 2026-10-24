@@ -139,7 +139,7 @@ scripts/setup-blender.sh                 # installs Blender (bpy) into a venv (a
 ~/.venvs/blender/bin/python scripts/blender/drinks.py                    # rebuilds src/drink-meshes.js from the Blender models
 ~/.venvs/blender/bin/python scripts/blender/weapons.py                   # rebuilds src/weapon-meshes.js (weapons and Naebun's hands)
 ~/.venvs/blender/bin/python scripts/blender/props.py                     # rebuilds src/prop-meshes.js (level props, see docs/props.md)
-~/.venvs/blender/bin/python scripts/blender/textures.py                  # rebakes assets/textures/*.webp (about 6 minutes; --only brick,flag, --debug DIR for PNG previews)
+~/.venvs/blender/bin/python scripts/blender/textures.py                  # rebakes assets/textures/*.webp (about 8 to 10 minutes; --only brick,flag,plaster,concrete, --debug DIR for PNG previews)
 ~/.venvs/blender/bin/python scripts/blender/drinks.py --preview sheet.png   # also a Cycles contact sheet (about a minute)
 ~/.venvs/blender/bin/python scripts/blender/weapons.py                   # rebuilds src/weapon-meshes.js: the five weapons and Naebun's hands
 ~/.venvs/blender/bin/python scripts/blender/weapons.py --preview smg --view fp --png smg.png   # one weapon as the game frames it (also iso, side, top, rear)

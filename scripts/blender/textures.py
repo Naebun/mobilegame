@@ -1191,7 +1191,7 @@ def run(name, out_dir, ss, debug=None):
 
 def main():
   ap = argparse.ArgumentParser()
-  ap.add_argument('--only', default='brick,flag,stone,boards,plaster')
+  ap.add_argument('--only', default='brick,flag,stone,boards,plaster,concrete')
   ap.add_argument('--out', default='assets/textures')
   ap.add_argument('--debug', default=None)
   ap.add_argument('--ss', type=int, default=2)
