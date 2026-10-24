@@ -104,7 +104,7 @@ try {
     const swapped = await page.waitForFunction(() => ['applied', 'failed'].includes(window.__game.testHook('baked').state), null, { timeout: 90000 }).then(() => true, () => false);
     const b = await hook('baked');
     check(swapped && b.state === 'applied', `baked textures load and swap in on the medium tier (${b.state}: ${b.names.join(', ')})`);
-    check(['brick', 'paint', 'flag', 'stone', 'boards', 'floorboards'].every((n) => b.names.includes(n)), 'every baked surface is on the level 1 materials');
+    check(['brick', 'paint', 'flag', 'stone', 'boards', 'floorboards', 'plaster', 'concrete'].every((n) => b.names.includes(n)), 'every baked surface is on the level 1 materials');
     check(b.bytes > 4e6 && b.bytes < 40e6, `estimated GPU memory for the baked maps is ${(b.bytes / 1048576).toFixed(1)} MB`);
     const px = await page.evaluate(() => {
       const w = window.__game.getWorld();
@@ -126,6 +126,36 @@ try {
     check(px && px.nrm[2] > 200 && Math.abs(px.nrm[0] - 128) < 14 && Math.abs(px.nrm[1] - 128) < 14, `the brick normal map decodes to a mostly flat tangent-space normal (mean RGB ${px && px.nrm.map((v) => v.toFixed(0)).join(' ')})`);
     check(px && px.rgh[1] > 150, `the brick roughness map is mostly rough (mean green ${px && px.rgh[1].toFixed(0)})`);
     check(px && px.srgb === 'srgb' && px.nrmCs === '' && px.vc, 'albedo is sRGB, the normal map is linear data and the level tints still ride in vertex colours');
+    // ceiling plaster (an atlas of ceiling variants) and concrete: decoded, calibrated to the generated textures' mean colour
+    const cp = await page.evaluate(() => {
+      const w = window.__game.getWorld();
+      const mean = (img) => {
+        const c = document.createElement('canvas');
+        c.width = img.width; c.height = img.height;
+        const g = c.getContext('2d');
+        g.drawImage(img, 0, 0);
+        const d = g.getImageData(0, 0, c.width, c.height).data;
+        const m = [0, 0, 0];
+        for (let i = 0; i < d.length; i += 4) { m[0] += d[i]; m[1] += d[i + 1]; m[2] += d[i + 2]; }
+        return m.map((v) => v / (d.length / 4));
+      };
+      let ceil = null;
+      let conc = null;
+      w.group.traverse((o) => { if (o.isMesh && o.userData.ceil) ceil = o; if (o.isMesh && o.material.map === w.textures.concrete) conc = o; });
+      const uv = ceil.geometry.attributes.uv;
+      let umax = 0;
+      for (let i = 0; i < uv.count; i++) umax = Math.max(umax, uv.getX(i));
+      const pm = ceil.material;
+      return {
+        pAlb: mean(pm.map.image), pW: pm.map.image.width, pH: pm.map.image.height, pRep: pm.map.repeat.x, pBaked: !!pm.map.userData.baked, pNrm: mean(pm.normalMap.image), pCs: pm.map.colorSpace, umax,
+        cAlb: mean(conc.material.map.image), cW: conc.material.map.image.width, cBaked: !!conc.material.map.userData.baked,
+      };
+    });
+    check(cp.pBaked && cp.pW === 1024 && cp.pH === 512 && cp.pRep === 0.5 && cp.pCs === 'srgb', `the ceiling carries the baked plaster atlas (${cp.pW}x${cp.pH}, repeat ${cp.pRep})`);
+    check(Math.abs(cp.pAlb[0] - 107.6) < 10 && Math.abs(cp.pAlb[1] - 97.4) < 10 && Math.abs(cp.pAlb[2] - 85.2) < 10, `the plaster albedo decodes to the generated plaster's mean colour (mean RGB ${cp.pAlb.map((v) => v.toFixed(0)).join(' ')})`);
+    check(cp.pNrm[2] > 200 && Math.abs(cp.pNrm[0] - 128) < 14 && Math.abs(cp.pNrm[1] - 128) < 14, `the plaster normal map is a mostly flat tangent-space normal (mean RGB ${cp.pNrm.map((v) => v.toFixed(0)).join(' ')})`);
+    check(cp.umax >= 1.5 && cp.umax <= 2.001, `the level 1 ceiling reads both plaster variants (largest u ${cp.umax.toFixed(2)})`);
+    check(cp.cBaked && cp.cW === 512 && Math.abs(cp.cAlb[0] - 104.8) < 10 && Math.abs(cp.cAlb[2] - 102.6) < 10, `the concrete albedo decodes to the generated concrete's mean colour (mean RGB ${cp.cAlb.map((v) => v.toFixed(0)).join(' ')})`);
   }
 
   // menus: title -> controls -> intro -> play

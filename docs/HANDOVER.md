@@ -106,8 +106,8 @@ smoothing angle; `drinks.py` output is unchanged (checked with `cmp`). Previews:
 Textures: decided and built, see the Textures section.
 
 ## Open questions for the owner
-1. Whether the baked textures look right on a phone, and whether plaster, carpet and concrete should be baked too (they are
-   still generated). Say if the robots or Naebun should move to Blender too.
+1. Whether the baked textures look right on a phone (30 MB of texture memory is an estimate, never measured), and whether carpet
+   should be baked too (it is still generated; we would not). Say if the robots or Naebun should move to Blender too.
 2. Playtest feedback on difficulty and look.
 
 ## Landscape (branch `level-2`)
@@ -213,14 +213,15 @@ about 25 fps, and it remembers the lower tier in local storage, which a playtest
 tier with `?q=`).
 
 ## Textures
-Brick, painted brick, stone, flags and boards (and the floor boards, which are the boards darker) are baked in Blender and
-shipped as WebP; carpet, concrete and plaster are still generated. Read `docs/textures.md` for the numbers and the reasoning.
+Brick, painted brick, stone, flags, boards (and the floor boards, which are the boards darker), ceiling plaster and concrete are baked in Blender and
+shipped as WebP; carpet is still generated. Read `docs/textures.md` for the numbers and the reasoning.
 - **Source art:** `scripts/blender/textures.py` models each surface as real geometry over a seamless tile (bevelled uneven
   bricks, recessed joints that vary in depth, worn flagstones at different heights, chips), bakes albedo, tangent normal,
   roughness, occlusion and a mask with Cycles on the CPU at twice the final size, averages down, then adds grain, pits, stains
   and wood grain in numpy from tileable noise. Output is byte-for-byte reproducible (two full runs compared with `cmp`).
-  About 6 minutes for everything on this container. Never edit the WebP files; change the script and rerun.
-- **Delivery:** `assets/textures/<name>-albedo|normal|rough.webp`, 0.6 MB in all. `src/textures.js` loads them (DOM allowed)
+  About 5 to 10 minutes for everything on this container, depending on load. Never edit the WebP files; change the script and rerun.
+  Plaster and concrete are heightfields on a periodic grid (cracks, chips, patches, pits, joints modelled as relief) baked the same way.
+- **Delivery:** `assets/textures/<name>-albedo|normal|rough.webp`, 0.92 MB in all. `src/textures.js` loads them (DOM allowed)
   and builds `THREE.Texture`s, flagged `userData.baked`. `world.js` stays DOM-free: `buildWorld({ baked })` uses finished
   textures for the surfaces it is given, and `world.retexture(sets)` swaps them into a built world, disposing the generated
   textures it replaces (baked ones are shared between levels and never disposed). `game3d.js` starts loading at start-up on
@@ -228,6 +229,11 @@ shipped as WebP; carpet, concrete and plaster are still generated. Read `docs/te
   afterwards. The low tier, Node and any failed load keep the generated textures. `?baked=0` forces that for comparisons.
 - **Brick tile is 1.8 m by 0.9 m** (the generated one was 0.9 m square): `texture.repeat` carries the difference, and each brick
   wall face starts a whole number of double courses up the tile (`Mesher.off`), so the same bricks do not stack in a column.
+- **Plaster and flags are atlases** (`CEIL_VARIANTS` and `FLAG_VARIANTS`, 2 each, in `src/consts.js`): two 2 m tiles side by side
+  in one 1024 x 512 image, and `world.js` gives each ceiling or flag floor tile a variant through the UV offset (`Mesher.off`), so
+  a long vault does not repeat one crack or one three-course rhythm every 2 m. Plaster is only ever the ceiling (a third of the
+  frame in both levels); no wall is plaster. The ceilings are nearly invisible in the real game because they are dark, so the
+  gain shows in lit rooms and in the world-views harness; see the verdict in `docs/textures.md`.
 - **Tests:** `scripts/harness/textures-check.mjs` (Node), the baked checks in `scripts/smoke.mjs`. The smoke test is bound by software frame rate: on a busy machine (load above 15) its 20 s waits expire, so `SMOKE_WAIT=90000` stretches them, and `pressButton` now waits for a delayed button. `EXTRA='&baked=0'` runs it on the generated textures.
 - **Not known:** decode and upload time, GPU memory and frame rate on a phone. See `docs/textures.md`.
 

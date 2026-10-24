@@ -75,7 +75,7 @@ the built result:
 
 | Question in this file | Estimate then | Measured |
 | --- | --- | --- |
-| Real size of Blender-baked tileable textures | 1.5 to 2.5 MB for nine materials | 594 KB for five baked surfaces (13 files); brick albedo 78 KB, brick normal 158 KB, roughness 4 to 15 KB each. Carpet, concrete and plaster were not baked |
+| Real size of Blender-baked tileable textures | 1.5 to 2.5 MB for nine materials | 594 KB for five baked surfaces (13 files); brick albedo 78 KB, brick normal 158 KB, roughness 4 to 15 KB each. A second pass added plaster, concrete and a second flag layout: 917 KB for 19 files in all. Carpet was not baked |
 | Bake time | "a minute or two per material" | brick about 3 to 3.5 minutes, the others about 1 minute each, about 6.5 minutes for all (4-core container, other work running) |
 | Is the output reproducible | assumed | yes: byte-identical across repeated full runs (`cmp`), for this bpy build |
 | GPU memory | about 38 MB for nine materials at 512 px | 17.7 MiB for what is baked (brick is 1024 x 512), about +8 MB over the generated ones at medium (estimates) |
