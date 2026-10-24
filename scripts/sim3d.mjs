@@ -18,9 +18,13 @@
 //   Mimic     the good and casual bots shoot a machine they can see from a distance (they suspect it); the sloppy one
 //             walks up to it and finds out the hard way.
 //   Weapons   Feedback Beam on bosses and mimics (inside a range that depends on how steady the aim is), Bass-Drop Grenade on
-//             a pack of three, Airhorn when two are on top of it, the SMG's alt-fire when the pedal is fitted. SWAP only goes
-//             forward round the owned weapons, so a special weapon is used only when it is at most 2 presses away and the way
-//             back to the usual one at most 3 (with seven guns the grenade is mostly out of reach, as it would be for a person).
+//             a pack of three, Airhorn when two are on top of it, the SMG's alt-fire when the pedal is fitted. A bot picks the
+//             weapon it wants in one action, the way the game now lets a person (a number key, which is the same code path as a
+//             tap on the weapon strip), and pays the swap time the game charges (a quarter of a second with the gun down) plus a
+//             0.35 s pause before it decides again. Until the direct select existed SWAP only went forward round the owned weapons
+//             and the bots used a special weapon only when it was at most 2 presses away (3 for the way back). `--tapcost S` makes
+//             the bot also stop turning, walking and firing for S seconds on each select, as a thumb off its control would
+//             (default 0, so the default is the game's own swap cost only; any S is a guess).
 //             Upgrades and records are picked up within a reach that depends on skill.
 // A level without any of these behaves as it always did: every new decision uses its own random stream and is only
 // taken when one of the new things exists, so the old numbers stay comparable.
@@ -38,6 +42,7 @@ if (!['normal', 'hard', 'extra'].includes(DIFF)) throw new Error(`unknown --diff
 const VIEW = { w: 390, h: 844, dpr: 1, safe: { top: 0, bottom: 0 } };
 const DT = 1 / 60;
 const LIMIT = 900; // seconds of game time before a run counts as stuck
+const TAPCOST = Number(args.tapcost || 0); // seconds the bot is hands-off the controls for each weapon select (a guess, 0 by default)
 
 const SKILL = {
   sloppy: {
@@ -79,23 +84,37 @@ const SCENARIOS = {
 
 let inited = false;
 
+let warmed = false;
 export function runOnce(seed, skillName, opts = {}) {
+  // The very first run in a process differs from the same seed run later (state left by setup that a finished run overwrites), so
+  // one throwaway run goes first. It costs a few seconds and makes every counted run a function of its seed and skill alone.
+  if (!warmed && args.exact !== '1') {
+    warmed = true;
+    runOnce(0, 'good', { ...opts, scenario: undefined });
+  }
   const level = opts.level || LEVEL;
   const rng = mulberry32(seed * 7919 + (skillName === 'good' ? 13 : 0));
   const rng2 = mulberry32(seed * 104729 + 17 + (skillName === 'good' ? 5 : 0)); // for the newer decisions only
-  Math.random = rng;
   const gauss = () => Math.sqrt(-2 * Math.log(rng() || 1e-9)) * Math.cos(6.283185 * rng());
   const sk = { ...SKILL[skillName], ...(opts.skill || {}) };
 
   // Building a world takes seconds, so the game is initialised once per process and each run just resets the level (the
-  // robots, pickups and player). `--exact 1` initialises afresh every run, which is what this file did before: it gives the
-  // same runs as the old simulator on an unchanged level, but takes about twice as long.
+  // robots, pickups and player). `--exact 1` initialises afresh every run, which takes about twice as long. A run is a function of
+  // its seed and skill alone (checked: the same seeds in any order give the same runs); numbers from before this change are not
+  // comparable run for run.
+  // World builds draw random numbers, and only the first run pays for them, so they use a fixed throwaway stream and the run's own
+  // stream starts after setup. Both levels are built once up front so that every run takes the same path.
+  Math.random = mulberry32(1);
   if (!inited || args.exact === '1') game.init(VIEW);
+  if (!inited) for (const n of [1, 2]) game.testHook('level', n);
   inited = true;
+  Math.random = rng; // from here the run's own seeded stream (robot spawns draw from it)
+  game.testHook('save', { records: [] }); // records found in an earlier run are saved, and would change this one
   game.testHook('level', level);
   game.testHook('torch', { attached: true }); // the bot never watches the torch being fitted
   game.testHook('difficulty', DIFF); // before the player object is taken: it respawns the robots
   const S = game.getState();
+  S.t = 0; // the game clock is module state and init does not reset it; the ranged robots' strafe reads it, so without this a run depends on what ran before it
   const W = game.getWorld();
   // Experiments only: --drop shaken,longshot,nurse,mimic,records,upgrades,newweapons or an item name takes those out of the level
   // for the run, to see what each contributes. The level itself is unchanged.
@@ -153,6 +172,10 @@ export function runOnce(seed, skillName, opts = {}) {
   let strafe = 1;
   let strafeT = 0;
   let swapT = 0;
+  let busyT = 0; // hands off the controls after a select (only with --tapcost)
+  let digitKey = null; // the number key pressed this frame, released the next so the game sees a fresh press each time
+  const held = {}; // seconds each weapon was in hand
+  let selects = 0;
   let taken = 0;
   const areaTimes = {};
   const dmgBy = { melee: 0, ranged: 0, sniper: 0, blast: 0 };
@@ -209,6 +232,9 @@ export function runOnce(seed, skillName, opts = {}) {
     react -= DT;
     strafeT -= DT;
     swapT -= DT;
+    busyT -= DT;
+    if (digitKey) { input.keys.delete(digitKey); digitKey = null; }
+    held[p.weapon] = (held[p.weapon] || 0) + DT;
     if (strafeT <= 0) { strafe = rng() < 0.5 ? -1 : 1; strafeT = 0.8 + rng() * 1.2; }
 
     // choose a target: the closest awake enemy we can see, else the closest awake one
@@ -362,9 +388,11 @@ export function runOnce(seed, skillName, opts = {}) {
       wantYaw = Math.atan2(-moveDir.x, -moveDir.z);
     }
     const dyaw = wrap(wantYaw - p.yaw);
-    p.yaw = wrap(p.yaw + Math.max(-sk.turn * DT, Math.min(sk.turn * DT, dyaw)));
-    p.pitch += Math.max(-4 * DT, Math.min(4 * DT, wantPitch - p.pitch));
-    if (target && seen && Math.abs(dyaw) < sk.tol + 0.05) firing = true;
+    if (busyT <= 0) {
+      p.yaw = wrap(p.yaw + Math.max(-sk.turn * DT, Math.min(sk.turn * DT, dyaw)));
+      p.pitch += Math.max(-4 * DT, Math.min(4 * DT, wantPitch - p.pitch));
+    }
+    if (target && seen && Math.abs(dyaw) < sk.tol + 0.05 && busyT <= 0) firing = true;
     // never shoot a Shaken that is inside its own blast of Naebun: it bursts when it dies
     if (firing && target.def.ai === 'shaken' && tdist < target.def.burst.radius + 0.3) firing = false;
 
@@ -381,11 +409,8 @@ export function runOnce(seed, skillName, opts = {}) {
         else if (p.owned.vinyl) want = 'vinyl';
         else if (p.owned.shotgun && d < 3.5) want = 'shotgun';
       }
-      // the newer weapons (only when owned, so a level without them plays as before). SWAP only goes forward round the owned
-      // weapons, and each swap costs a quarter of a second with the gun down, so a person with seven guns does not hop to the
-      // grenade in the middle of a fight: a special weapon is used only when it is at most 2 presses away and the way back to
-      // the usual weapon is at most 3.
-      const base = want;
+      // the newer weapons (only when owned, so a level without them plays as before). Each is one select away; every swap costs
+      // the game's quarter of a second with the gun down, and the bot's own 0.35 s before it decides again.
       const live = (id) => p.owned[id] && p.ammo[id] > 0;
       const beamRange = sk.sigma > 0.1 ? 8 : sk.sigma > 0.04 ? 12 : 15; // the beam needs a steady crosshair
       let spec = null;
@@ -395,13 +420,15 @@ export function runOnce(seed, skillName, opts = {}) {
       if (live('grenade') && !grenadeFlying && (pack.length >= 3 || (pack.length >= 2 && hpFrac() < 0.5))) spec = 'grenade';
       const onTop = awake.filter((e) => !e.def.ranged && !e.def.support && e.def.ai !== 'shaken' && !(e.stunT > 0) && Math.hypot(e.x - p.x, e.z - p.z) < 3.4 && W.los(p.x, p.z, e.x, e.z));
       if (live('airhorn') && (onTop.length >= 2 || (onTop.length >= 1 && hpFrac() < 0.45))) spec = 'airhorn';
-      if (spec) {
-        const have = WEAPON_ORDER.filter((id) => p.owned[id]);
-        const presses = (a, b) => (have.indexOf(b) - have.indexOf(a) + have.length) % have.length;
-        if (presses(p.weapon, spec) <= 2 && presses(spec, base) <= 3) want = spec;
+      if (spec) want = spec;
+      if (p.weapon !== want && p.ammo[want] > 0) {
+        digitKey = String(WEAPON_ORDER.indexOf(want) + 1); // the slot number: the same key a player presses
+        input.keys.add(digitKey);
+        swapT = 0.35;
+        busyT = TAPCOST;
+        selects++;
       }
-      if (p.weapon !== want && p.ammo[want] > 0) { input.keys.add('q'); swapT = 0.35; } else input.keys.delete('q');
-    } else input.keys.delete('q');
+    }
     // a grenade is thrown once, not three times in a row
     if (p.weapon === 'grenade' && S.projectiles.some((pr) => pr.grenade)) firing = false;
 
@@ -412,7 +439,7 @@ export function runOnce(seed, skillName, opts = {}) {
 
     // keys from the world-space move direction
     for (const k of ['w', 'a', 's', 'd']) input.keys.delete(k);
-    if (moveDir) {
+    if (moveDir && busyT <= 0) {
       const len = Math.hypot(moveDir.x, moveDir.z) || 1;
       const mx = moveDir.x / len;
       const mz = moveDir.z / len;
@@ -488,6 +515,8 @@ export function runOnce(seed, skillName, opts = {}) {
     upgrades: { ...p.upgrades },
     owned: Object.keys(p.owned).filter((k) => p.owned[k]),
     use,
+    selects,
+    held,
   };
 }
 
@@ -526,6 +555,8 @@ function main() {
     if (rs.some((r) => r.records)) bits.push(`records ${f(avg(rs.map((r) => r.records)), 1)}`);
     if (rs.some((r) => r.use.revives)) bits.push(`revives ${useSum('revives')}`);
     if (rs.some((r) => r.use.grenade || r.use.airhorn || r.use.alt || r.use.beam)) bits.push(`grenades ${useSum('grenade')}, airhorns ${useSum('airhorn')}, alt bursts ${useSum('alt')}, beam ${useSum('beam')} s`);
+    const heldSum = (id) => f(avg(rs.map((r) => r.held[id] || 0)), 1);
+    bits.push(`selects ${f(avg(rs.map((r) => r.selects)), 1)}/run; held (s) ${WEAPON_ORDER.map((id) => `${id} ${heldSum(id)}`).join(', ')}`);
     if (rs.some((r) => r.upgrades.clip || r.upgrades.reload || r.upgrades.altfire)) bits.push(`upgrades clip ${f(avg(rs.map((r) => r.upgrades.clip)), 1)} reload ${f(avg(rs.map((r) => r.upgrades.reload)), 1)} altfire ${f(avg(rs.map((r) => r.upgrades.altfire)), 1)}`);
     if (Object.keys(killers).length) bits.push(`killed by ${JSON.stringify(killers)}`);
     const ad = {};

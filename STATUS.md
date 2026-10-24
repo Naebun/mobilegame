@@ -1,159 +1,192 @@
 # Status and handover
 
 This file is for a fresh chat taking over. Read it first, then `CLAUDE.md` (binding project rules), then `ROADMAP.md` and
-`docs/HANDOVER.md`. Snapshot taken 23 October 2026, about 22:00 UTC. It goes stale fast: check `git log` and
-`git worktree list` before trusting the "in progress" section.
+`docs/HANDOVER.md`. Snapshot taken 24 October 2026, after PR #9 merged. It goes stale fast: check `git log origin/main` before
+trusting it, and refresh it at the end of any substantial piece of work.
 
 ## The project in one paragraph
 
-"Naebun's Last Set": a first-person 3D horror shooter for phone browsers, set in an Edinburgh basement club, dark comedy,
-light Scottish voice. Three.js r160 vendored in `vendor/`, plain ES modules, no bundler, no backend. Repo
-`/home/user/mobilegame`, GitHub `Naebun/mobilegame`. Two levels exist (the Cowgate, the Vaults). Use they/them for anyone
-whose pronouns have not been stated, the owner included.
+"Naebun's Last Set": a first-person 3D horror shooter for phone browsers, set in an Edinburgh basement club, dark comedy, light
+Scottish voice. Three.js r160 vendored in `vendor/`, plain ES modules, no bundler, no backend. Repo `/home/user/mobilegame`,
+GitHub `Naebun/mobilegame`, deployed from `main` to GitHub Pages. Two levels exist (the Cowgate, the Vaults). Use they/them for
+anyone whose pronouns have not been stated, the owner included.
 
-## Where the code is
+## State of the code
 
-| Where | What |
-| --- | --- |
-| `main` (`9366288`, PR #8, squash) | Everything up to the Blender weapons, torch, prepared enemies and arsenal. This is what is deployed to the owner's phone |
-| Branch `playtest-textures-placement` (in `/home/user/mobilegame`, pushed) | The **integration branch**. Forked from `main`. Holds my own small commits (below) and all four agents' merged work. Not merged to `main` |
-| Four agent worktrees under `/home/user/mobilegame/.claude/worktrees/` | Now fully merged into the integration branch, so nothing is lost if they go. The branches `worktree-agent-<id>` are local only |
+`main` is at `1a62736` (PR #9, squash). Nothing is in progress and no agents are running. It holds:
 
-My own commits on the integration branch (all on top of `main`, all pushed):
+- Levels 1 and 2, portrait and landscape; PC mode (default) and mobile mode (picked automatically on a phone or tablet);
+  Settings page; saved progress (cookie plus localStorage, save version 2).
+- Blender models: drinks, five weapons with hands and torches, 27 level props, the arsenal weapons and upgrade pickups.
+- Blender-baked textures (13 WebP files, 594 KB) on the medium and high tiers; generated textures stay as the fallback.
+- The gun-mounted torch with a hand-fitted pistol torch at the start of level 2 (the only dark level so far).
+- Four newer robots (Fizzbang Shaken, Bampot Longshot, Bampot Nurse, Vending Mimic), the Airhorn, Bass-Drop Grenade and Feedback
+  Beam, clip, reload and altfire upgrades and ten records, all placed in levels 1 and 2 (`docs/placement.md`). Level 1 has 21
+  robots, level 2 has 27.
+- Hard and Extra Hard: a difficulty screen after NEW GAME, a `DIFFICULTY` table in `src/data.js` (Hard 1.35 damage, 1.2 health,
+  1.1 speed, 0.9 wind-up; Extra Hard 1.75, 1.35, 1.15, 0.85), bests kept per mode (`docs/difficulty.md`).
+- The playtest kit: `?perf` or the P key shows a readout (`src/perf.js`); the guide is `docs/playtest.md`.
+- The Vaults were darkened outside the torch cone after the owner's first real-phone screenshot.
+- `docs/level-3.md`: the level 3 design only (Grassmarket pubs, the Landlord, Fizzbang Turbo). Nothing of level 3 is built.
 
-- Test scripts read `PORT` from the environment, so several can run at once.
-- `docs/level-3.md`, the level 3 design. Planning only.
-- The Vaults are darker outside the torch cone (`src/levels/vaults.js`: lower ambient, baked tint and fill, softer cone edge;
-  `src/game3d.js`: thinner, faster-fading beam haze). Checked in software screenshots only.
-- Mouse wheel swap counts one event per 180 ms quiet gap (`src/engine.js`), for trackpad inertia. Not proved in a browser.
-- `ROADMAP.md` says level 2 is merged; this `STATUS.md`.
+Branches: `status-after-pr9` holds this file's update (not yet on `main`; it only needs a docs PR if the owner wants it there).
+`playtest-textures-placement` and the local `worktree-agent-<id>` branches are merged and can be deleted. Earlier merges: PR #7
+(`98a08cd`, level 2, landscape) and PR #8 (`9366288`, control modes, torch, Blender weapons and props).
 
-Note: the agent branches forked before some of those commits, so they do not contain the darker Vaults, the wheel fix or the
-level 3 doc. Merging them into the integration branch brings everything together.
-
-## Integration state: all four agents' work is merged
-
-The four agents (playtest kit, textures, placement, Hard and Extra Hard) finished and are merged into the integration branch
-`playtest-textures-placement`, in that order, with conflicts resolved by hand (mostly harness scripts, `smoke.mjs`,
-`sim3d.mjs` and the docs). Their worktrees under `.claude/worktrees/` are no longer needed once this branch is on `main`.
-What each brought:
-
-| Piece | What it added |
-| --- | --- |
-| Playtest kit and fixes | `?perf` readout (`src/perf.js`, P key, `window.__perf`), `docs/playtest.md`, pistol torch moved onto the slide's top rib, launcher lens at the horn's mouth, gooseneck lowered a little, Longshot laser fades near the camera, Mimic glow dimmed while dormant |
-| Textures | `scripts/blender/textures.py`, 13 WebP files (594 KB) in `assets/textures/`, `src/textures.js`, `world.retexture`, baked on medium and high only, generated textures remain the fallback and the low tier. `?baked=0` turns it off. Also fixed a texture leak on level swap |
-| Placement | Bots taught the newer robots and weapons (`scripts/sim3d.mjs`). Level 1 now has 21 robots, level 2 has 27; the Airhorn, Grenade, Beam, upgrades and ten records are placed. Full table and reasoning: `docs/placement.md` |
-| Hard and Extra Hard | `DIFFICULTY` table in `src/data.js`, difficulty screen after NEW GAME, save version 2 with per-mode bests, `--difficulty` on the sim, `docs/difficulty.md`. Tuned table: Hard 1.35 damage, 1.2 health, 1.1 speed, 0.9 wind-up; Extra Hard 1.75, 1.35, 1.15, 0.85 (the first guess was too hard on level 2) |
-
-Test fixes made during the merge: `combat-check` and `difficulty-check` hard-coded the old robot counts (19 and 24); they now
-expect 21 and 27.
-
-Checks on the merged tree (24 October): `models-check`, `drinks-check`, `ui-check`, `perf-check` pass; `combat-check` 416/416;
+Checks on `main` as of PR #9 (24 October): `models-check`, `drinks-check`, `ui-check`, `perf-check` pass; `combat-check` 416/416;
 `world-check` 4413/4413; `level-check` 748/748; `enemies-check` 261/261; `arsenal-check` 464/464; `textures-check` 93/93;
-`difficulty-check` 84/84; smoke test SMOKE OK (125 checks, `SMOKE_WAIT=90000`); `build:artifact` 4.0 MB with the textures
-inlined.
+`difficulty-check` 84/84; the smoke test (125 checks, run with `SMOKE_WAIT=90000`) passes; `build:artifact` makes a 4.0 MB file.
 
-Bot win rates on the merged maps, 30 runs, sloppy / casual / good (a sample, about plus or minus 10 to 15 points):
+Bot win rates on `main` as of PR #9, 30 runs, sloppy / casual / good (a sample, about plus or minus 10 to 15 points; not repeatable run for run):
 
 | Level | Normal | Hard | Extra Hard |
 | --- | --- | --- | --- |
 | 1 | 97 / 100 / 100 | 73 / 100 / 93 | 53 / 67 / 87 |
 | 2 | 67 / 90 / 97 | 10 / 47 / 67 | 3 / 17 / 50 |
 
-The difficulty table was tuned on the maps before placement, so it may want another pass: the Longshot's shot is 67 on Extra Hard.
+The table above is `main` as of PR #9. On `integration-2` (30 runs, sloppy / casual / good, now repeatable:
+the same seed always gives the same run) they are: level 1 Normal 100 / 100 / 100, Hard 83 / 100 / 100, Extra Hard 63 / 70 / 80;
+level 2 Normal 43 / 90 / 97, Hard 13 / 47 / 53, Extra Hard 3 / 7 / 37. The level 2 Normal sloppy figure fell from 67 and is below
+the placement floor of 65: that is the Feedback Beam finding below, not noise (60-run measurements: 62 before, 37 after direct
+selection).
 
-Still to do on this branch: the owner has not yet asked for it to go to `main`.
+## In flight, not yet on `main` (24 October, after PR #9)
+
+All of this sits on the pushed branch `integration-2` unless noted. Nothing here is merged to `main`.
+
+- **Darker Vaults (`darker-vaults-2`, merged into `integration-2`).** The cause of the haze was the grade stage's `lift` in
+  `look.grade` (added in linear light before the sRGB conversion, so the old values lifted black to about 8, 16 and 28 percent
+  grey on medium and high; the low tier skips the stage). It is now near zero, with ambient 0.08, fill 0.04 and exposure 1.25.
+  Measured in software screenshots only: mean brightness outside the cone 0.15 to 0.07, black level 0.09 to 0.007. The owner's
+  phone shows a brighter render than the software one, so the owner's reaction decides whether it is now too dark.
+- **Direct weapon selection (task 1, done).** Tap a cell in the weapon strip on a phone; keys 1 to 8 (fixed slots in
+  `WEAPON_ORDER`), the wheel both ways and Q (quick-swap to the last weapon) on a computer. SWAP still cycles forward. In portrait
+  the strip is now its own row under the score line. All checks pass and the smoke test (156 checks) passes. Bots select directly.
+- **Tidy-ups (task 6, done except one thing).** The sim is repeatable (`tidy-ups`, PR #10, merged into `integration-2`). The
+  remote branches `mouse-and-blender`, `playtest-textures-placement` and `status-after-pr9` could not be deleted from here (the
+  git proxy hung up on `push --delete`); they are merged and can be deleted on GitHub.
+- **Plaster, concrete and a second flag layout (task 3, done, merged into `integration-2`).** Measured coverage: plaster is only ever
+  the ceiling (27 to 34 percent of a frame in both levels); concrete is 33 percent of the backstage frame only; carpet is 1.5 percent
+  overall and was not baked. Baked: plaster (two-variant atlas), concrete, and the flags as a two-layout atlas (a 2 m repeat showed on
+  big floors). 19 WebP files, 917 KB on the wire (was 594 KB); estimated GPU memory 29.7 MiB for the baked maps (a formula, not a
+  measurement). If that is too much for a phone: drop plaster to one variant (-6 MB), then flags (-3 MB), each one constant in
+  `src/consts.js` plus a rebake. Verdict from the agent: the baked ceilings are clearly better in lit rooms, but in the real game
+  they are nearly invisible, and in the very dark Vaults almost nothing of the ceiling shows; lighting, not more texture, is the
+  lever for how the Vaults look. The floor boards' 1.6 m repeat clearly shows on the dance floor and in the bar and was left alone.
+  Reproducible: all baked files compare byte-identical across processes.
+
+**Finding to decide on: the Feedback Beam against the Tour Guide.** With direct selection the bots can reach the Beam and hold it
+for 17 to 22 seconds a run. Level 2 win rates (60 runs, `--exact 1`, sloppy / casual / good): before 62 / 82 / 97, after 37 / 83 / 92;
+with the Beam pickup removed from the map, 78 / 93 / 95. The Tour Guide killed the sloppy bot 16 times before and 29 times after.
+So in these runs the Beam does worse than the launcher against the boss; the agent's reading (untested) is that its damage ramps
+only while the crosshair stays on the target. Options: retune the Beam (higher base damage or a faster ramp), move or drop its
+pickup, or leave it for a human playtest. No data or rules were changed. Thumb reach of the strip row at the top of a tall portrait
+screen is a guess (the aim thumb has to leave its box), and a question for the playtest.
+
+## What is next: the choices
+
+The owner asked for options after the merge. Nothing here is started.
+
+**The owner's playtest comes first** (about 20 minutes, iPhone 16 Pro and MacBook Air M4; `docs/playtest.md` is the checklist):
+
+1. Open the game with `?perf` on the address and play level 1 then the Vaults, in portrait and landscape.
+2. Send a screenshot of the readout in the Plague Cellar and on the dance floor (the heaviest views).
+3. Say whether the Vaults are now too dark, whether the pistol torch looks right, how Hard and Extra Hard feel.
+4. On the MacBook, check mouse look works and one trackpad flick swaps one weapon.
+
+**Work that can be done without a phone**, in the order we recommend (1, then 4, then 2 once the `?perf` numbers show whether it is
+needed; hold 3 and 5 until the owner has played):
+
+| # | Task | Why |
+| --- | --- | --- |
+| 1 | Fix weapon swapping (**done**, see above) | SWAP only cycles forward. With seven guns in level 2 the placement bots lost the Plague Cellar more often once cycling cost was counted, and a person would hit the same wall. A swap-back key and a weapon wheel is the likely fix; the owner should say which. The bots barely use the Grenade and the Beam today, so fix the swap, then teach them |
+| 2 | Stop drawing robots and pickups that cannot be seen | A frame draws 150k to 330k triangles on high (up to 276 draw calls) because things behind walls inside the view cone are still drawn. The playtest agent's cause is a guess. Measure with `?perf` first |
+| 3 | Bake plaster and ceilings (**done**, see above) | Plaster, carpet and concrete are still generated, and the ceilings now look flatter than the walls. Flag tiling in a big open space was not tested |
+| 4 | Re-tune Hard and Extra Hard | The multipliers were tuned before placement. Level 2 Hard is a wall for the sloppy bot (10 percent) and Extra Hard is a wall for all but the good bot. The Longshot's shot is 67 on Extra Hard, two thirds of Naebun's health. Re-run all three modes on both levels, normal mode only for the base numbers |
+| 5 | Sound and music | Everything is synthesised and nobody has heard it. Ambience for the dark Vaults would help most |
+| 6 | Tidy-ups | **Done** (owner approved): the sim is now repeatable (the game clock `S.t` is reset per run, saved records are cleared per run, world builds use a throwaway random stream, and one discarded warm-up run goes first; the same seeds in any order give the same runs), the docs PR and the deletion of merged branches. Win rates from before this change are not comparable run for run |
+
+**Level 3** is designed and not built. It needs the owner's explicit go-ahead, and a go-ahead for the design is not that.
 
 ## Agreements with the owner
 
-- **Never merge to `main` unless asked.** When asked ("merge to main"), open a PR with the GitHub MCP tools (there is no `gh`
-  CLI), check it is mergeable, squash-merge with the expected head SHA. PR #7 and #8 went that way. Do not open a PR
-  unprompted.
-- **Level 3 and later: never build without the owner's explicit permission** (`CLAUDE.md`). Planning documents are fine. A go-ahead for a design is not a go-ahead to build. `docs/level-3.md` exists and is design only.
-- **Prepared objects** (the roadmap's enemies, weapons, upgrades, records) were built unplaced; the owner has since asked for
-  them to be placed in levels 1 and 2. That is the placement agent's job and is not yet merged.
+- **Never merge to `main` unless asked.** When asked ("merge", "merge to main"), open a PR with the GitHub MCP tools (there is no
+  `gh` CLI; load them with ToolSearch), check it is mergeable, squash-merge with the expected head SHA. PRs #7, #8 and #9 went
+  that way. Do not open a PR unprompted.
+- **Level 3 and later: never build without the owner's explicit permission** (`CLAUDE.md`). Planning documents are fine.
+- **Prepared objects** (the roadmap's enemies, weapons, upgrades, records) are placed in levels 1 and 2 at the owner's request.
+  Anything still prepared and unplaced stays unplaced.
 - **Drinks and weapons are always modelled in Blender** (`scripts/blender/`), new ones included. Never edit generated data
-  modules (`src/*-meshes.js`); change the script and rerun it, and `cmp` two runs.
-- **Image files are allowed in the repo for generated textures only.** Models stay data modules. `world.js` and `models.js`
-  stay procedural and DOM-free so the headless tests run in plain Node.
+  modules (`src/*-meshes.js`) or `assets/textures/*.webp`; change the script and rerun it, and `cmp` two runs.
+- **Image files are allowed in the repo for generated textures only.** Models stay data modules. `world.js` and `models.js` stay
+  procedural and DOM-free so the headless tests run in plain Node.
 - **Balance is for normal mode only, never against debug mode.** Hard and Extra Hard are multipliers on top of normal.
-- **Git:** the Stop hook insists on committing and pushing changes, so commit and push the branch you are on at the end of a
-  piece of work. `git fetch` once needed the owner's explicit permission; they have since said "you have permission to git
-  fetch". Commit trailers on every commit:
+- **Git:** the Stop hook insists on committing and pushing, so commit and push the branch you are on at the end of a piece of
+  work. The owner has said you may `git fetch`. Commit trailers on every commit:
   `Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>` and
-  `Claude-Session: https://claude.ai/code/session_01F9FEdkzg4DQGHVPBcyaN4E`. PR bodies end with the "Generated with Claude Code" line and the same session link.
-- **Style of replies:** British English, lead with the answer, plain prose, say what is verified and what is not. Give options
-  when the owner asks for them (they like choosing). The org instructions also ban em dashes and a list of buzzwords.
-- **Owner's test devices:** iPhone 16 Pro and MacBook Air M4. Both are far faster than the plan's A15 floor, so smooth
-  there proves nothing for an iPhone 14. iPhone Safari runs at 120 Hz (30 or 60 in Low Power Mode).
+  `Claude-Session: https://claude.ai/code/session_01F9FEdkzg4DQGHVPBcyaN4E`. PR bodies end with the "Generated with Claude Code"
+  line and the same session link. After a PR is merged, start follow-up work on a fresh branch from `origin/main`.
+- **Style of replies:** British English, lead with the answer, plain prose, say what is verified and what is not. Give options when
+  the owner asks for them (they like choosing). The org instructions also ban em dashes and a list of buzzwords. Never put the
+  owner's email address in a file that goes to GitHub.
+- **Owner's test devices:** iPhone 16 Pro and MacBook Air M4. Both are far faster than the plan's A15 floor (iPhone 14), so
+  smooth there proves nothing for an older phone. iPhone Safari runs at 120 Hz (30 or 60 in Low Power Mode). Real-phone
+  screenshots from the owner have already found things the software renderer hid.
 
 ## Decisions made so far
 
 - PC mode is the default, mobile mode is picked automatically on a phone or tablet, the Settings page overrides it.
-- Torch mounted on the gun, fitted by hand at the start of level 2, already fitted on every other gun. Only 2 or 3 of 10
+- The torch is mounted on the gun, fitted by hand at the start of level 2, already fitted on every other gun. Only 2 or 3 of the 10
   levels are dark.
 - Level 3 (design only): Grassmarket pubs, the Landlord (barrel thrower), Fizzbang Turbo plus the five existing robots.
 - Difficulty: all three modes open from the start, chosen on a screen after NEW GAME, Extra Hard is numbers only.
-- Texture plan: bake in Blender, ship WebP, keep the generated textures as fallback (`docs/texture-options.md`).
-
-## Waiting on the owner
-
-- Whether to merge the integration branch to `main` (it holds the textures, the placement and Hard and Extra Hard).
-
-- A go-ahead to build level 3, and whether in one pass or area by area.
-- A real-phone playtest of level 2: is the dark too dark after the darkening, does the torch read, frame rate, touch feel.
-- When to merge the integration branch to `main`.
+- Textures: bake in Blender, ship WebP, keep the generated textures as the fallback (`docs/textures.md`).
 
 ## Known issues and unverified
 
-- Nothing new has been played by a person or seen on a phone, and no new sound has been heard. Every number for the prepared
-  enemies and weapons and the difficulty multipliers is a first guess. The sim bots aim better than a thumb in a small box
-  with no aim assist, and 30 runs is only good for about plus or minus 15 points.
-- Real pointer lock in Safari, trackpad swap, iPhone safe areas with Safari's bottom tab bar: untested.
-- Level 2 on the high tier is about 145k triangles against a 150k limit.
-- The sim bots barely use the Grenade and the Beam. SWAP is a forward-only cycle, and with seven guns in level 2 the placement agent found cycling cost the bots the Plague Cellar. That is a design question for a human playtest: a swap-back, a weapon wheel, or fewer guns per level.
-- The Nurse revived almost nothing in the sims (she is killed first), so she may be decoration. The Shaken chain ripple appears in no level (each has one Shaken).
-- Per frame the game draws 150k to 330k triangles on high and up to 276 draw calls (robots and pickups behind walls are still drawn); the 145k figure is the empty level only. Check with `?perf` on the iPhone before trusting 'it feels smooth'.
-- The Vending Mimic's window still blows out white under torchlight. The pistol torch module sits on the slide (a box on top); the owner has not seen it.
-- Texture work, once merged, needs checking on a real phone for decode time and GPU memory.
+- Nobody has played the merged build. No new sound has been heard. Every number for the newer robots and weapons and the
+  difficulty multipliers is a first guess. The sim bots aim better than a thumb in a small box with no aim assist.
+- Not tested on a device: real pointer lock in Safari, the trackpad swap fix (one event per 180 ms quiet gap in `engine.js`), the
+  iPhone safe areas with Safari's bottom tab bar, texture decode time and GPU memory, frame rate on any phone.
+- Level 2 on the high tier is about 145k triangles in the static world; with robots and pickups in view a frame is much heavier.
+- The Nurse revived almost nothing in the sims (she is killed first), so she may be decoration. The Shaken's chain ripple appears in
+  no level (each has one Shaken).
+- The Vending Mimic's window still blows out white under torchlight. The pistol torch is a box on top of the slide and the owner has
+  not yet seen it.
+- The Vaults darkening was judged from software screenshots; the numbers to raise if it is too dark are the ambient light and the
+  baked tint in `src/levels/vaults.js`.
 
 ## How to work here
 
-Setup in a new container: `scripts/setup-blender.sh` (about two minutes, 1 GB; venv at `~/.venvs/blender`). In a git
-worktree, `ln -s /home/user/mobilegame/node_modules node_modules`.
+Setup in a new container: `scripts/setup-blender.sh` (about two minutes, 1 GB; venv at `~/.venvs/blender`). In a git worktree,
+`ln -s /home/user/mobilegame/node_modules node_modules`.
 
-Checks, each `node scripts/harness/<name>.mjs`: `models-check`, `drinks-check`, `combat-check` (59), `ui-check` (12 view sizes),
-`world-check` (4381), `level-check` (586), `enemies-check` (157), `arsenal-check` (392). Then `PORT=<n> npm run smoke -- <dir>`
-(end to end in software WebGL, waits with `until`, so it is slow), `node scripts/sim3d.mjs --level 2 --runs 30`
-(the bot proxy; also `--difficulty` once merged) and `npm run build:artifact`. Counts above are as of `main`; they will change
-as the agents' work lands.
+Checks, each `node scripts/harness/<name>.mjs`: `models-check`, `drinks-check`, `combat-check`, `ui-check` (12 view sizes),
+`world-check`, `level-check`, `enemies-check`, `arsenal-check`, `perf-check`, `textures-check`, `difficulty-check`. Then
+`PORT=<n> SMOKE_WAIT=90000 npm run smoke -- <dir>` (end to end in software WebGL, waits with `until`, slow), the bot proxy
+`node scripts/sim3d.mjs --level 2 --difficulty hard --runs 30` (levels 1 or 2, difficulty normal, hard or extra) and
+`npm run build:artifact`. A busy machine makes the smoke test and `world-check`'s build-time checks flake; re-run on a quiet one.
 
 Screenshots (look at them, never judge the 3D look from logs):
-`PORT=<n> WEAPON=launcher TORCH=1 node scripts/harness/game-views.mjs <level> <outdir> "name:tileX,tileZ,yaw"` (world units are
-tile coordinates times 2; env `W`, `H`, `Q`), plus `screen-views.mjs`, `enemy-views.mjs`, `arsenal-views.mjs`,
-`world-views.mjs`, `level-tour.mjs`. Software WebGL says nothing about phone frame rate.
+`PORT=<n> WEAPON=launcher TORCH=1 node scripts/harness/game-views.mjs <level> <outdir> "name:tileX,tileZ,yaw"` (world units are tile
+coordinates times 2; env `W`, `H`, `Q`, `EXTRA='&baked=0'`), plus `screen-views.mjs`, `enemy-views.mjs`, `arsenal-views.mjs`,
+`world-views.mjs`, `level-tour.mjs`, `attach-views.mjs`. Software WebGL says nothing about phone frame rate.
 
-Blender: `~/.venvs/blender/bin/python scripts/blender/{drinks,weapons,props,arsenal}.py` rewrites the matching data module;
-run twice and `cmp`. `preview.py` makes Cycles views.
+Blender: `~/.venvs/blender/bin/python scripts/blender/{drinks,weapons,props,arsenal,textures}.py` rewrites the matching data
+module or textures (textures take about 6 minutes); run twice and `cmp`. `preview.py` makes Cycles views.
 
 Pitfalls found the hard way:
 
 - One tap is handled per frame in the smoke test, so wait with `until` between presses.
 - The level swap is deferred by a frame; wait for `getWorld().level` before using the new level.
-- On level 2 the attach sequence blocks firing and swapping until the torch is fitted: tests and the sim set
-  `torch { attached: true }`.
+- On level 2 the attach sequence blocks firing and swapping until the torch is fitted: tests and the sim set `torch { attached: true }`.
 - The engine listens on the `#game` canvas, not `#gl`. Mouse look needs `input.mouse.locked`, set by `pointerlockchange`.
-- `testHook` names that exist: `torch`, `mobile`, `setting`, `mouse`, `screen`, `save`, `hitEnemy`, `play`, `level`, `title`,
-  `teleport`, `giveWeapons`, `spawn`, `give`, `arsenal`, `hud`.
+- `testHook` names include `torch`, `mobile`, `setting`, `mouse`, `screen`, `save`, `hitEnemy`, `play`, `level`, `title`, `teleport`,
+  `giveWeapons`, `spawn`, `give`, `arsenal`, `hud`, `difficulty`, `baked`, `buttons`; read `testHook` in `src/game3d.js` for the list.
+- Tests that hard-code robot counts break when placement changes them (they were 19 and 24, now 21 and 27).
 - Starting several agents' worktrees at once once failed with a git-config error; retrying worked.
-- To brief an agent: own worktree (`isolation: "worktree"`), a distinct `PORT`, a lane (files it owns and files it must not
-  touch), "do not push, merge or fetch", commit trailers, and a report listing commands run and what was not verified.
+- To brief an agent: own worktree (`isolation: "worktree"`), a distinct `PORT`, a lane (files it owns and files it must not touch),
+  "do not push, merge or fetch", commit trailers, and a report listing commands run and what was not verified. A fresh chat does not
+  receive an old chat's agent reports, so merge agent work before clearing the chat.
 - Old session detail, if the file still exists:
   `/root/.claude/projects/-home-user-mobilegame/ed3ea337-f0c8-56e8-b8c9-fbd460f4be73.jsonl`.
-
-## Suggested next steps (superseded items are done: the agents are integrated)
-
-1. Check each worktree (`git -C <path> status`, `git -C <path> log --oneline -5`), finish or re-brief whatever is incomplete.
-2. Integrate as described above, run everything, push the integration branch, report numbers to the owner.
-3. Ask whether to merge to `main` and whether level 3 is a go.
-4. Refresh this file at the end of any substantial piece of work, and update `ROADMAP.md` and `docs/HANDOVER.md` alongside it.

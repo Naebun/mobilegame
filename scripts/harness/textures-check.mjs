@@ -9,6 +9,7 @@ import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
 import * as THREE from '../../vendor/three.module.min.js';
 import { buildWorld } from '../../src/world.js';
 import { BAKED, bakedNames, ownFiles } from '../../src/textures.js';
+import { CEIL_VARIANTS, FLAG_VARIANTS, TILE } from '../../src/consts.js';
 import * as game from '../../src/game3d.js';
 
 let failed = 0;
@@ -63,7 +64,61 @@ for (const name of bakedNames()) {
   ok(sw.includes("'src/textures.js'") && sw.includes("'src/textures-inline.js'"), 'sw.js precaches src/textures.js and its inline stub');
 }
 console.log(`     baked files: ${(bytes / 1024).toFixed(0)} KB in total`);
-ok(bytes > 0 && bytes < 2.5 * 1024 * 1024, 'the baked files stay inside the 2.5 MB budget');
+ok(bytes > 0 && bytes < 1.3 * 1024 * 1024, 'the baked files stay inside the 1.3 MB budget');
+
+// ---- the plaster atlas: CEIL_VARIANTS tiles side by side, and world.js points each ceiling tile at one of them ----
+{
+  const pm = dimsOf.plaster && dimsOf.plaster.map;
+  ok(pm && pm.w === CEIL_VARIANTS * pm.h, `plaster atlas is ${CEIL_VARIANTS} square tiles side by side (${pm && pm.w}x${pm && pm.h})`);
+  ok(BAKED.plaster.tile[0] === 2 * CEIL_VARIANTS && BAKED.plaster.tile[1] === 2 && BAKED.plaster.scale === 2, 'the manifest tile for plaster is CEIL_VARIANTS 2 m tiles wide, 2 m tall, at world scale 2');
+  for (const lv of [1, 2]) {
+    for (const q of ['low', 'medium']) {
+      const w = buildWorld({ quality: q, level: lv });
+      let ceil = null;
+      w.group.traverse((o) => { if (o.isMesh && o.userData.ceil) ceil = o; });
+      const pos = ceil.geometry.attributes.position;
+      const uv = ceil.geometry.attributes.uv;
+      let whole = true;
+      let inside = true;
+      const used = new Set();
+      for (let i = 0; i < pos.count; i++) {
+        const d = uv.getX(i) - pos.getX(i) / TILE; // a whole number of tiles: the variant offset
+        if (Math.abs(d - Math.round(d)) > 1e-4) whole = false;
+        if (uv.getX(i) < -1e-4 || uv.getX(i) > CEIL_VARIANTS + 1e-4) inside = false;
+        if (Math.abs(pos.getX(i) / TILE - Math.round(pos.getX(i) / TILE)) > 0.1) used.add(Math.floor(uv.getX(i))); // interior vertices only: a tile's edge belongs to two
+      }
+      ok(whole && inside, `level ${lv} ${q}: every ceiling tile's u is its own tile plus a whole-tile variant offset, inside 0..${CEIL_VARIANTS}`);
+      if (q !== 'low') ok(used.size >= CEIL_VARIANTS, `level ${lv} ${q}: the ceiling uses ${CEIL_VARIANTS} variants (${[...used].sort().join(', ')})`);
+      w.disposeTextures();
+    }
+  }
+}
+
+// the flag floors are an atlas too: FLAG_VARIANTS layouts, one per floor tile
+{
+  const fm = dimsOf.flag && dimsOf.flag.map;
+  ok(fm && fm.w === FLAG_VARIANTS * fm.h, `flag atlas is ${FLAG_VARIANTS} square tiles side by side (${fm && fm.w}x${fm && fm.h})`);
+  ok(BAKED.flag.tile[0] === 2 * FLAG_VARIANTS && BAKED.flag.tile[1] === 2 && BAKED.flag.scale === 2, 'the manifest tile for flag is FLAG_VARIANTS 2 m tiles wide, 2 m tall, at world scale 2');
+  for (const lv of [1, 2]) {
+    const w = buildWorld({ quality: 'medium', level: lv });
+    let mesh = null;
+    w.group.traverse((o) => { if (o.isMesh && o.material.map === w.textures.flag) mesh = o; });
+    const pos = mesh.geometry.attributes.position;
+    const uv = mesh.geometry.attributes.uv;
+    let whole = true;
+    let inside = true;
+    const used = new Set();
+    for (let i = 0; i < pos.count; i++) {
+      const d = uv.getX(i) - pos.getX(i) / TILE;
+      if (Math.abs(d - Math.round(d)) > 1e-4) whole = false;
+      if (uv.getX(i) < -1e-4 || uv.getX(i) > FLAG_VARIANTS + 1e-4) inside = false;
+      if (Math.abs(pos.getX(i) / TILE - Math.round(pos.getX(i) / TILE)) > 0.1) used.add(Math.floor(uv.getX(i)));
+    }
+    ok(whole && inside, `level ${lv}: every flag floor tile's u is its own tile plus a whole-tile variant offset, inside 0..${FLAG_VARIANTS}`);
+    ok(used.size >= FLAG_VARIANTS, `level ${lv}: the floor uses ${FLAG_VARIANTS} flag layouts (${[...used].sort().join(', ')})`);
+    w.disposeTextures();
+  }
+}
 
 // ---- fake baked sets: real three.js textures with no image, flagged like src/textures.js flags them ----
 const fakeSet = () => {
@@ -83,7 +138,7 @@ for (const q of ['medium', 'high']) {
   const w = buildWorld({ quality: q, level: 1, baked: set });
   ok(w.textures.brick === set.brick.map && w.textures.flag === set.flag.map, `${q}: buildWorld({ baked }) uses the baked textures given`);
   ok(usesMap(w, set.brick.map) >= 1 && usesMap(w, set.flag.map) >= 1, `${q}: the brick and flag meshes carry the baked maps`);
-  ok(w.textures.carpet.isDataTexture && w.textures.plaster.isDataTexture && w.textures.concrete.isDataTexture, `${q}: surfaces without a baked set stay generated`);
+  ok(w.textures.carpet.isDataTexture, `${q}: surfaces without a baked set (carpet) stay generated`);
   ok(JSON.stringify(w.bakedNames.sort()) === JSON.stringify(bakedNames().sort()), `${q}: bakedNames lists them (${w.bakedNames.join(', ')})`);
   let brickMat = null;
   w.group.traverse((o) => { if (o.isMesh && o.material.map === set.brick.map) brickMat = o.material; });

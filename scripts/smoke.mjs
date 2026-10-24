@@ -104,7 +104,7 @@ try {
     const swapped = await page.waitForFunction(() => ['applied', 'failed'].includes(window.__game.testHook('baked').state), null, { timeout: 90000 }).then(() => true, () => false);
     const b = await hook('baked');
     check(swapped && b.state === 'applied', `baked textures load and swap in on the medium tier (${b.state}: ${b.names.join(', ')})`);
-    check(['brick', 'paint', 'flag', 'stone', 'boards', 'floorboards'].every((n) => b.names.includes(n)), 'every baked surface is on the level 1 materials');
+    check(['brick', 'paint', 'flag', 'stone', 'boards', 'floorboards', 'plaster', 'concrete'].every((n) => b.names.includes(n)), 'every baked surface is on the level 1 materials');
     check(b.bytes > 4e6 && b.bytes < 40e6, `estimated GPU memory for the baked maps is ${(b.bytes / 1048576).toFixed(1)} MB`);
     const px = await page.evaluate(() => {
       const w = window.__game.getWorld();
@@ -126,6 +126,36 @@ try {
     check(px && px.nrm[2] > 200 && Math.abs(px.nrm[0] - 128) < 14 && Math.abs(px.nrm[1] - 128) < 14, `the brick normal map decodes to a mostly flat tangent-space normal (mean RGB ${px && px.nrm.map((v) => v.toFixed(0)).join(' ')})`);
     check(px && px.rgh[1] > 150, `the brick roughness map is mostly rough (mean green ${px && px.rgh[1].toFixed(0)})`);
     check(px && px.srgb === 'srgb' && px.nrmCs === '' && px.vc, 'albedo is sRGB, the normal map is linear data and the level tints still ride in vertex colours');
+    // ceiling plaster (an atlas of ceiling variants) and concrete: decoded, calibrated to the generated textures' mean colour
+    const cp = await page.evaluate(() => {
+      const w = window.__game.getWorld();
+      const mean = (img) => {
+        const c = document.createElement('canvas');
+        c.width = img.width; c.height = img.height;
+        const g = c.getContext('2d');
+        g.drawImage(img, 0, 0);
+        const d = g.getImageData(0, 0, c.width, c.height).data;
+        const m = [0, 0, 0];
+        for (let i = 0; i < d.length; i += 4) { m[0] += d[i]; m[1] += d[i + 1]; m[2] += d[i + 2]; }
+        return m.map((v) => v / (d.length / 4));
+      };
+      let ceil = null;
+      let conc = null;
+      w.group.traverse((o) => { if (o.isMesh && o.userData.ceil) ceil = o; if (o.isMesh && o.material.map === w.textures.concrete) conc = o; });
+      const uv = ceil.geometry.attributes.uv;
+      let umax = 0;
+      for (let i = 0; i < uv.count; i++) umax = Math.max(umax, uv.getX(i));
+      const pm = ceil.material;
+      return {
+        pAlb: mean(pm.map.image), pW: pm.map.image.width, pH: pm.map.image.height, pRep: pm.map.repeat.x, pBaked: !!pm.map.userData.baked, pNrm: mean(pm.normalMap.image), pCs: pm.map.colorSpace, umax,
+        cAlb: mean(conc.material.map.image), cW: conc.material.map.image.width, cBaked: !!conc.material.map.userData.baked,
+      };
+    });
+    check(cp.pBaked && cp.pW === 1024 && cp.pH === 512 && cp.pRep === 0.5 && cp.pCs === 'srgb', `the ceiling carries the baked plaster atlas (${cp.pW}x${cp.pH}, repeat ${cp.pRep})`);
+    check(Math.abs(cp.pAlb[0] - 107.6) < 10 && Math.abs(cp.pAlb[1] - 97.4) < 10 && Math.abs(cp.pAlb[2] - 85.2) < 10, `the plaster albedo decodes to the generated plaster's mean colour (mean RGB ${cp.pAlb.map((v) => v.toFixed(0)).join(' ')})`);
+    check(cp.pNrm[2] > 200 && Math.abs(cp.pNrm[0] - 128) < 14 && Math.abs(cp.pNrm[1] - 128) < 14, `the plaster normal map is a mostly flat tangent-space normal (mean RGB ${cp.pNrm.map((v) => v.toFixed(0)).join(' ')})`);
+    check(cp.umax >= 1.5 && cp.umax <= 2.001, `the level 1 ceiling reads both plaster variants (largest u ${cp.umax.toFixed(2)})`);
+    check(cp.cBaked && cp.cW === 512 && Math.abs(cp.cAlb[0] - 104.8) < 10 && Math.abs(cp.cAlb[2] - 102.6) < 10, `the concrete albedo decodes to the generated concrete's mean colour (mean RGB ${cp.cAlb.map((v) => v.toFixed(0)).join(' ')})`);
   }
 
   // menus: title -> controls -> intro -> play
@@ -216,6 +246,53 @@ try {
   await tap(...center(L.reloadBtn));
   check(await until('s.player.reloadT > 0', null, 8000), 'the RELOAD button forces a reload before the clip is empty');
   await shot('play-weapon');
+
+  // the weapon strip: a tap on a cell selects that weapon (if owned), never aims or fires, and a thumb in the aim box never selects.
+  // One tap is handled per frame, so each tap waits for its result.
+  {
+    await hook('play');
+    await hook('giveWeapons'); // the five ordinary weapons; the Beam, Grenade and Airhorn are not owned
+    const ids = ['pistol', 'shotgun', 'smg', 'launcher', 'vinyl'];
+    check(JSON.stringify((await hook('hud')).weapons.map((w) => w.id)) === JSON.stringify(ids), 'the strip shows the five ordinary weapons');
+    const cells = (await hook('strip', 5)).cells;
+    check(cells.every((c) => c.hit.h >= 40 && c.hit.w >= 38), `portrait: each strip cell has a tap area of at least 38 x 40 px (${cells[0].hit.w.toFixed(0)} x ${cells[0].hit.h.toFixed(0)})`);
+    for (const i of [3, 0, 4, 1, 2]) {
+      await tap(...center(cells[i].hit));
+      check(await until('s.player.weapon === a', ids[i]), `portrait: a tap on strip cell ${i + 1} selects the ${ids[i]}`);
+    }
+    // a tap a little below the drawn cell still counts
+    await tap(cells[3].x + cells[3].w / 2, cells[3].y + cells[3].h + 6);
+    check(await until("s.player.weapon === 'launcher'"), 'portrait: the tap area reaches below the drawn cell');
+    // a drag that starts on a cell does not aim and does not fire
+    const yawS = (await state()).yaw;
+    const shotsS = (await state()).shots;
+    const runS = await page.evaluate(() => window.__game.getState().runT);
+    const [cx0, cy0] = center(cells[2].hit);
+    await ptr('pointerdown', 5, cx0, cy0);
+    for (let i = 1; i <= 10; i++) await ptr('pointermove', 5, cx0 - i * 8, cy0 + i * 3);
+    check(await until('s.runT > a + 0.6', runS, 60000), 'game time moves on while a finger rests on the strip');
+    const afterS = await state();
+    check(afterS.yaw === yawS && afterS.shots === shotsS, 'portrait: a drag that starts on the strip neither aims nor fires');
+    await ptr('pointerup', 5, cx0 - 80, cy0 + 30);
+    check((await state()).weapon === 'smg', 'and the drag ends up selecting the cell it started on (smg), nothing else');
+    // a thumb held in the aim box fires and aims but never picks a weapon
+    const [lbx, lby] = center((await hook('layout')).lookBox);
+    await ptr('pointerdown', 6, lbx, lby);
+    for (let i = 1; i <= 6; i++) await ptr('pointermove', 6, lbx + i * 5, lby - i * 12);
+    check(await until('s.shots > a', afterS.shots), 'a thumb in the aim box fires');
+    check((await state()).weapon === 'smg', 'and it does not change the weapon');
+    await ptr('pointerup', 6, lbx, lby);
+    // a weapon not owned: its cell does nothing (a new run holds the pistol only; a following tap proves the first was read)
+    await hook('play');
+    const runN = await page.evaluate(() => window.__game.getState().runT);
+    await tap(...center(cells[3].hit));
+    await until('s.runT > a + 0.5', runN, 60000);
+    check((await state()).weapon === 'pistol', 'portrait: a tap on the cell of a weapon not owned does nothing');
+    await hook('giveWeapons');
+    await tap(...center(cells[3].hit));
+    check(await until("s.player.weapon === 'launcher'"), 'and once it is owned the same tap selects it');
+    await shot('play-strip');
+  }
 
   // the launcher: a rocket flies, explodes and hurts a robot; the render path for explosions must not error
   await hook('play');
@@ -487,6 +564,15 @@ try {
   await hook('giveWeapons');
   await tap(...center(LL.swapBtn));
   check(await until("s.player.weapon !== 'pistol'"), 'landscape: SWAP works from beside the box');
+  {
+    const lc = (await hook('strip', 5)).cells;
+    const lids = ['pistol', 'shotgun', 'smg', 'launcher', 'vinyl'];
+    check(lc.every((c) => c.hit.h >= 40 && c.hit.w >= 40) && lc[0].y < 12, `landscape: the strip sits on the top row with tap areas of at least 40 x 40 px (${lc[0].hit.w.toFixed(0)} x ${lc[0].hit.h.toFixed(0)})`);
+    for (const i of [3, 0, 4]) {
+      await tap(...center(lc[i].hit));
+      check(await until('s.player.weapon === a', lids[i]), `landscape: a tap on strip cell ${i + 1} selects the ${lids[i]}`);
+    }
+  }
   await shot('land-play');
   await hook('hurt', 1000);
   check(await until("s.mode === 'dead'"), 'landscape: dies at zero health');
@@ -571,6 +657,57 @@ try {
   await hook('mouse', null);
   await page.waitForTimeout(1500);
   await shot('mouse-look');
+  // PC weapon keys: 1 to 8 pick the slot in WEAPON_ORDER if owned, Q flips to the last weapon, the wheel steps both ways.
+  // The tests press a real key and let go once the game has seen it (one press is read per frame).
+  {
+    const press = async (key, expr, arg) => {
+      await page.keyboard.down(key);
+      const seen = await until(expr, arg);
+      await page.keyboard.up(key);
+      return seen;
+    };
+    const idle = async (secs = 0.5) => { // let a few frames pass, in game time
+      const r0 = await page.evaluate(() => window.__game.getState().runT);
+      await until('s.runT > a + ' + secs, r0, 60000);
+    };
+    await hook('play');
+    await idle(0.3);
+    await page.keyboard.down('2');
+    await idle();
+    await page.keyboard.up('2');
+    check((await state()).weapon === 'pistol', 'PC: a number key for a weapon not owned does nothing');
+    await hook('giveWeapons');
+    check(await press('4', "s.player.weapon === 'launcher'"), 'PC: key 4 selects the launcher in one press');
+    await idle(0.3);
+    check(await press('2', "s.player.weapon === 'shotgun'"), 'PC: key 2 selects the shotgun (no cycling through the guns between)');
+    await idle(0.3);
+    await page.keyboard.down('8');
+    await idle();
+    await page.keyboard.up('8');
+    check((await state()).weapon === 'shotgun', 'PC: key 8 does nothing while the Airhorn is not owned');
+    await hook('give', ['airhorn']);
+    await idle(0.3);
+    const strip = (await hook('hud')).weapons;
+    check(strip.map((w) => w.slot).join() === '1,2,3,4,5,8', `PC: the strip carries the slot numbers, a gap where the Beam and Grenade are not shown (${strip.map((w) => w.slot).join()})`);
+    check(await press('8', "s.player.weapon === 'airhorn'"), 'PC: key 8 selects the Airhorn once owned');
+    await idle(0.3);
+    check(await press('q', "s.player.weapon === 'shotgun'"), 'PC: Q flips back to the last weapon (the shotgun)');
+    await idle(0.3);
+    check(await press('q', "s.player.weapon === 'airhorn'"), 'PC: Q again flips to the Airhorn (a toggle)');
+    await idle(0.3);
+    check(await press('1', "s.player.weapon === 'pistol'"), 'PC: key 1 selects the pistol');
+    await idle(0.3);
+    check(await press('q', "s.player.weapon === 'airhorn'"), 'PC: Q after a jump goes back to the weapon before it (the Airhorn)');
+    await idle(0.3);
+    await hook('mouse', { wheel: 1 });
+    check(await until("s.player.weapon === 'pistol'"), 'PC: wheel down is the next weapon (the Airhorn wraps round to the pistol)');
+    await idle(0.3);
+    await hook('mouse', { wheel: -1 });
+    check(await until("s.player.weapon === 'airhorn'"), 'PC: wheel up is the previous weapon (back to the Airhorn)');
+    await hook('mouse', null);
+    await idle(1);
+    await shot('pc-strip');
+  }
   // reset: two taps
   await hook('title');
   await pressButton('settings');
