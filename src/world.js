@@ -4,7 +4,7 @@
 // Everything is procedural and DOM-free, so it also runs under plain Node for headless tests.
 // Build order: parse the ASCII map -> queries -> baked-light emitters -> merged geometry -> doors and lights.
 import * as THREE from '../vendor/three.module.min.js';
-import { TILE, WALL_H, COLOURS, CEIL_VARIANTS } from './consts.js';
+import { TILE, WALL_H, COLOURS, CEIL_VARIANTS, FLAG_VARIANTS } from './consts.js';
 import { LEVEL_DEF as COWGATE } from './levels/cowgate.js';
 import { LEVEL_DEF as VAULTS } from './levels/vaults.js';
 import { makeVaultsDecor } from './levels/vaults-decor.js';
@@ -1642,7 +1642,9 @@ function buildVisuals(ctx) {
       const pooled = D && E.some((e) => Math.hypot((c + 0.5) * T - e.x, (r + 0.5) * T - e.z) < e.r + 1.5);
       const fus = Q.fine && pooled ? [...us, 0.25, 0.75].sort((a, b) => a - b) : us;
       const fvs = Q.fine && pooled ? [...vs, 0.25, 0.75].sort((a, b) => a - b) : vs;
+      if (fm === M.flag) fm.off = [(Math.floor(ihash(c, r, 62) * FLAG_VARIANTS) - c) * T, 0]; // the baked flags are an atlas too: one layout per tile
       fm.grid([x0, 0, z0], [x0 + T, 0, z0], [x0, 0, z0 + T], fus, fvs, colf, [0, 1, 0]);
+      fm.off = null;
       const cj = (i, j, p) => { const k = jit(hash(Math.round(p[0] * 4), Math.round(p[2] * 4), 9), 0.08); return [0.9 * k, 0.82 * k, 0.74 * k]; };
       if (!(D && D.ceilingTile(c, r, an, cj))) {
         // the baked plaster is an atlas of CEIL_VARIANTS tiles side by side (same background, different cracks and stains):

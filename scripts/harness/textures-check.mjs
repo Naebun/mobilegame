@@ -9,7 +9,7 @@ import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
 import * as THREE from '../../vendor/three.module.min.js';
 import { buildWorld } from '../../src/world.js';
 import { BAKED, bakedNames, ownFiles } from '../../src/textures.js';
-import { CEIL_VARIANTS, TILE } from '../../src/consts.js';
+import { CEIL_VARIANTS, FLAG_VARIANTS, TILE } from '../../src/consts.js';
 import * as game from '../../src/game3d.js';
 
 let failed = 0;
@@ -91,6 +91,32 @@ ok(bytes > 0 && bytes < 1.3 * 1024 * 1024, 'the baked files stay inside the 1.3 
       if (q !== 'low') ok(used.size >= CEIL_VARIANTS, `level ${lv} ${q}: the ceiling uses ${CEIL_VARIANTS} variants (${[...used].sort().join(', ')})`);
       w.disposeTextures();
     }
+  }
+}
+
+// the flag floors are an atlas too: FLAG_VARIANTS layouts, one per floor tile
+{
+  const fm = dimsOf.flag && dimsOf.flag.map;
+  ok(fm && fm.w === FLAG_VARIANTS * fm.h, `flag atlas is ${FLAG_VARIANTS} square tiles side by side (${fm && fm.w}x${fm && fm.h})`);
+  ok(BAKED.flag.tile[0] === 2 * FLAG_VARIANTS && BAKED.flag.tile[1] === 2 && BAKED.flag.scale === 2, 'the manifest tile for flag is FLAG_VARIANTS 2 m tiles wide, 2 m tall, at world scale 2');
+  for (const lv of [1, 2]) {
+    const w = buildWorld({ quality: 'medium', level: lv });
+    let mesh = null;
+    w.group.traverse((o) => { if (o.isMesh && o.material.map === w.textures.flag) mesh = o; });
+    const pos = mesh.geometry.attributes.position;
+    const uv = mesh.geometry.attributes.uv;
+    let whole = true;
+    let inside = true;
+    const used = new Set();
+    for (let i = 0; i < pos.count; i++) {
+      const d = uv.getX(i) - pos.getX(i) / TILE;
+      if (Math.abs(d - Math.round(d)) > 1e-4) whole = false;
+      if (uv.getX(i) < -1e-4 || uv.getX(i) > FLAG_VARIANTS + 1e-4) inside = false;
+      if (Math.abs(pos.getX(i) / TILE - Math.round(pos.getX(i) / TILE)) > 0.1) used.add(Math.floor(uv.getX(i)));
+    }
+    ok(whole && inside, `level ${lv}: every flag floor tile's u is its own tile plus a whole-tile variant offset, inside 0..${FLAG_VARIANTS}`);
+    ok(used.size >= FLAG_VARIANTS, `level ${lv}: the floor uses ${FLAG_VARIANTS} flag layouts (${[...used].sort().join(', ')})`);
+    w.disposeTextures();
   }
 }
 

@@ -5,7 +5,7 @@
 // generated texture stays. Files per surface: albedo (sRGB), normal (linear, OpenGL +Y) and roughness (linear grey, read
 // from the green channel), the roughness at half the size. Details and sizes: docs/textures.md.
 import * as THREE from '../vendor/three.module.min.js';
-import { CEIL_VARIANTS } from './consts.js';
+import { CEIL_VARIANTS, FLAG_VARIANTS } from './consts.js';
 import INLINE from './textures-inline.js'; // null in the repo; scripts/build-artifact.mjs swaps in data URIs for the single-file build
 
 // tile: the baked tile's size in metres [across, up]. scale: the metres one UV unit covers in world.js (the Mesher scale
@@ -16,7 +16,7 @@ import INLINE from './textures-inline.js'; // null in the repo; scripts/build-ar
 export const BAKED = {
   brick: { tile: [1.8, 0.9], scale: 0.9, ns: 1 },
   paint: { tile: [1.8, 0.9], scale: 0.9, ns: 0.7, files: ['map'], share: 'brick' },
-  flag: { tile: [2, 2], scale: 2, ns: 1 },
+  flag: { tile: [2 * FLAG_VARIANTS, 2], scale: 2, ns: 1 }, // an atlas of FLAG_VARIANTS layouts, 2 m each; world.js gives each floor tile one
   stone: { tile: [1.2, 1.2], scale: 1.2, ns: 1 },
   boards: { tile: [1.6, 1.6], scale: 1.6, ns: 1 },
   // ceiling plaster: an atlas of CEIL_VARIANTS tiles side by side, 2 m each; world.js gives each ceiling tile its own variant

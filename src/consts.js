@@ -5,6 +5,7 @@ export const WALL_H = 3.4; // full-height wall and ceiling height
 export const EYE = 1.65; // camera height
 export const PLAYER_R = 0.45; // player collision radius
 export const CEIL_VARIANTS = 2; // plaster ceiling variants side by side in the baked atlas (assets/textures/plaster-*.webp)
+export const FLAG_VARIANTS = 2; // flagstone layouts side by side in the baked atlas (assets/textures/flag-*.webp), one per floor tile
 
 // Neon palette shared with the 2D UI.
 export const COLOURS = {

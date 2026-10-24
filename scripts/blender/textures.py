@@ -53,12 +53,13 @@ def lin(rgb):
 # ---------------------------------------------------------------------------------------------
 
 _lat = {}
+SO = 0  # seed offset for the noise of one variant of a surface (0 for the first, so that bake does not change)
 
 
 def lattice(cx, cy, seed):
-  k = (cx, cy, seed)
+  k = (cx, cy, seed, SO)
   if k not in _lat:
-    rng = random.Random(seed * 100003 + cx * 1009 + cy)
+    rng = random.Random((seed + SO) * 100003 + cx * 1009 + cy)
     _lat[k] = np.array([rng.random() for _ in range(cx * cy)], np.float64).reshape(cy, cx)
   return _lat[k]
 
@@ -150,27 +151,31 @@ def brick_blocks():
   return out
 
 
-def flag_blocks():
-  """9 flagstones in 2 m (rows 0.69, 0.56 and 0.75 m high), laid out as the generated texture"""
-  rows = [(0, 88, [100, 92, 64]), (88, 72, [72, 112, 72]), (160, 96, [96, 80, 80])]
+def flag_blocks(v=0):
+  """9 or 8 flagstones in 2 m, laid out as the generated texture (variant 0: rows 0.69, 0.56 and 0.75 m high). Variant 1 is
+  another layout for the second half of the atlas. Every row starts a slab at x = 0 and the rows fill 0 to 256, so a joint
+  runs along the tile edge in every variant and any two variants meet at a joint; the courses may jog there, as flagging does."""
+  rows = [(0, 88, [100, 92, 64]), (88, 72, [72, 112, 72]), (160, 96, [96, 80, 80])] if v == 0 else \
+         [(0, 72, [60, 96, 100]), (72, 104, [112, 144]), (176, 80, [70, 70, 116])]
   u = 2.0 / 256
   j = 0.007
   out = []
   for ri, (top, hh, ws) in enumerate(rows):
     acc = 0
     for ci, w in enumerate(ws):
-      i = hrand(ci, ri, 32)
+      cc, rr = ci + 10 * v, ri + 10 * v  # a different set of random numbers per variant
+      i = hrand(cc, rr, 32)
       base = (118, 118, 116) if i < 0.4 else (104, 106, 108) if i < 0.75 else (128, 118, 106)
-      k = 0.88 + 0.24 * hrand(ci, ri, 33)
-      r = [(hrand(ci, ri, 60 + n) - 0.5) * 2 for n in range(4)]
+      k = 0.88 + 0.24 * hrand(cc, rr, 33)
+      r = [(hrand(cc, rr, 60 + n) - 0.5) * 2 for n in range(4)]
       b = dict(
-        id=(ci, ri), x0=acc * u + j + r[0] * 0.003, y0=top * u + j + r[1] * 0.003, w=w * u - 2 * j + r[2] * 0.004, h=hh * u - 2 * j + r[3] * 0.004,
-        col=lin([min(255, c * k) for c in base]), rough=0.82, off=(hrand(ci, ri, 62) - 0.5) * 0.005,
-        tx=(hrand(ci, ri, 63) - 0.5) * 0.006, ty=(hrand(ci, ri, 64) - 0.5) * 0.006, chips=[], flat=False)
-      if hrand(ci, ri, 65) < 0.7:
-        for n in range(1 + int(hrand(ci, ri, 66) * 2.5)):
-          b['chips'].append(dict(cx=b['w'] * (hrand(ci, ri, 67 + n) < 0.5), cy=b['h'] * (hrand(ci, ri, 70 + n) < 0.5),
-                                 rc=0.03 + 0.05 * hrand(ci, ri, 73 + n), dc=0.003 + 0.004 * hrand(ci, ri, 76 + n), s=n))
+        id=(cc, rr), x0=acc * u + j + r[0] * 0.003, y0=top * u + j + r[1] * 0.003, w=w * u - 2 * j + r[2] * 0.004, h=hh * u - 2 * j + r[3] * 0.004,
+        col=lin([min(255, c * k) for c in base]), rough=0.82, off=(hrand(cc, rr, 62) - 0.5) * 0.005,
+        tx=(hrand(cc, rr, 63) - 0.5) * 0.006, ty=(hrand(cc, rr, 64) - 0.5) * 0.006, chips=[], flat=False)
+      if hrand(cc, rr, 65) < 0.7:
+        for n in range(1 + int(hrand(cc, rr, 66) * 2.5)):
+          b['chips'].append(dict(cx=b['w'] * (hrand(cc, rr, 67 + n) < 0.5), cy=b['h'] * (hrand(cc, rr, 70 + n) < 0.5),
+                                 rc=0.03 + 0.05 * hrand(cc, rr, 73 + n), dc=0.003 + 0.004 * hrand(cc, rr, 76 + n), s=n))
       out.append(b)
       acc += w
   return out
@@ -230,7 +235,7 @@ SPECS = {
                 mortar=(128, 120, 106), mamp=0.0009, mcells=60, cvar=0.15, chipcol=(176, 122, 92),
                 target=(139.8, 84.2, 65.1), half_rough=True, micro=1.0, grain=0.17, boost=2.0, lowboost=3.0, ao_pow=1.3, ao_mix=1.0, streak=0.14,
                 paint=dict(target=(209.0, 201.7, 189.2))),
-  'flag': dict(W=2.0, H=2.0, res=(512, 512), blocks=flag_blocks, r=0.013, D=0.016, famp=0.0022, fcells=9, step=0.016, mstep=0.012, wob=0.5,
+  'flag': dict(nvar=2, W=2.0, H=2.0, res=(512, 512), blocks=flag_blocks, r=0.013, D=0.016, famp=0.0022, fcells=9, step=0.016, mstep=0.012, wob=0.5,
                mortar=(46, 44, 42), mamp=0.0025, mcells=40, cvar=0.12, chipcol=(150, 146, 138),
                target=(104.1, 104.2, 99.8), wet=True, half_rough=True, micro=0.7, grain=0.15, boost=2.0, lowboost=5.0, ao_pow=1.3, ao_mix=1.0, streak=0.0),
   'stone': dict(W=1.2, H=1.2, res=(512, 512), blocks=stone_blocks, r=0.0075, D=0.012, famp=0.0016, fcells=8, step=0.011, mstep=0.008, wob=0.55,
@@ -326,10 +331,10 @@ def block_grid(S, spec, b):
   return X, Y, z, col, b['rough'] + (fbm(gx, gy, W, H, 20, 29, 2) - 0.5) * 0.08, msk
 
 
-def build_geometry(spec):
+def build_geometry(spec, vi=0):
   W, H = spec['W'], spec['H']
   soup = Soup()
-  blocks = spec['blocks']()
+  blocks = spec["blocks"](vi) if spec.get("nvar") else spec["blocks"]()
   # joint fill: one plane over the whole extended area, a little below the deepest face
   xs = np.arange(-MARGIN, W + MARGIN + 1e-9, spec['mstep'])
   ys = np.arange(-MARGIN, H + MARGIN + 1e-9, spec['mstep'])
@@ -457,7 +462,7 @@ def blur(a, r, passes=3):
   return a
 
 
-def post(spec, A, N, AO, R, M, res):
+def post(spec, A, N, AO, R, M, res, calib=True):
   """Everything after the bake, in numpy and tileable. Returns sRGB albedo, normal, roughness and any extra albedos."""
   W, H = spec['W'], spec['H']
   rw, rh = res
@@ -563,7 +568,8 @@ def post(spec, A, N, AO, R, M, res):
     peel = np.clip((pm - 0.62) / 0.12, 0, 0.7) * face
     out['paint'] = srgb_enc(calibrate(pw * (1 - peel)[..., None] + calibrate(alb, spec['target']) * peel[..., None], spec['paint']['target']))
   # calibrate the mean sRGB to the generated texture the level was lit against
-  alb = calibrate(alb, spec['target'])
+  if calib:
+    alb = calibrate(alb, spec["target"])
 
   rgh = np.clip(R[..., 0] + (f(int(W / 0.02), 79, 2) - 0.5) * 0.1 + white * 0.1, 0.05, 1.0)
   # damp areas are a little glossier
@@ -572,11 +578,11 @@ def post(spec, A, N, AO, R, M, res):
   # finds them in the Vaults)
   rgh = rgh - 0.3 * crown
   rgh = rgh * (1 - wetm) + 0.3 * wetm
-  return srgb_enc(alb), nrm, np.clip(rgh, 0.04, 1.0), out
+  return (srgb_enc(alb) if calib else alb), nrm, np.clip(rgh, 0.04, 1.0), out
 
 
 def hrand_field(res, seed):
-  rng = np.random.default_rng(seed)
+  rng = np.random.default_rng(seed + SO)
   return rng.random((res[1], res[0]))
 
 
@@ -1077,6 +1083,61 @@ def run_field(name, out_dir, ss, debug=None):
   return sizes
 
 
+def run_atlas(name, out_dir, ss, debug=None):
+  """a block surface with several layouts side by side (flags): each variant has its own layout and noise, the mean colour is
+  calibrated over the whole atlas. World.js gives each floor tile one variant, as it does for the plaster ceiling."""
+  global SO
+  spec = SPECS[name]
+  t0 = time.time()
+  res = spec['res']
+  albs, nrms, rghs = [], [], []
+  for vi in range(spec['nvar']):
+    SO = 1000 * vi
+    sc = setup_scene(7)
+    ta = time.time()
+    soup, blocks, nb = build_geometry(spec, vi)
+    V, F, alb, rgh, msk = soup.arrays()
+    high = make_mesh_object(f'{name}-high', V, F, alb, rgh, msk)
+    tgt = make_target(spec['W'], spec['H'])
+    tb = time.time()
+    size = (res[0] * ss, res[1] * ss)
+    A = bake(tgt, high, 'DIFFUSE', size, samples=4)
+    Nn = bake(tgt, high, 'NORMAL', size, samples=4)
+    M = bake(tgt, high, 'EMIT', size, samples=4)
+    Rr = bake(tgt, high, 'ROUGHNESS', size, samples=4)
+    AOb = bake(tgt, high, 'AO', res, samples=32)
+    A, M, Rr = (down(a, ss) for a in (A, M, Rr))
+    Nn = down(Nn * 2 - 1, ss)
+    Nn = Nn / np.maximum(np.linalg.norm(Nn, axis=-1, keepdims=True), 1e-6) * 0.5 + 0.5
+    a, n, r, _ = post(spec, A, Nn, AOb, Rr, M, res, calib=False)
+    albs.append(a)
+    nrms.append(n)
+    rghs.append(r)
+    print(f'  {name} variant {vi}: {nb} blocks, {len(V)} verts; geometry {tb - ta:.1f}s, bakes {time.time() - tb:.1f}s')
+  SO = 0
+  lin_all = np.concatenate(albs, axis=1)
+  tgt_m = np.mean(spec['target']) / 255
+  gain = 1.0
+  for _ in range(8):
+    gain *= (tgt_m / srgb_enc(lin_all * gain).mean()) ** 2.2
+  alb_s = srgb_enc(lin_all * gain)
+  nrm_all = np.concatenate(nrms, axis=1)
+  rgh_all = np.concatenate(rghs, axis=1)
+  os.makedirs(out_dir, exist_ok=True)
+  sizes = {}
+  sizes['albedo'] = save_webp(os.path.join(out_dir, f'{name}-albedo.webp'), alb_s, QUALITY['albedo'])
+  sizes['normal'] = save_webp(os.path.join(out_dir, f'{name}-normal.webp'), nrm_all * 0.5 + 0.5, QUALITY['normal'])
+  rg = down(rgh_all[..., None], 2)[..., 0]
+  sizes['rough'] = save_webp(os.path.join(out_dir, f'{name}-rough.webp'), np.stack([rg, rg, rg], -1), QUALITY['rough'])
+  if debug:
+    os.makedirs(debug, exist_ok=True)
+    save_png(os.path.join(debug, f'{name}-albedo.png'), alb_s)
+    save_png(os.path.join(debug, f'{name}-albedo-2x2.png'), np.tile(alb_s, (2, 1, 1)))
+    save_png(os.path.join(debug, f'{name}-normal.png'), nrm_all * 0.5 + 0.5)
+  print(f'{name}: {spec["nvar"]} variants, total {time.time() - t0:.1f}s; bytes ' + ', '.join(f'{k} {v}' for k, v in sizes.items()) + f' (sum {sum(sizes.values())})')
+  return sizes
+
+
 def run(name, out_dir, ss, debug=None):
   spec = SPECS[name]
   t0 = time.time()
@@ -1137,7 +1198,7 @@ def main():
   a = ap.parse_args(sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else sys.argv[1:])
   tot = {}
   for nme in a.only.split(','):
-    for k, v in (run_field if SPECS[nme].get('field') else run)(nme, a.out, a.ss, a.debug).items():
+    for k, v in (run_field if SPECS[nme].get('field') else run_atlas if SPECS[nme].get('nvar') else run)(nme, a.out, a.ss, a.debug).items():
       tot[k] = tot.get(k, 0) + v
   print('total bytes', sum(tot.values()), tot)
 
