@@ -1662,6 +1662,7 @@ function buildVisuals(ctx) {
   const doorLeaves = [];
   const lampM = new Mesher(1, null); // all door indicator lamps in one mesh, recoloured when a door unlocks
   const lampRanges = [];
+  const signRanges = doors.map(() => []); // the lamp over each face of each door: [first, end) vertices in lampM
   doors.forEach((d, i) => {
     const span = d.axis === 'x' ? [1, 0] : [0, 1];
     const nrm = d.axis === 'x' ? [0, 1] : [1, 0];
@@ -2145,17 +2146,18 @@ function buildVisuals(ctx) {
       M.gPend.tri([p0[0] - 0.17, 2.0, p0[2]], [p0[0] + 0.17, 2.0, p0[2]], [p0[0], 2.0, p0[2] - 0.17], glowc(0xffb870, 1.5), [0, 1, 0]);
     }
   }
-  // exit signs: green boxes over the doors, and the fire door at the end
-  doors.forEach((d) => {
+  // emergency lights: a lamp hung over every door, on both faces. Red while it is shut, green once it is open (recoloured
+  // with the door, see paintLamp). The fire door at the end has its own sign below.
+  doors.forEach((d, i) => {
     const nrm = d.axis === 'x' ? [0, 1] : [1, 0];
     for (const sg of [-1, 1]) {
       const f = frame(d.x + nrm[0] * sg * 1.18, d.z + nrm[1] * sg * 1.18, nrm[0] * sg, nrm[1] * sg);
-      if (d.id !== 'd1') {
-        M.hang.tube(f.p(-0.2, WALL_H, -0.02), f.p(-0.2, 3.26, -0.02), 0.008, C.ironD, 4);
-        M.hang.tube(f.p(0.2, WALL_H, -0.02), f.p(0.2, 3.26, -0.02), 0.008, C.ironD, 4);
-        obox(M.hang, f, -0.32, 0.32, 3.0, 3.26, -0.04, 0.0, C.black, { bottom: false, back: true });
-        obox(M.gPend, f, -0.28, 0.28, 3.02, 3.24, 0.0, 0.015, glowc(0x35d07a, 3.2), { bottom: false });
-      }
+      M.hang.tube(f.p(-0.2, WALL_H, -0.02), f.p(-0.2, 3.26, -0.02), 0.008, C.ironD, 4);
+      M.hang.tube(f.p(0.2, WALL_H, -0.02), f.p(0.2, 3.26, -0.02), 0.008, C.ironD, 4);
+      obox(M.hang, f, -0.32, 0.32, 3.0, 3.26, -0.04, 0.0, C.black, { bottom: false, back: true });
+      const v0 = lampM.pos.length / 3;
+      obox(lampM, f, -0.28, 0.28, 3.02, 3.24, 0.0, 0.015, [1, 1, 1], { bottom: false });
+      signRanges[i].push([v0, lampM.pos.length / 3]);
     }
   });
   {
@@ -2414,13 +2416,14 @@ function buildVisuals(ctx) {
   });
   const lampMesh = lampM.mesh(basic());
   group.add(lampMesh);
-  const RED = [4, 0.45, 0.2];
+  const RED = [3.4, 0.12, 0.08];
   const GREEN = [0.5, 3.6, 1.2];
   const paintLamp = (i, open) => {
     const [a, b] = lampRanges[i];
     const ca = lampMesh.geometry.attributes.color;
     const c = open ? GREEN : RED;
     for (let v = a; v < b; v++) ca.setXYZ(v, c[0], c[1], c[2]);
+    for (const [s0, s1] of signRanges[i]) for (let v = s0; v < s1; v++) ca.setXYZ(v, c[0], c[1], c[2]);
     ca.needsUpdate = true;
   };
   doors.forEach((d, i) => paintLamp(i, d.open));

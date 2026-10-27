@@ -1,6 +1,6 @@
 // Screenshots the real game (full render pipeline, HUD, robots) from chosen tile positions:
 //   node scripts/harness/game-views.mjs <level> <outdir> "name:x,z,yaw[,pitch]" ...        (tile coordinates, yaw in radians)
-// Doors are opened and robots left asleep unless WAKE=1. TORCH=1 fits the torch and switches it on (TORCH=0 fitted but off). Q=low|medium|high (default medium), W and H set the viewport.
+// Doors are opened (DOORS=closed leaves them as the level has them) and robots left asleep unless WAKE=1. TORCH=1 fits the torch and switches it on (TORCH=0 fitted but off). Q=low|medium|high (default medium), W and H set the viewport.
 import { chromium } from 'playwright';
 import { spawn } from 'node:child_process';
 import { readdirSync } from 'node:fs';
@@ -22,10 +22,11 @@ await page.waitForFunction(() => ['applied', 'failed', 'off'].includes(window.__
 await page.evaluate((n) => window.__game.testHook('level', n), Number(level));
 await page.waitForFunction((n) => window.__game.getWorld().level === n, Number(level), { timeout: 90000 });
 await page.evaluate((w) => { window.__weapon = w; }, process.env.WEAPON || '');
+await page.evaluate((v) => { window.__doors = v; }, process.env.DOORS || '');
 if (process.env.TORCH) await page.evaluate((on) => window.__game.testHook('torch', { attached: true, on: on !== '0' }), process.env.TORCH);
 await page.evaluate(() => {
   const g = window.__game;
-  for (const d of g.getWorld().doors) g.getWorld().setDoorOpen(d.id, true);
+  if (window.__doors !== 'closed') for (const d of g.getWorld().doors) g.getWorld().setDoorOpen(d.id, true);
   g.testHook('giveWeapons');
   const S = g.getState();
   S.player.health = S.player.maxHealth = 1e6; // never die while looking
