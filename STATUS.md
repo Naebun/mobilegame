@@ -1,11 +1,10 @@
 # Status and handover
 
 This file is for a fresh chat taking over. Read it first, then `CLAUDE.md` (binding project rules), then `ROADMAP.md` and
-`docs/HANDOVER.md`. Snapshot taken 24 October 2026, after PR #11 merged. It goes stale fast: check `git log origin/main` before
+`docs/HANDOVER.md`. Snapshot taken 27 October 2026, after the launcher self-damage and door lights PR merged (PR #11 was the one before). It goes stale fast: check `git log origin/main` before
 trusting it, and refresh it at the end of any substantial piece of work.
 
-**Where this copy lives.** This version is on the branch `status-after-pr11`; `main`'s copy is older (it says the last round is
-unmerged) until a docs PR lands. If `origin/status-after-pr11` exists and is newer than `main`'s file, trust it.
+**Where this copy lives.** On `main`. Check `git log origin/main` for anything newer than the snapshot below.
 
 ## Docs index
 
@@ -24,7 +23,7 @@ anyone whose pronouns have not been stated, the owner included.
 
 ## State of the code
 
-`main` is at `d43cba4` (PR #11, squash, 24 October). Nothing is in progress and no agents are running. It holds:
+`main` holds PR #11 (`d43cba4`, squash, 24 October) plus one later PR (27 October: launcher self-damage and push-back, door lights). Nothing is in progress and no agents are running. It holds:
 
 - Levels 1 and 2, portrait and landscape; PC mode (default) and mobile mode (picked automatically on a phone or tablet);
   Settings page; saved progress (cookie plus localStorage, save version 2).
@@ -37,6 +36,14 @@ anyone whose pronouns have not been stated, the owner included.
   robots, level 2 has 27.
 - Hard and Extra Hard: a difficulty screen after NEW GAME, a `DIFFICULTY` table in `src/data.js` (Hard 1.35 damage, 1.2 health,
   1.1 speed, 0.9 wind-up; Extra Hard 1.75, 1.35, 1.15, 0.85), bests kept per mode (`docs/difficulty.md`).
+- The Reverb Launcher hurts Naebun when it bursts close: 40 at the centre falling to 30% at 3 m, cover blocks it, the Guard drink
+  soaks it, and the blast shoves Naebun about 3 m at point blank (`selfRadius`, `selfDamage`, `selfFloor`, `selfPush` on the
+  launcher in `src/data.js`, `PLAYER.pushDecay`). The owner chose 40 and asked for the push-back as a joke. Bot sim, level 2 Normal
+  (30 runs, sloppy / casual / good): 43 / 90 / 97 before, 40 / 90 / 93 after the push; level 1 100 / 100 / 97 at worst. The bots
+  do not avoid their own blasts, so a careful person should lose less.
+- An emergency light hangs over both faces of every door on both levels: red while shut, green once open, recoloured with the
+  door through the lamp mesh in `world.js` (`paintLamp`). The level 1 fire door keeps its own always-green exit sign (the owner is
+  happy with that). `DOORS=closed` makes `game-views.mjs` leave doors as the level has them.
 - Direct weapon selection: tap a cell in the weapon strip on a phone (in portrait the strip is its own row under the score line);
   keys 1 to 8 (fixed slots in `WEAPON_ORDER`), the wheel both ways and Q (quick-swap to the last weapon) on a computer. SWAP still
   cycles forward.
@@ -50,13 +57,13 @@ anyone whose pronouns have not been stated, the owner included.
   comparable run for run.
 - `docs/level-3.md`: the level 3 design only (Grassmarket pubs, the Landlord, Fizzbang Turbo). Nothing of level 3 is built.
 
-Branches: all work is on `main`. These remote branches are merged and could not be deleted from here (the git proxy hangs up on
+Branches: all work is on `main`. These remote branches are merged (`launcher-self-damage` and `status-after-pr11` too, once their PR is in) and could not be deleted from here (the git proxy hangs up on
 `git push --delete`): `mouse-and-blender`, `playtest-textures-placement`, `status-after-pr9`, `darker-vaults-2`, `tidy-ups`,
 `integration-2`. Delete them on GitHub if wanted. Earlier merges: PR #7 (`98a08cd`, level 2, landscape), PR #8 (`9366288`, control
 modes, torch, Blender weapons and props), PR #9 (`1a62736`, textures, placement, difficulty, playtest kit); PR #10 was closed as
 superseded by #11.
 
-Checks on `main` (24 October): `models-check`, `drinks-check`, `ui-check`, `perf-check` pass; `combat-check` 509/509; `world-check`
+Checks on `main` (27 October for combat-check, world-check, level-check, perf-check, models-check and arsenal-check; 24 October for the rest): `models-check`, `drinks-check`, `ui-check`, `perf-check` pass; `combat-check` 514/514; `world-check`
 4413/4413; `level-check` 748/748; `enemies-check` 261/261; `arsenal-check` 469/469; `textures-check` 127/127; `difficulty-check`
 84/84; the smoke test (161 checks, run with `SMOKE_WAIT=90000`) passes; `build:artifact` makes a 4.4 MB file.
 
