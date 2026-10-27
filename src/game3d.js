@@ -579,7 +579,7 @@ function resetLevel() {
 
   const m = mult();
   S.player = {
-    x: world.start.x, z: world.start.z, yaw: world.start.yaw, pitch: 0, vx: 0, vz: 0,
+    x: world.start.x, z: world.start.z, yaw: world.start.yaw, pitch: 0, vx: 0, vz: 0, kx: 0, kz: 0,
     health: PLAYER.health * m.health, maxHealth: PLAYER.health * m.health,
     weapon: 'pistol', owned: { pistol: true }, ammo: { pistol: WEAPONS.pistol.clip },
     reloadT: 0, fireT: 0, heat: 0, switchT: 0.25, bobT: 0, moveMag: 0, kick: 0, hurt: 0, shake: 0,
@@ -1972,6 +1972,20 @@ function explode(pr, x, y, z) {
     const fall = 1 - clamp(d / w.splashRadius, 0, 1) * 0.65;
     damageEnemy(e, w.splashDamage * fall * m.damage, false, x, z, w.knock, { pierce: true });
   }
+  // Naebun is hurt by their own rocket if it goes off close. Cover stops it, as it does for robots' blasts.
+  const p = S.player;
+  const dp = Math.hypot(p.x - x, p.z - z);
+  if (w.selfDamage && dp < w.selfRadius && (dp < 0.5 || world.los(x, z, p.x, p.z))) {
+    const fall = 1 - (1 - w.selfFloor) * clamp(dp / w.selfRadius, 0, 1);
+    hurtPlayer(Math.round(w.selfDamage * fall), x, z, false);
+    if (!S.laser) {
+      // straight away from the burst; if it is right on Naebun, back the way they are facing
+      const ax = dp > 0.1 ? (p.x - x) / dp : Math.sin(p.yaw);
+      const az = dp > 0.1 ? (p.z - z) / dp : Math.cos(p.yaw);
+      p.kx = ax * w.selfPush * fall;
+      p.kz = az * w.selfPush * fall;
+    }
+  }
   alertNear(x, z, 22);
 }
 
@@ -2506,7 +2520,11 @@ function updatePlay(dt, input, view) {
   const k = Math.min(1, dt * 14);
   p.vx += (tvx - p.vx) * k;
   p.vz += (tvz - p.vz) * k;
-  const mv = world.moveCircle(p.x, p.z, p.vx * dt, p.vz * dt, PLAYER_R);
+  // a blast's shove rides on top of walking and dies away on its own
+  const kd = Math.exp(-PLAYER.pushDecay * dt);
+  p.kx *= kd;
+  p.kz *= kd;
+  const mv = world.moveCircle(p.x, p.z, (p.vx + p.kx) * dt, (p.vz + p.kz) * dt, PLAYER_R);
   p.x = mv.x;
   p.z = mv.z;
   for (const e of S.enemies) {

@@ -149,6 +149,39 @@ function setEnemy(S, e, x, z, yaw) { e.x = x; e.z = z; e.yaw = yaw; e.kx = e.kz 
   ok(S.projectiles.every((q) => !(q.weapon && q.weapon.id === 'vinyl')), 'and the disc stops in the robot');
 }
 
+// ---- the Reverb Launcher hurts Naebun when it goes off close ----
+{
+  const shoot = (x, z, yaw) => {
+    const { S } = fresh();
+    S.enemies.forEach((q) => { q.dead = true; q.state = 'dead'; q.robot.group.visible = false; });
+    game.testHook('giveWeapons');
+    const p = S.player;
+    p.weapon = 'launcher';
+    p.owned.launcher = true;
+    p.ammo.launcher = WEAPONS.launcher.clip;
+    p.switchT = 0;
+    place(S, x, z, yaw);
+    p.pitch = 0;
+    const inp = input();
+    inp.keys.add(' ');
+    let seen = false;
+    run(S, 3, inp, () => {
+      if (S.projectiles.some((q) => q.weapon && q.weapon.id === 'launcher')) { seen = true; inp.keys.delete(' '); }
+      return !(seen && S.projectiles.length === 0);
+    });
+    run(S, 1.5); // let the shove play out
+    return { lost: p.maxHealth - p.health, seen, moved: Math.hypot(p.x - x, p.z - z), back: p.z - z };
+  };
+  const W_ = WEAPONS.launcher;
+  const near = shoot(13.5 * 2, 48 * 2, 0); // two metres from the north wall
+  ok(near.seen && near.lost > 0, `a rocket that bursts two metres away hurts Naebun (lost ${near.lost})`);
+  ok(near.lost <= W_.selfDamage, `and never more than selfDamage (${near.lost} of ${W_.selfDamage})`);
+  ok(near.back > 0.5 && near.back < 3.5, `and the blast throws them back from the wall, not toward it (${near.back.toFixed(2)} m)`);
+  const far = shoot(13.5 * 2, 48.5 * 2, -Math.PI / 2); // down the lane, well clear of the blast
+  ok(far.seen && far.lost === 0, `a rocket that bursts far away does not (lost ${far.lost})`);
+  ok(far.moved < 0.01, `or move them (${far.moved.toFixed(2)} m)`);
+}
+
 // ---- the Tour Guide: volley, slam, enrage ----
 {
   const { S } = fresh();
